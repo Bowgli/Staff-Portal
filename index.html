@@ -1132,14 +1132,18 @@ function showMgmtToast(icon, title, body, targetView){
   const container = document.getElementById('mgmtToastContainer');
   const el = document.createElement('div');
   el.className = 'mgmt-toast';
-  el.innerHTML = `<div class="tt-title">${icon} ${title}</div><div class="tt-body">${body}</div>`;
-  el.onclick = ()=>{ renderView(targetView); el.remove(); };
-  container.appendChild(el);
-  requestAnimationFrame(()=> el.classList.add('show'));
-  setTimeout(()=>{
+  el.innerHTML = `<div class="tt-title">${icon} ${title}</div><div class="tt-body">${body}</div><div class="tt-dismiss" style="margin-top:8px; font-size:11px; color:var(--text-faint);">Tap to view · <span style="text-decoration:underline;">Dismiss</span></div>`;
+  const dismiss = (navigate)=>{
     el.classList.remove('show');
     setTimeout(()=> el.remove(), 300);
-  }, 8000);
+    if(navigate) renderView(targetView);
+  };
+  el.addEventListener('click', (e)=>{
+    if(e.target.closest('.tt-dismiss') && e.target.tagName==='SPAN'){ dismiss(false); }
+    else { dismiss(true); }
+  });
+  container.appendChild(el);
+  requestAnimationFrame(()=> el.classList.add('show'));
 }
 
 function startMgmtPolling(){
@@ -1495,6 +1499,30 @@ function setRole(role){
   }
   renderNav();
   restoreLastViewOrDefault();
+}
+
+/* Renders a searchable "type to filter" employee picker: a text
+   input backed by a <datalist> of "Name — Position" suggestions.
+   Typing any part of the name or position narrows it down — much
+   faster than scrolling a long <select> once the roster gets big.
+   Used everywhere the app needs to pick one employee from the
+   full roster. */
+function employeePickerHtml(inputId, roster, extraAttrs){
+  const dlId = inputId + 'List';
+  const options = roster.slice().sort((a,b)=>a.name.localeCompare(b.name))
+    .map(e=>`<option value="${e.name} — ${e.position}">`).join('');
+  return `<input type="text" id="${inputId}" list="${dlId}" placeholder="Type a name to search…" autocomplete="off" ${extraAttrs||''}>
+    <datalist id="${dlId}">${options}</datalist>`;
+}
+/* Pulls the plain employee name back out of an "Name — Position"
+   picker value (what's actually typed/selected), and confirms it's
+   a real roster entry — since a text input lets someone type
+   anything, not just pick a suggestion. */
+function readEmployeePicker(inputId){
+  const raw = document.getElementById(inputId).value.trim();
+  const name = raw.split(' — ')[0].trim();
+  const match = EMPLOYEE_ROSTER.find(e => e.name.toLowerCase() === name.toLowerCase());
+  return match ? match.name : '';
 }
 
 function isValidViewForRole(id, role){
@@ -1951,10 +1979,7 @@ const BUILDERS = {
       <div class="card">
         <h3><span class="ic">📋</span> New Evaluation</h3>
         <label>Employee</label>
-        <select id="evalEmp">
-          <option value="" disabled selected>— Select Employee —</option>
-          ${EMPLOYEE_ROSTER.filter(e=>e.name!==CURRENT_EMPLOYEE.name && e.name!=="Ryann Reyes").slice().sort((a,b)=>a.name.localeCompare(b.name)).map(e=>`<option value="${e.name}">${e.name} — ${e.position}</option>`).join('')}
-        </select>
+        ${employeePickerHtml('evalEmp', EMPLOYEE_ROSTER.filter(e=>e.name!==CURRENT_EMPLOYEE.name && e.name!=="Ryann Reyes"))}
         <div class="grid grid-2">
           <div>
             <label>Month</label>
@@ -2005,10 +2030,7 @@ const BUILDERS = {
           <label>Your day to give up</label>
           <select id="reqSwapDay" onchange="syncTheirDayDefault(); updateSwapPreview()">${SCHEDULE_DAYS.map(d=>`<option value="${d}">${fmtDayLabel(d)}</option>`).join('')}</select>
           <label>Swap with</label>
-          <select id="reqSwapWith" onchange="updateSwapPreview()">
-            <option value="" disabled selected>— Select Employee —</option>
-            ${EMPLOYEE_ROSTER.filter(e=>e.name!==CURRENT_EMPLOYEE.name).slice().sort((a,b)=>a.name.localeCompare(b.name)).map(e=>`<option value="${e.name}">${e.name} — ${e.position}</option>`).join('')}
-          </select>
+          ${employeePickerHtml('reqSwapWith', EMPLOYEE_ROSTER.filter(e=>e.name!==CURRENT_EMPLOYEE.name), 'oninput="updateSwapPreview()"')}
           <div class="checkbox-row"><input type="checkbox" id="diffDayToggle" onchange="toggleDiffDay()"><label for="diffDayToggle">They're giving up a different day (not a same-day trade)</label></div>
           <div id="theirDayField" style="display:none;">
             <label>Their day you're taking in exchange</label>
@@ -2218,10 +2240,7 @@ const BUILDERS = {
         <h3><span class="ic">🕐</span> Log an Entry</h3>
         <p class="muted">This is the equivalent of adding a row to the Attendance tab in the Sheet — the employee sees it on their own dashboard right away.</p>
         <label>Employee</label>
-        <select id="logEmp">
-          <option value="" disabled selected>— Select Employee —</option>
-          ${EMPLOYEE_ROSTER.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(e=>`<option value="${e.name}">${e.name} — ${e.position}</option>`).join('')}
-        </select>
+        ${employeePickerHtml('logEmp', EMPLOYEE_ROSTER)}
         <label>Date</label>
         <input type="date" id="logDate" value="${localDate}">
         <label>Time</label>
@@ -2337,10 +2356,7 @@ const BUILDERS = {
     <div class="card" style="max-width:520px; margin-bottom:16px;">
       <h3><span class="ic">🏆</span> Issue a Recognition</h3>
       <label>Employee</label>
-      <select id="recogEmp">
-        <option value="" disabled selected>— Select Employee —</option>
-        ${EMPLOYEE_ROSTER.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(e=>`<option value="${e.name}">${e.name} — ${e.position}</option>`).join('')}
-      </select>
+      ${employeePickerHtml('recogEmp', EMPLOYEE_ROSTER)}
       <label>Award title</label>
       <input type="text" id="recogTitle" placeholder="e.g. Employee of the Month">
       <label>Note</label>
@@ -2505,8 +2521,8 @@ async function submitMyRequestInner(){
   if(Type === 'Schedule Swap'){
     SwapDay = document.getElementById('reqSwapDay').value;
     TheirDay = document.getElementById('diffDayToggle').checked ? document.getElementById('reqTheirDay').value : SwapDay;
-    SwapWithName = document.getElementById('reqSwapWith').value;
-    if(!SwapWithName){ err.textContent="Pick who you're swapping with."; err.style.display='block'; return; }
+    SwapWithName = readEmployeePicker('reqSwapWith');
+    if(!SwapWithName){ err.textContent="Type a name and pick a real match from the suggestions."; err.style.display='block'; return; }
   }
 
   if(editingRequestId){
@@ -2700,13 +2716,13 @@ async function deleteMySuggestion(id){
 let editingEvaluationId = null;
 
 async function submitEvaluationNow(){
-  const EmployeeName = document.getElementById('evalEmp').value;
+  const EmployeeName = readEmployeePicker('evalEmp');
   const Month = document.getElementById('evalMonth').value;
   const Year = document.getElementById('evalYear').value.trim();
   const err = document.getElementById('evalErr');
   const ok = document.getElementById('evalOk');
   err.style.display='none'; ok.style.display='none';
-  if(!EmployeeName){ err.textContent="Select who you're evaluating."; err.style.display='block'; return; }
+  if(!EmployeeName){ err.textContent="Type a name and pick a real match from the suggestions."; err.style.display='block'; return; }
   if(!Year){ err.textContent="Enter a year."; err.style.display='block'; return; }
 
   const anon = document.getElementById('anonEval').checked;
@@ -2762,13 +2778,13 @@ async function deleteMyEvaluation(id){
 }
 
 async function issueRecognitionNow(){
-  const EmployeeName = document.getElementById('recogEmp').value;
+  const EmployeeName = readEmployeePicker('recogEmp');
   const AwardTitle = document.getElementById('recogTitle').value.trim();
   const Note = document.getElementById('recogNote').value.trim();
   const err = document.getElementById('recogErr');
   const ok = document.getElementById('recogOk');
   err.style.display='none'; ok.style.display='none';
-  if(!EmployeeName){ err.textContent="Select an employee."; err.style.display='block'; return; }
+  if(!EmployeeName){ err.textContent="Type a name and pick a real match from the suggestions."; err.style.display='block'; return; }
   if(!AwardTitle){ err.textContent="Give the award a title."; err.style.display='block'; return; }
 
   const btn = document.getElementById('recogSubmitBtn');
@@ -2921,12 +2937,12 @@ async function deleteAttendanceEntry(id){
 }
 
 async function submitAttendanceLog(){
-  const name = document.getElementById('logEmp').value;
+  const name = readEmployeePicker('logEmp');
   const date = document.getElementById('logDate').value;
   const time = document.getElementById('logTime').value;
   const status = document.getElementById('logStatus').value;
   const remarks = document.getElementById('logRemarks').value;
-  if(!name){ alert("Select an employee."); return; }
+  if(!name){ alert("Type a name and pick a real match from the suggestions."); return; }
   if(!date){ alert("Pick a date."); return; }
 
   const btn = document.getElementById('logSubmitBtn');
