@@ -198,13 +198,13 @@
   td.shift-morning, td.shift-afternoon, td.shift-night{border-left-width:3px;}
   .section-title{font-family:'Fraunces',serif; font-size:15px; font-weight:600; margin:0 0 12px;}
   .mgmt-toast{
-    background:var(--panel); border:1px solid var(--gold); border-radius:12px; padding:14px 16px;
-    box-shadow:0 8px 28px rgba(0,0,0,0.5); cursor:pointer; opacity:0; transform:translateX(20px);
-    transition:opacity .25s ease, transform .25s ease;
+    background:var(--panel); border:1px solid var(--gold); border-radius:12px; padding:16px 20px;
+    box-shadow:0 12px 40px rgba(0,0,0,0.6); cursor:pointer; opacity:0; transform:scale(0.92);
+    transition:opacity .25s ease, transform .25s ease; width:100%; text-align:center;
   }
-  .mgmt-toast.show{opacity:1; transform:translateX(0);}
-  .mgmt-toast .tt-title{font-weight:600; font-size:13.5px; color:var(--gold); display:flex; align-items:center; gap:8px;}
-  .mgmt-toast .tt-body{font-size:12.5px; color:var(--text-mute); margin-top:4px;}
+  .mgmt-toast.show{opacity:1; transform:scale(1);}
+  .mgmt-toast .tt-title{font-weight:600; font-size:14.5px; color:var(--gold); display:flex; align-items:center; justify-content:center; gap:8px;}
+  .mgmt-toast .tt-body{font-size:13px; color:var(--text-mute); margin-top:6px;}
   .daycard .dname{font-size:13.5px; font-weight:600; color:var(--text); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;}
   .daycard .venue{font-weight:700; font-size:12.5px; margin-bottom:2px; color:var(--red);}
   .daycard .venue.club88{color:var(--red);}
@@ -221,7 +221,7 @@
 <body>
 
 <!-- ===== LOADING (shown while checking for an existing session) ===== -->
-<div id="mgmtToastContainer" style="position:fixed; top:20px; right:20px; z-index:200; display:flex; flex-direction:column; gap:10px; max-width:320px;"></div>
+<div id="mgmtToastContainer" style="position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:200; display:flex; flex-direction:column; gap:10px; max-width:340px; width:90%; align-items:center;"></div>
 
 <div class="modal-overlay" id="exitConfirmModal">
   <div class="modal-box">
@@ -923,6 +923,7 @@ const MOCK = {
    LOGIN
    ============================================================ */
 const SESSION_KEY = "sv_staff_portal_session";
+const LAST_VIEW_KEY = "sv_staff_portal_last_view";
 
 async function doLoginWithCredentials(u, p){
   if(USE_REMOTE()){
@@ -1092,24 +1093,29 @@ function initMgmtAudio(){
   } catch(e){ /* Web Audio unavailable — alerts will just stay silent */ }
 }
 
+function playBellNote_(ctx, freq, startTime, duration){
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.0001, startTime);
+  gain.gain.exponentialRampToValueAtTime(0.55, startTime + 0.02); // quick soft attack
+  gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration); // natural bell decay
+  osc.connect(gain); gain.connect(ctx.destination);
+  osc.start(startTime);
+  osc.stop(startTime + duration);
+}
+
 function playAlertTone(){
   try{
     if(!mgmtAudioCtx) mgmtAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if(mgmtAudioCtx.state === 'suspended') mgmtAudioCtx.resume();
-    const duration = 5;       // seconds
-    const beepOn = 0.5, beepOff = 0.3;
-    let t = mgmtAudioCtx.currentTime;
-    const endAt = t + duration;
-    while(t < endAt){
-      const osc = mgmtAudioCtx.createOscillator();
-      const gain = mgmtAudioCtx.createGain();
-      osc.type = 'square';
-      osc.frequency.value = 1000;
-      gain.gain.value = 0.9; // 90% volume
-      osc.connect(gain); gain.connect(mgmtAudioCtx.destination);
-      osc.start(t);
-      osc.stop(Math.min(t + beepOn, endAt));
-      t += beepOn + beepOff;
+    const t0 = mgmtAudioCtx.currentTime;
+    // classic "ding-dong" hotel front-desk bell, played twice
+    for(let rep=0; rep<2; rep++){
+      const base = t0 + rep*1.8;
+      playBellNote_(mgmtAudioCtx, 880.00, base, 0.9);        // ding (A5)
+      playBellNote_(mgmtAudioCtx, 659.25, base + 0.35, 1.1); // dong (E5)
     }
   } catch(e){ /* fail silently if audio isn't available */ }
 }
@@ -1210,6 +1216,7 @@ function logout(){
   stopMgmtPolling();
   stopEmpPolling();
   try{ localStorage.removeItem(SESSION_KEY); } catch(e){}
+  try{ localStorage.removeItem(LAST_VIEW_KEY); } catch(e){}
   document.getElementById('loginUser').value = '';
   document.getElementById('loginPass').value = '';
   document.getElementById('appRoot').style.display = 'none';
@@ -1487,6 +1494,19 @@ function setRole(role){
     startMgmtPolling();
   }
   renderNav();
+  restoreLastViewOrDefault();
+}
+
+function isValidViewForRole(id, role){
+  const nav = NAV[role];
+  if(!nav) return false;
+  return nav.some(group => group.items.some(item => item.id === id));
+}
+
+function restoreLastViewOrDefault(){
+  let savedView = null;
+  try{ savedView = localStorage.getItem(LAST_VIEW_KEY); } catch(e){}
+  if(savedView && isValidViewForRole(savedView, currentRole)) activeView = savedView;
   renderView(activeView);
 }
 
@@ -1605,6 +1625,7 @@ function renderView(id, fromHistory){
       safePushState({vh: viewStack.length});
     }
   }
+  try{ localStorage.setItem(LAST_VIEW_KEY, id); } catch(e){} // so a full page refresh (F5) can restore this page, not just Home
 }
 
 function fmtDayLabel(raw){
@@ -2086,7 +2107,7 @@ const BUILDERS = {
     ${attendanceConcernsSection()}
     <div class="card">
       <h3>🔔 Alert Tone</h3>
-      <p class="muted" style="margin-bottom:12px;">While this portal stays open in a browser tab, it checks every 60 seconds for new pending requests, open concerns, or fresh suggestions — and plays a 5-second tone at 90% volume if it finds any. Keep this tab open (even in the background) to hear alerts.</p>
+      <p class="muted" style="margin-bottom:12px;">While this portal stays open in a browser tab, it checks every 60 seconds for new pending requests, open concerns, or fresh suggestions — and plays a "ding-dong" front-desk chime if it finds any. Keep this tab open (even in the background) to hear alerts.</p>
       <button class="btn ghost auto" onclick="playAlertTone()">Test Alert Tone</button>
     </div>`,
 
