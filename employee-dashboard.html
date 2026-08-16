@@ -174,6 +174,8 @@
   .banner b{color:var(--red);}
   .banner.note{background:var(--blue-soft); border-color:rgba(91,143,199,.3); color:#A9C4E4;}
   .banner.note b{color:var(--blue);}
+  .banner.warn2{background:rgba(232,164,90,0.14); border-color:rgba(232,164,90,.35); color:#F0C79A;}
+  .banner.warn2 b{color:var(--gold);}
 
   .badge-recog{display:flex; align-items:center; gap:12px; padding:14px; background:var(--panel-2); border-radius:10px; margin-bottom:10px;}
   .badge-recog .medal{font-size:22px;}
@@ -1140,15 +1142,20 @@ function startMgmtPolling(){
     const newRequests = counts.requests - mgmtAlertBaseline.requests;
     const newConcerns = counts.concerns - mgmtAlertBaseline.concerns;
     const newSuggestions = counts.suggestions - mgmtAlertBaseline.suggestions;
+    mgmtAlertBaseline = counts;
+
+    await loadRemoteData(); // reload first so we can name what actually came in
 
     if(newRequests > 0 || newConcerns > 0 || newSuggestions > 0){
       playAlertTone();
-      if(newRequests > 0) showMgmtToast('📝', 'New Request', `${newRequests} new pending request${newRequests===1?'':'s'} — tap to view`, 'mgmt-requests');
+      if(newRequests > 0){
+        const latestTypes = ALL_REQUESTS.filter(r=>r.Status==='pending').slice(0, newRequests).map(r=>r.Type);
+        const typeList = latestTypes.length ? latestTypes.join(', ') : '';
+        showMgmtToast('📝', 'New Request', `${newRequests} new: ${typeList || 'pending request'} — tap to view`, 'mgmt-requests');
+      }
       if(newConcerns > 0) showMgmtToast('⚠️', 'New Concern', `${newConcerns} new open concern${newConcerns===1?'':'s'} — tap to view`, 'mgmt-concerns');
       if(newSuggestions > 0) showMgmtToast('💡', 'New Suggestion', `${newSuggestions} new suggestion${newSuggestions===1?'':'s'} — tap to view`, 'mgmt-suggestions');
     }
-    mgmtAlertBaseline = counts;
-    await loadRemoteData(); // only pay for the full reload when something actually changed
     renderNav();
     if(['mgmt-home','mgmt-requests','mgmt-concerns','mgmt-suggestions'].includes(activeView)) renderView(activeView);
   }, 60000); // check every 60 seconds
@@ -2199,10 +2206,17 @@ const BUILDERS = {
   "mgmt-requests": ()=>`
     <div class="card">
       <h3><span class="ic">📝</span> All Requests</h3>
+      <p class="muted" style="margin-bottom:12px;">Status can be changed anytime — handy for an accidental click or if the staff member changes their mind on a swap.</p>
       <table>
-        <tr><th>Employee</th><th>Type</th><th>Details</th><th>Date</th><th>Status</th><th></th></tr>
-        ${ALL_REQUESTS.map(r=>`<tr><td>${r.EmployeeName}</td><td>${r.Type}${r.Type==='Schedule Swap' && r.SwapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.SwapDay)} ↔ ${r.SwapWithName}</span>` : ''}</td><td class="muted">${r.Details||''}</td><td>${fmtDateTime(r.Date)}</td><td>${statusPill(r.Status)}</td>
-          <td>${r.Status==='pending' ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="setRequestStatus('${r.ID}','approved')">Approve</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="setRequestStatus('${r.ID}','declined')">Decline</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="6" class="muted">No requests yet.</td></tr>`}
+        <tr><th>Employee</th><th>Type</th><th>Details</th><th>Date</th><th>Status</th></tr>
+        ${ALL_REQUESTS.map(r=>`<tr><td>${r.EmployeeName}</td><td>${r.Type}${r.Type==='Schedule Swap' && r.SwapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.SwapDay)} ↔ ${r.SwapWithName}</span>` : ''}</td><td class="muted">${r.Details||''}</td><td>${fmtDateTime(r.Date)}</td>
+          <td>
+            <select onchange="setRequestStatus('${r.ID}', this.value)">
+              <option value="pending" ${r.Status==='pending'?'selected':''}>Pending</option>
+              <option value="approved" ${r.Status==='approved'?'selected':''}>Approved</option>
+              <option value="declined" ${r.Status==='declined'?'selected':''}>Declined</option>
+            </select>
+          </td></tr>`).join('') || `<tr><td colspan="5" class="muted">No requests yet.</td></tr>`}
       </table>
     </div>`,
 
@@ -2316,13 +2330,15 @@ function toggleSwapFields(){
 }
 
 function shiftSummaryFor(row, dayIndex){
-  if(!row) return 'not found in current Schedule';
+  if(!row) return {text:'not found in current Schedule', conflict:true};
   const p = parseScheduleCell(row.cells[dayIndex]);
-  if(p.type==='off') return 'Day Off';
-  if(p.type==='leave') return 'On Leave';
-  if(p.type==='blocked' || p.type==='empty') return 'Not scheduled';
-  return `${p.time} · ${p.position}${p.venue==='C88'?' · Club 88':''}`;
+  if(p.type==='off') return {text:'Day Off', conflict:false};
+  if(p.type==='leave') return {text:'On Leave', conflict:true};
+  if(p.type==='blocked' || p.type==='empty') return {text:'Not scheduled', conflict:false};
+  return {text:`${p.time} · ${p.position}${p.venue==='C88'?' · Club 88':''}`, conflict:false};
 }
+
+let lastSwapConflictKey = null; // avoids re-popping the same alert repeatedly while the person keeps the same selection
 
 function updateSwapPreview(){
   const daySel = document.getElementById('reqSwapDay');
@@ -2330,14 +2346,26 @@ function updateSwapPreview(){
   const preview = document.getElementById('swapPreview');
   const dayIndex = daySel.selectedIndex;
   const withName = withSel.value;
-  if(!withName){ preview.style.display = 'none'; return; }
+  if(!withName){ preview.style.display = 'none'; lastSwapConflictKey = null; return; }
 
   const myRow = findMyScheduleRow(CURRENT_EMPLOYEE.name);
   const theirRow = findMyScheduleRow(withName);
   const dayLabel = fmtDayLabel(SCHEDULE_DAYS[dayIndex]);
+  const mine = shiftSummaryFor(myRow, dayIndex);
+  const theirs = shiftSummaryFor(theirRow, dayIndex);
+  const hasConflict = mine.conflict || theirs.conflict;
 
-  preview.innerHTML = `<b>${dayLabel}</b><br>You: ${shiftSummaryFor(myRow, dayIndex)}<br>${withName}: ${shiftSummaryFor(theirRow, dayIndex)}`;
+  preview.className = hasConflict ? 'banner warn2' : 'banner note';
+  preview.innerHTML = hasConflict
+    ? `⚠️ <b>Conflict on ${dayLabel}</b><br>You: ${mine.text}<br>${withName}: ${theirs.text}<br>${mine.conflict ? "You're" : withName+" is"} on approved leave that day — this swap isn't available.`
+    : `<b>${dayLabel}</b><br>You: ${mine.text}<br>${withName}: ${theirs.text}`;
   preview.style.display = 'block';
+
+  const key = dayIndex + '|' + withName;
+  if(hasConflict && lastSwapConflictKey !== key){
+    alert(`On ${dayLabel}, ${mine.conflict ? "you're" : withName + " is"} on approved leave — this swap isn't available for that day.`);
+  }
+  lastSwapConflictKey = hasConflict ? key : null;
 }
 
 async function submitMyRequest(){
