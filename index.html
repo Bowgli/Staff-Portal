@@ -2730,15 +2730,22 @@ async function resolveConcern(id){
 }
 
 async function setRequestStatus(id, status){
+  const req = ALL_REQUESTS.find(r=>r.ID===id);
+  const previousStatus = req ? req.Status : null;
+  if(req) req.Status = status; // optimistic — reflects instantly, no need to wait on the network
+  renderView('mgmt-requests');
+
   if(USE_REMOTE()){
     const r = await apiPost('updateRequestStatus', {id, status});
-    if(!r.ok){ alert(r.error || "Couldn't update."); return; }
-    await loadRemoteData();
-  } else {
-    const r = ALL_REQUESTS.find(r=>r.ID===id);
-    if(r) r.Status = status;
+    if(!r.ok){
+      if(req) req.Status = previousStatus; // revert since it didn't actually save
+      alert(r.error || "Couldn't update.");
+      renderView('mgmt-requests');
+      return;
+    }
+    await loadRemoteData(); // pick up any side effects too, e.g. the Schedule tab changing from a swap
+    renderView('mgmt-requests');
   }
-  renderView('mgmt-requests');
 }
 
 function toggleAnnTarget(){
