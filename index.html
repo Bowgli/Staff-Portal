@@ -1059,7 +1059,7 @@ async function loadRemoteData(){
     MY_EVALUATIONS = ALL_EVALUATIONS.filter(e => CURRENT_EMPLOYEE && e.EmployeeName === CURRENT_EMPLOYEE.name);
     MY_GIVEN_EVALUATIONS = ALL_EVALUATIONS.filter(e => CURRENT_EMPLOYEE && e.EvaluatedBy === CURRENT_EMPLOYEE.fullName);
     MOCK.requests = requests.filter(r => r.EmployeeName === (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.name))
-      .map(r => ({type:r.Type, date:r.Date, status:r.Status, id:r.ID, details:r.Details, swapDay:r.SwapDay, swapWithName:r.SwapWithName}));
+      .map(r => ({type:r.Type, date:r.Date, status:r.Status, id:r.ID, details:r.Details, swapDay:r.SwapDay, theirDay:r.TheirDay, swapWithName:r.SwapWithName}));
     ALL_REQUESTS = requests.slice().reverse();
     EMPLOYEE_ACCOUNTS.length = 0;
     accountsStatus.forEach(a => EMPLOYEE_ACCOUNTS.push({employeeName:a.employeeName, fullName:a.fullName, username:a.username, role:"employee"}));
@@ -1918,13 +1918,18 @@ const BUILDERS = {
         <label>Request type</label>
         <select id="reqType" onchange="toggleSwapFields()"><option>Leave Request</option><option>Schedule Swap</option><option>Uniform Replacement</option><option>Other</option></select>
         <div id="swapFields" style="display:none;">
-          <label>Day to swap</label>
-          <select id="reqSwapDay" onchange="updateSwapPreview()">${SCHEDULE_DAYS.map(d=>`<option value="${d}">${fmtDayLabel(d)}</option>`).join('')}</select>
+          <label>Your day to give up</label>
+          <select id="reqSwapDay" onchange="syncTheirDayDefault(); updateSwapPreview()">${SCHEDULE_DAYS.map(d=>`<option value="${d}">${fmtDayLabel(d)}</option>`).join('')}</select>
           <label>Swap with</label>
           <select id="reqSwapWith" onchange="updateSwapPreview()">
             <option value="" disabled selected>— Select Employee —</option>
             ${EMPLOYEE_ROSTER.filter(e=>e.name!==CURRENT_EMPLOYEE.name).slice().sort((a,b)=>a.name.localeCompare(b.name)).map(e=>`<option value="${e.name}">${e.name} — ${e.position}</option>`).join('')}
           </select>
+          <div class="checkbox-row"><input type="checkbox" id="diffDayToggle" onchange="toggleDiffDay()"><label for="diffDayToggle">They're giving up a different day (not a same-day trade)</label></div>
+          <div id="theirDayField" style="display:none;">
+            <label>Their day you're taking in exchange</label>
+            <select id="reqTheirDay" onchange="updateSwapPreview()">${SCHEDULE_DAYS.map(d=>`<option value="${d}">${fmtDayLabel(d)}</option>`).join('')}</select>
+          </div>
           <div id="swapPreview" class="banner note" style="margin-top:4px; margin-bottom:14px; display:none;"></div>
         </div>
         <label>Details</label>
@@ -1937,7 +1942,7 @@ const BUILDERS = {
         <h3>Your Request History</h3>
         <table>
           <tr><th>Type</th><th>Date</th><th>Status</th><th></th></tr>
-          ${MOCK.requests.map(r=>`<tr><td>${r.type}${r.type==='Schedule Swap' && r.swapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.swapDay)} ↔ ${r.swapWithName}</span>` : ''}</td><td>${fmtDateTime(r.date)}</td><td>${statusPill(r.status)}</td>
+          ${MOCK.requests.map(r=>`<tr><td>${r.type}${r.type==='Schedule Swap' && r.swapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.swapDay)}${r.theirDay && r.theirDay!==r.swapDay ? ' ↔ '+fmtDayLabel(r.theirDay) : ''} ↔ ${r.swapWithName}</span>` : ''}</td><td>${fmtDateTime(r.date)}</td><td>${statusPill(r.status)}</td>
             <td>${r.status==='pending' ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditRequest('${r.id}')">Edit</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteMyRequest('${r.id}')">Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No requests yet.</td></tr>`}
         </table>
       </div>
@@ -2213,7 +2218,7 @@ const BUILDERS = {
       <p class="muted" style="margin-bottom:12px;">Status can be changed anytime — handy for an accidental click or if the staff member changes their mind on a swap.</p>
       <table>
         <tr><th>Employee</th><th>Type</th><th>Details</th><th>Date</th><th>Status</th></tr>
-        ${ALL_REQUESTS.map(r=>`<tr><td>${r.EmployeeName}</td><td>${r.Type}${r.Type==='Schedule Swap' && r.SwapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.SwapDay)} ↔ ${r.SwapWithName}</span>` : ''}</td><td class="muted">${r.Details||''}</td><td>${fmtDateTime(r.Date)}</td>
+        ${ALL_REQUESTS.map(r=>`<tr><td>${r.EmployeeName}</td><td>${r.Type}${r.Type==='Schedule Swap' && r.SwapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.SwapDay)}${r.TheirDay && r.TheirDay!==r.SwapDay ? ' ↔ '+fmtDayLabel(r.TheirDay) : ''} ↔ ${r.SwapWithName}</span>` : ''}</td><td class="muted">${r.Details||''}</td><td>${fmtDateTime(r.Date)}</td>
           <td>
             <select class="status-select ${r.Status}" onchange="this.className='status-select '+this.value; setRequestStatus('${r.ID}', this.value)">
               <option value="pending" ${r.Status==='pending'?'selected':''}>Pending</option>
@@ -2333,6 +2338,19 @@ function toggleSwapFields(){
   if(isSwap) updateSwapPreview();
 }
 
+function toggleDiffDay(){
+  const on = document.getElementById('diffDayToggle').checked;
+  document.getElementById('theirDayField').style.display = on ? 'block' : 'none';
+  if(!on) syncTheirDayDefault();
+  updateSwapPreview();
+}
+function syncTheirDayDefault(){
+  // keeps TheirDay matching MyDay whenever the "different day" checkbox is off
+  if(!document.getElementById('diffDayToggle').checked){
+    document.getElementById('reqTheirDay').selectedIndex = document.getElementById('reqSwapDay').selectedIndex;
+  }
+}
+
 function shiftSummaryFor(row, dayIndex){
   if(!row) return {text:'not found in current Schedule', conflict:true};
   const p = parseScheduleCell(row.cells[dayIndex]);
@@ -2346,28 +2364,36 @@ let lastSwapConflictKey = null; // avoids re-popping the same alert repeatedly w
 
 function updateSwapPreview(){
   const daySel = document.getElementById('reqSwapDay');
+  const theirDaySel = document.getElementById('reqTheirDay');
   const withSel = document.getElementById('reqSwapWith');
   const preview = document.getElementById('swapPreview');
-  const dayIndex = daySel.selectedIndex;
+  const myDayIndex = daySel.selectedIndex;
+  const theirDayIndex = document.getElementById('diffDayToggle').checked ? theirDaySel.selectedIndex : myDayIndex;
   const withName = withSel.value;
   if(!withName){ preview.style.display = 'none'; lastSwapConflictKey = null; return; }
 
   const myRow = findMyScheduleRow(CURRENT_EMPLOYEE.name);
   const theirRow = findMyScheduleRow(withName);
-  const dayLabel = fmtDayLabel(SCHEDULE_DAYS[dayIndex]);
-  const mine = shiftSummaryFor(myRow, dayIndex);
-  const theirs = shiftSummaryFor(theirRow, dayIndex);
+  const myDayLabel = fmtDayLabel(SCHEDULE_DAYS[myDayIndex]);
+  const theirDayLabel = fmtDayLabel(SCHEDULE_DAYS[theirDayIndex]);
+  const mine = shiftSummaryFor(myRow, myDayIndex);
+  const theirs = shiftSummaryFor(theirRow, theirDayIndex);
   const hasConflict = mine.conflict || theirs.conflict;
+  const sameDay = myDayIndex === theirDayIndex;
 
   preview.className = hasConflict ? 'banner warn2' : 'banner note';
-  preview.innerHTML = hasConflict
-    ? `⚠️ <b>Conflict on ${dayLabel}</b><br>Your Given Schedule: ${mine.text}<br>${withName}'s Given Schedule: ${theirs.text}<br>${mine.conflict ? "You're" : withName+" is"} on approved leave that day — this swap isn't available.`
-    : `<b>${dayLabel}</b><br>Your Given Schedule: <b>${mine.text}</b> → Exchange to: <b>${theirs.text}</b><br>${withName}'s Given Schedule: <b>${theirs.text}</b> → Exchange to: <b>${mine.text}</b>`;
+  if(hasConflict){
+    preview.innerHTML = `⚠️ <b>Conflict</b><br>Your Given Schedule (${myDayLabel}): ${mine.text}<br>${withName}'s Given Schedule (${theirDayLabel}): ${theirs.text}<br>${mine.conflict ? "You're" : withName+" is"} on approved leave that day — this swap isn't available.`;
+  } else if(sameDay){
+    preview.innerHTML = `<b>${myDayLabel}</b><br>Your Given Schedule: <b>${mine.text}</b> → Exchange to: <b>${theirs.text}</b><br>${withName}'s Given Schedule: <b>${theirs.text}</b> → Exchange to: <b>${mine.text}</b>`;
+  } else {
+    preview.innerHTML = `Your Given Schedule (${myDayLabel}): <b>${mine.text}</b> → Exchange to: <b>${theirs.text}</b><br>${withName}'s Given Schedule (${theirDayLabel}): <b>${theirs.text}</b> → Exchange to: <b>${mine.text}</b>`;
+  }
   preview.style.display = 'block';
 
-  const key = dayIndex + '|' + withName;
+  const key = myDayIndex + '|' + theirDayIndex + '|' + withName;
   if(hasConflict && lastSwapConflictKey !== key){
-    alert(`On ${dayLabel}, ${mine.conflict ? "you're" : withName + " is"} on approved leave — this swap isn't available for that day.`);
+    alert(`${mine.conflict ? "You're" : withName + " is"} on approved leave that day — this swap isn't available.`);
   }
   lastSwapConflictKey = hasConflict ? key : null;
 }
@@ -2380,9 +2406,10 @@ async function submitMyRequest(){
   err.style.display='none'; ok.style.display='none';
   if(!Details){ err.textContent="Add some details."; err.style.display='block'; return; }
 
-  let SwapDay = '', SwapWithName = '';
+  let SwapDay = '', TheirDay = '', SwapWithName = '';
   if(Type === 'Schedule Swap'){
     SwapDay = document.getElementById('reqSwapDay').value;
+    TheirDay = document.getElementById('diffDayToggle').checked ? document.getElementById('reqTheirDay').value : SwapDay;
     SwapWithName = document.getElementById('reqSwapWith').value;
     if(!SwapWithName){ err.textContent="Pick who you're swapping with."; err.style.display='block'; return; }
   }
@@ -2390,12 +2417,12 @@ async function submitMyRequest(){
   if(editingRequestId){
     btnLoading('reqSubmitBtn', 'Updating...');
     if(USE_REMOTE()){
-      const r = await apiPostMinDelay('editRequest', {id:editingRequestId, Type, Details, SwapDay, SwapWithName});
+      const r = await apiPostMinDelay('editRequest', {id:editingRequestId, Type, Details, SwapDay, TheirDay, SwapWithName});
       if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('reqSubmitBtn','Update Request'); return; }
       await loadRemoteData();
     } else {
       const req = MOCK.requests.find(x=>x.id===editingRequestId);
-      if(req){ req.type = Type; req.details = Details; req.swapDay = SwapDay; req.swapWithName = SwapWithName; }
+      if(req){ req.type = Type; req.details = Details; req.swapDay = SwapDay; req.theirDay = TheirDay; req.swapWithName = SwapWithName; }
     }
     editingRequestId = null;
     await btnSent('reqSubmitBtn');
@@ -2407,11 +2434,11 @@ async function submitMyRequest(){
 
   btnLoading('reqSubmitBtn');
   if(USE_REMOTE()){
-    const r = await apiPostMinDelay('submitRequest', {EmployeeName: CURRENT_EMPLOYEE.name, Type, Details, SwapDay, SwapWithName});
+    const r = await apiPostMinDelay('submitRequest', {EmployeeName: CURRENT_EMPLOYEE.name, Type, Details, SwapDay, TheirDay, SwapWithName});
     if(!r.ok){ err.textContent = r.error || "Couldn't submit."; err.style.display='block'; btnReset('reqSubmitBtn','Submit Request'); return; }
     await loadRemoteData();
   } else {
-    MOCK.requests.unshift({type:Type, date:"Just now", status:"pending", swapDay:SwapDay, swapWithName:SwapWithName});
+    MOCK.requests.unshift({type:Type, date:"Just now", status:"pending", swapDay:SwapDay, theirDay:TheirDay, swapWithName:SwapWithName});
   }
   await btnSent('reqSubmitBtn');
   document.getElementById('reqDetails').value='';
@@ -2428,6 +2455,11 @@ function startEditRequest(id){
   if(r.type === 'Schedule Swap'){
     if(r.swapDay) document.getElementById('reqSwapDay').value = r.swapDay;
     if(r.swapWithName) document.getElementById('reqSwapWith').value = r.swapWithName;
+    const diff = r.theirDay && r.theirDay !== r.swapDay;
+    document.getElementById('diffDayToggle').checked = diff;
+    document.getElementById('theirDayField').style.display = diff ? 'block' : 'none';
+    if(diff) document.getElementById('reqTheirDay').value = r.theirDay;
+    updateSwapPreview();
   }
   editingRequestId = id;
   document.getElementById('reqSubmitBtn').textContent = 'Update Request';
