@@ -340,7 +340,8 @@
    replace MOCK / SCHEDULE_SHEET / ATTENDANCE_LOG / USERS with
    fetch() calls that return the same shape.
    ============================================================ */
-const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbyE6p142bIZ_fei_VjP07C6Dd2MPFha0zgZXCi0x2wE3XdusjfnJS6FyvdVu98uNvPtLQ/exec"; // paste your deployed Apps Script Web App URL here once ready
+const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbyE6p142bIZ_fei_VjP07C6Dd2MPFha0zgZXCi0x2wE3XdusjfnJS6FyvdVu98uNvPtLQ/exec
+"; // paste your deployed Apps Script Web App URL here once ready
 const USE_REMOTE = () => SHEET_API_URL.trim().length > 0;
 
 async function apiGet(action){
@@ -822,11 +823,11 @@ function ratingStars(avg){
 }
 
 const RESPONSIBILITIES = {
-  "Shift Manager": ["Oversee overall shift operations across the gaming floor","Ensure compliance with company policy and gaming regulations","Approve schedule changes and handle escalated issues","Coordinate between security, cashier, and floor teams","Prepare shift-end reports and handoff notes"],
-  "Floor Supervisor": ["Monitor gaming floor activity and machine performance","Address customer concerns and disputes on the floor","Supervise floor attendants and cashiers on shift","Ensure prompt response to drink, snack, and service calls","Enforce house rules and security protocols"],
+  "Shift Manager": ["Ensure smooth operation of the entire shift.","Monitor customer service quality and employee performance.","Assign responsibilities and follow up on completion.","Address attendance, conduct, and performance issues.","Support supervisors and employees in maintaining company standards.","Ensure customers receive the best possible experience."],
+  "Floor Supervisor": ["Lead by example and demonstrate proper work behavior.","Monitor employee performance and ensure duties are completed.","Remind staff about customer service standards and company policies.","Ensure employees are not distracted by phones or unnecessary conversations.","Support employees and assist in resolving customer concerns.","Maintain proper communication between departments."],
   "Slot Tech Supervisor": ["Oversee the slot technician team and maintenance schedule","Troubleshoot escalated machine malfunctions","Ensure parts and inventory availability for repairs","Train and evaluate slot technicians","Report recurring machine issues to management"],
   "Assistant Slot Tech Supervisor": ["Support the Slot Tech Supervisor in daily technical operations","Assist with machine troubleshooting and repairs","Monitor technician task completion and response times","Step in as supervisor when needed"],
-  "Slot Technician": ["Respond to machine service requests (jams, payout errors, card reader issues)","Perform routine machine maintenance and cleaning","Log completed service tickets","Report unresolved issues to the Slot Tech Supervisor"],
+  "Slot Technician": ["Respond quickly to machine problems and customer concerns.","Keep all gaming machines in good working condition.","Perform regular inspections, cleaning, and preventive maintenance on gaming machines.","Regularly check the CCTV every hour to ensure all cameras are recording properly and conduct floor monitor as well in the system.","Assist customers professionally whenever technical assistance is required.","Stay visible on the gaming floor when not handling repairs so customers and staff can easily approach you.","Avoid staying in the CCTV room for a long period unless reviewing an incident or monitoring a specific concern.","If you notice suspicious customer behavior or unusual activities, immediately inform the Floor Shift Manager or Floor Supervisor and assist with CCTV monitoring when necessary.","Assist with giving raffle tickets or other operational tasks when needed; however, always prioritize machine issues and repairs.","When preparing the Technical Log Report, please use the office PC whenever available instead of using a personal phone. This helps maintain proper documentation and avoids any misunderstanding that you are using your phone for personal reasons while on duty.","Report any machine issues, equipment damage, or technical concerns to your supervisor immediately.","Work as a team and always provide fast, professional, and helpful service to customers and employees."],
   "Cashier": ["Provide friendly, courteous, and professional service to every customer.","Process all cash, voucher, and other transactions accurately, efficiently, and honestly.","Count and verify cash regularly, preferably every hour or as required, to ensure accurate cash handling.","Assist customers with voucher exchanges, payments, and other cashier-related concerns.","Verify transactions carefully before completing any cash or voucher exchange.","Keep the cashier area clean, organized, secure, and presentable at all times.","Maintain proper control and security of company cash, vouchers, receipts, and other cashier materials.","Communicate clearly with supervisors and other departments regarding customer concerns or operational issues.","Protect customer information, company funds, and company assets at all times.","Avoid using your cellphone for personal reasons while on duty to remain focused and prevent distractions.","Report any cash shortage, overage, incorrect transaction, or unusual activity to your supervisor immediately.","Never leave the cashier station unattended without proper authorization or relief.","Follow proper procedures when opening, closing, counting, and turning over cash.","Maintain accuracy, honesty, integrity, and confidentiality in all cashier duties.","Follow all company policies, procedures, and cash-handling guidelines at all times.","Work as a team and provide professional and helpful service to customers and coworkers."],
   "Floor Attendant": ["Welcome and assist customers on the gaming floor.","Monitor assigned areas and provide excellent customer service.","Offer drinks and snacks to customers.","Keep machines, chairs, and surrounding areas clean.","Provide excellent customer service by assisting customers with voucher exchanges. When needed, the attendant should take the customer's voucher to the Cashier for redemption, allowing the customer to remain comfortably seated and focused on their gameplay, ensuring a smooth and enjoyable gaming experience.","Report machine issues or customer concerns immediately.","Avoid unnecessary phone use and maintain floor visibility."],
   "Security Officer": ["Keep customers, employees, and company property safe and secure.","Stay alert, attentive, and visible in your assigned area.","Greet and assist customers when they need help, information, or directions.","Watch for suspicious, unusual, or unsafe behavior and report it immediately.","Monitor your assigned area and promptly respond to security concerns.","Assist during customer concerns, emergencies, accidents, or other situations when needed.","Avoid unnecessary conversations or activities that may distract you from your security duties.","Complete all required reports accurately and on time, including the Headcount Report, Patrol Report, and Incident Report when required.","Inform and obtain approval from the Floor Shift Manager or Floor Supervisor before leaving your assigned post for patrol or other duties.","Conduct regular patrols and checks of assigned areas according to company procedures.","Regularly check the water tank or dispenser and refill it when needed.","Report damaged equipment, unsafe conditions, suspicious activities, or other concerns immediately.","Maintain professionalism and remain respectful when dealing with customers, employees, and other departments.","Work closely with other departments and provide assistance when needed while keeping security and customer safety as the top priority.","Follow all company security policies, procedures, and safety guidelines at all times."],
@@ -1460,6 +1461,19 @@ const TITLES = {
 
 let viewStack = [];
 
+/* Some browsers (Brave, Chrome) restrict History API calls when the
+   page is opened directly as a file:// URL rather than served over
+   http/https — pushState/go can throw "Unsafe attempt to load URL"
+   in that case. These wrappers make sure that never breaks login,
+   navigation, or anything else — the back-button convenience
+   feature just silently does less in that situation. */
+function safePushState(state){
+  try{ history.pushState(state, '', location.href); } catch(e){ /* file:// origin restriction — ignore */ }
+}
+function safeHistoryGo(delta){
+  try{ history.go(delta); } catch(e){ /* file:// origin restriction — ignore */ }
+}
+
 const RESTRICTED_VIEWS = ['mgmt-accounts', 'mgmt-concerns'];
 
 function renderView(id, fromHistory){
@@ -1479,7 +1493,7 @@ function renderView(id, fromHistory){
     // history entry so the phone back button can step back to it
     if(viewStack[viewStack.length-1] !== id){
       viewStack.push(id);
-      history.pushState({vh: viewStack.length}, '', location.href);
+      safePushState({vh: viewStack.length});
     }
   }
 }
@@ -2687,7 +2701,7 @@ async function submitAttendanceLog(){
 let exitConfirmed = false;
 let exitBaseState = 0;
 
-history.pushState({vh:0}, '', location.href); // base entry so we always have somewhere to land
+safePushState({vh:0}); // base entry so we always have somewhere to land
 exitBaseState = 1;
 
 window.addEventListener('popstate', function(){
@@ -2702,7 +2716,7 @@ window.addEventListener('popstate', function(){
   }
 
   // nothing left in our own view history — this is a real "leave the portal" attempt
-  history.pushState({vh:0}, '', location.href); // neutralize this pop, then ask
+  safePushState({vh:0}); // neutralize this pop, then ask
   document.getElementById('exitConfirmModal').classList.add('active');
 });
 
@@ -2712,7 +2726,7 @@ function cancelExitPortal(){
 function confirmExitPortal(){
   exitConfirmed = true;
   document.getElementById('exitConfirmModal').classList.remove('active');
-  history.go(-(viewStack.length + exitBaseState));
+  safeHistoryGo(-(viewStack.length + exitBaseState));
 }
 
 /* wire up enter-key login without relying on DOMContentLoaded race */
