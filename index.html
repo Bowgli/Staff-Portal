@@ -2361,8 +2361,8 @@ function updateSwapPreview(){
 
   preview.className = hasConflict ? 'banner warn2' : 'banner note';
   preview.innerHTML = hasConflict
-    ? `⚠️ <b>Conflict on ${dayLabel}</b><br>You: ${mine.text}<br>${withName}: ${theirs.text}<br>${mine.conflict ? "You're" : withName+" is"} on approved leave that day — this swap isn't available.`
-    : `<b>${dayLabel}</b><br>You: ${mine.text}<br>${withName}: ${theirs.text}`;
+    ? `⚠️ <b>Conflict on ${dayLabel}</b><br>Your Given Schedule: ${mine.text}<br>${withName}'s Given Schedule: ${theirs.text}<br>${mine.conflict ? "You're" : withName+" is"} on approved leave that day — this swap isn't available.`
+    : `<b>${dayLabel}</b><br>Your Given Schedule: <b>${mine.text}</b> → Exchange to: <b>${theirs.text}</b><br>${withName}'s Given Schedule: <b>${theirs.text}</b> → Exchange to: <b>${mine.text}</b>`;
   preview.style.display = 'block';
 
   const key = dayIndex + '|' + withName;
