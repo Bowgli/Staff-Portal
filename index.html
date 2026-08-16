@@ -1609,15 +1609,40 @@ function renderView(id, fromHistory){
 
 function fmtDayLabel(raw){
   if(!raw) return '';
+  const str = String(raw).trim();
+
+  // A text like "Sunday 8/23" or "Sun 8/23" is genuinely ambiguous to
+  // re-parse via new Date(...) — different browsers can land on
+  // different actual dates, which then computes the WRONG weekday
+  // name even though the month/day shown looks right. So: if the
+  // text looks like that pattern, ignore whatever weekday word is in
+  // it and recompute the weekday ourselves from just the numbers —
+  // that's unambiguous and always correct.
+  const md = str.match(/(\d{1,2})\/(\d{1,2})/);
+  const looksInformal = /^[A-Za-z]+\.?,?\s*\d{1,2}\/\d{1,2}$/.test(str);
+  if(md && looksInformal){
+    const month = parseInt(md[1], 10), day = parseInt(md[2], 10);
+    const year = new Date().getFullYear(); // schedule dates are always near-term, so "this year" is a safe assumption
+    const explicit = new Date(year, month-1, day, 12, 0, 0);
+    if(!isNaN(explicit)) return explicit.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'});
+  }
+
   const d = new Date(raw);
-  if(isNaN(d)) return String(raw); // not parseable — show whatever text was actually in the cell
+  if(isNaN(d)) return str; // not parseable at all — show whatever text was actually in the cell
   return d.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'});
 }
 function isScheduleDayToday(raw){
   if(!raw) return false;
+  const str = String(raw).trim();
+  const md = str.match(/(\d{1,2})\/(\d{1,2})/);
+  const looksInformal = /^[A-Za-z]+\.?,?\s*\d{1,2}\/\d{1,2}$/.test(str);
+  const now = new Date();
+  if(md && looksInformal){
+    const month = parseInt(md[1], 10), day = parseInt(md[2], 10);
+    return month === (now.getMonth()+1) && day === now.getDate();
+  }
   const d = new Date(raw);
   if(isNaN(d)) return false;
-  const now = new Date();
   return d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth() && d.getDate()===now.getDate();
 }
 function fmtDateTime(raw){
@@ -2436,7 +2461,18 @@ function updateSwapPreview(){
   lastSwapConflictKey = hasConflict ? key : null;
 }
 
+let isSubmittingRequest = false;
 async function submitMyRequest(){
+  if(isSubmittingRequest) return; // blocks any duplicate/overlapping submit attempt outright
+  isSubmittingRequest = true;
+  try{
+    await submitMyRequestInner();
+  } finally {
+    isSubmittingRequest = false;
+  }
+}
+
+async function submitMyRequestInner(){
   const Type = document.getElementById('reqType').value;
   const Details = document.getElementById('reqDetails').value.trim();
   const err = document.getElementById('reqErr');
@@ -2925,6 +2961,26 @@ function confirmExitPortal(){
   document.getElementById('exitConfirmModal').classList.remove('active');
   safeHistoryGo(-(viewStack.length + exitBaseState));
 }
+
+/* Guards any submit-style function against firing twice for one user
+   action (e.g. a slow network leaving a window where a second click
+   or trigger could slip through). Wraps the function in place —
+   each wrapped function gets its own independent lock. */
+function guardAgainstDoubleSubmit(fn){
+  let inFlight = false;
+  return async function(...args){
+    if(inFlight) return;
+    inFlight = true;
+    try{ return await fn.apply(this, args); }
+    finally{ inFlight = false; }
+  };
+}
+submitMyConcern = guardAgainstDoubleSubmit(submitMyConcern);
+submitMySuggestion = guardAgainstDoubleSubmit(submitMySuggestion);
+submitEvaluationNow = guardAgainstDoubleSubmit(submitEvaluationNow);
+issueRecognitionNow = guardAgainstDoubleSubmit(issueRecognitionNow);
+postAnnouncement = guardAgainstDoubleSubmit(postAnnouncement);
+submitAttendanceLog = guardAgainstDoubleSubmit(submitAttendanceLog);
 
 /* wire up enter-key login without relying on DOMContentLoaded race */
 document.getElementById('loginUser').addEventListener('keydown', e=>{ if(e.key==='Enter') attemptLogin(); });
