@@ -1106,7 +1106,10 @@ function playBellNote_(ctx, freq, startTime, duration){
   osc.stop(startTime + duration);
 }
 
+let alertTonePlaying = false;
 async function playAlertTone(){
+  if(alertTonePlaying) return; // don't stack a new chime on top of one still ringing — that's what made it sound "off"
+  alertTonePlaying = true;
   try{
     if(!mgmtAudioCtx) mgmtAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if(mgmtAudioCtx.state === 'suspended') await mgmtAudioCtx.resume(); // must be awaited, or notes scheduled right after can get silently dropped
@@ -1119,7 +1122,8 @@ async function playAlertTone(){
       playBellNote_(mgmtAudioCtx, 880.00, base, 0.9);        // ding (A5)
       playBellNote_(mgmtAudioCtx, 659.25, base + 0.35, 1.1); // dong (E5)
     }
-  } catch(e){ /* fail silently if audio isn't available */ }
+    setTimeout(()=>{ alertTonePlaying = false; }, reps*pairSpacing*1000 + 1200);
+  } catch(e){ alertTonePlaying = false; /* fail silently if audio isn't available */ }
 }
 
 function getMgmtAlertCounts(){
@@ -1150,7 +1154,13 @@ function showMgmtToast(icon, title, body, targetView){
     el.classList.remove('show');
     setTimeout(()=> el.remove(), 300);
     activeToastCount--;
-    if(activeToastCount <= 0) backdrop.style.opacity = '0';
+    if(activeToastCount <= 0){
+      backdrop.style.opacity = '0';
+      // fully remove it from the DOM (not just fade it) — an
+      // invisible full-screen element left behind was silently
+      // eating every click on the page until a manual refresh
+      setTimeout(()=>{ if(activeToastCount <= 0 && backdrop.parentNode) backdrop.remove(); }, 320);
+    }
     if(navigate) renderView(targetView);
   };
   el.addEventListener('click', (e)=>{
