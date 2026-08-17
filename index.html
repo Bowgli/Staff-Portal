@@ -592,9 +592,10 @@ function getUniqueScheduleTimes(){
   }));
   return Array.from(set).sort();
 }
-const HIDDEN_POSITION_OPTIONS = new Set(["Drop/Main", "Drop/Supervise", "Maint/Drop", "Supervise/Maint"]);
+const HIDDEN_POSITION_OPTIONS = new Set(["Drop/Main", "Drop/Supervise", "Maint/Drop", "Supervise/Maint", "Drop/Maint"]);
+const EXTRA_POSITION_OPTIONS = ["Slot Tech", "Tech Supervisor"]; // always offered, even if not yet used anywhere in the schedule
 function getUniqueSchedulePositions(){
-  const set = new Set();
+  const set = new Set(EXTRA_POSITION_OPTIONS);
   [...SCHEDULE_ROWS, ...NEXT_SCHEDULE_ROWS].forEach(r => r.cells.forEach(c => {
     const p = parseScheduleCell(c);
     if(p.type === 'shift' && p.position && !HIDDEN_POSITION_OPTIONS.has(p.position)) set.add(p.position);
