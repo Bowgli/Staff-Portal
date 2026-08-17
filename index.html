@@ -320,7 +320,7 @@
       <div class="who">
         <div id="soundAlertToggle" style="display:none;">
           <button class="btn ghost auto" onclick="toggleSoundAlerts()" style="padding:8px 14px; font-size:12px; display:flex; align-items:center; gap:6px; white-space:nowrap;">
-            <span id="soundAlertIcon">🔔</span><span id="soundAlertLabel">Sound Alerts: On</span>
+            <span id="soundAlertIcon">🔔</span><span id="soundAlertLabel">Disable Sound Alert</span>
           </button>
         </div>
         <div>
@@ -1109,7 +1109,7 @@ function updateSoundAlertUI(){
   const icon = document.getElementById('soundAlertIcon');
   const label = document.getElementById('soundAlertLabel');
   if(icon) icon.textContent = on ? '🔔' : '🔕';
-  if(label) label.textContent = on ? 'Sound Alerts: On' : 'Sound Alerts: Off';
+  if(label) label.textContent = on ? 'Disable Sound Alert' : 'Enable Sound Alert';
 }
 async function toggleSoundAlerts(){
   const nowOn = !soundAlertsEnabled();
@@ -2182,12 +2182,7 @@ const BUILDERS = {
       <div class="card stat-card clickable" onclick="renderView('mgmt-suggestions')"><div class="num">${MOCK.suggestionsLog.filter(s=>s.status==='new').length}</div><div class="label">New suggestions</div></div>
       <div class="card stat-card clickable" onclick="renderView('mgmt-attendance')"><div class="num">${ATTENDANCE_LOG.length}</div><div class="label">Attendance entries logged</div></div>
     </div>
-    ${attendanceConcernsSection()}
-    <div class="card">
-      <h3>🔔 Alert Tone</h3>
-      <p class="muted" style="margin-bottom:12px;">While this portal stays open in a browser tab, it checks every 60 seconds for new pending requests, open concerns, or fresh suggestions — and plays a "ding-dong" front-desk chime (about 7 seconds) if it finds any. Keep this tab open (even in the background) to hear alerts.</p>
-      <button class="btn ghost auto" onclick="playAlertTone()">Test Alert Tone</button>
-    </div>`,
+    ${attendanceConcernsSection()}`,
 
   "mgmt-employees": ()=>`
     <div class="card table-scroll">
