@@ -592,11 +592,12 @@ function getUniqueScheduleTimes(){
   }));
   return Array.from(set).sort();
 }
+const HIDDEN_POSITION_OPTIONS = new Set(["Drop/Main", "Drop/Supervise", "Maint/Drop", "Supervise/Maint"]);
 function getUniqueSchedulePositions(){
   const set = new Set();
   [...SCHEDULE_ROWS, ...NEXT_SCHEDULE_ROWS].forEach(r => r.cells.forEach(c => {
     const p = parseScheduleCell(c);
-    if(p.type === 'shift' && p.position) set.add(p.position);
+    if(p.type === 'shift' && p.position && !HIDDEN_POSITION_OPTIONS.has(p.position)) set.add(p.position);
   }));
   return Array.from(set).sort();
 }
