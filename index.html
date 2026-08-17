@@ -198,13 +198,13 @@
   td.shift-morning, td.shift-afternoon, td.shift-night{border-left-width:3px;}
   .section-title{font-family:'Fraunces',serif; font-size:15px; font-weight:600; margin:0 0 12px;}
   .mgmt-toast{
-    background:var(--panel); border:1px solid var(--gold); border-radius:12px; padding:16px 20px;
-    box-shadow:0 12px 40px rgba(0,0,0,0.6); cursor:pointer; opacity:0; transform:scale(0.92);
+    background:var(--panel); border:2px solid var(--gold); border-radius:16px; padding:26px 28px;
+    box-shadow:0 16px 50px rgba(0,0,0,0.65); cursor:pointer; opacity:0; transform:scale(0.9);
     transition:opacity .25s ease, transform .25s ease; width:100%; text-align:center;
   }
   .mgmt-toast.show{opacity:1; transform:scale(1);}
-  .mgmt-toast .tt-title{font-weight:600; font-size:14.5px; color:var(--gold); display:flex; align-items:center; justify-content:center; gap:8px;}
-  .mgmt-toast .tt-body{font-size:13px; color:var(--text-mute); margin-top:6px;}
+  .mgmt-toast .tt-title{font-weight:700; font-size:20px; color:var(--gold); display:flex; align-items:center; justify-content:center; gap:10px;}
+  .mgmt-toast .tt-body{font-size:15px; color:var(--text); margin-top:10px; line-height:1.5;}
   .daycard .dname{font-size:13.5px; font-weight:600; color:var(--text); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;}
   .daycard .venue{font-weight:700; font-size:12.5px; margin-bottom:2px; color:var(--red);}
   .daycard .venue.club88{color:var(--red);}
@@ -221,7 +221,7 @@
 <body>
 
 <!-- ===== LOADING (shown while checking for an existing session) ===== -->
-<div id="mgmtToastContainer" style="position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:200; display:flex; flex-direction:column; gap:10px; max-width:340px; width:90%; align-items:center;"></div>
+<div id="mgmtToastContainer" style="position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:200; display:flex; flex-direction:column; gap:12px; max-width:420px; width:92%; align-items:center;"></div>
 
 <div class="modal-overlay" id="exitConfirmModal">
   <div class="modal-box">
@@ -1086,10 +1086,10 @@ let mgmtAudioCtx = null;
 let mgmtPollInterval = null;
 let mgmtAlertBaseline = null;
 
-function initMgmtAudio(){
+async function initMgmtAudio(){
   try{
     if(!mgmtAudioCtx) mgmtAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if(mgmtAudioCtx.state === 'suspended') mgmtAudioCtx.resume();
+    if(mgmtAudioCtx.state === 'suspended') await mgmtAudioCtx.resume();
   } catch(e){ /* Web Audio unavailable — alerts will just stay silent */ }
 }
 
@@ -1099,21 +1099,23 @@ function playBellNote_(ctx, freq, startTime, duration){
   osc.type = 'sine';
   osc.frequency.value = freq;
   gain.gain.setValueAtTime(0.0001, startTime);
-  gain.gain.exponentialRampToValueAtTime(0.55, startTime + 0.02); // quick soft attack
+  gain.gain.exponentialRampToValueAtTime(0.85, startTime + 0.02); // quick soft attack
   gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration); // natural bell decay
   osc.connect(gain); gain.connect(ctx.destination);
   osc.start(startTime);
   osc.stop(startTime + duration);
 }
 
-function playAlertTone(){
+async function playAlertTone(){
   try{
     if(!mgmtAudioCtx) mgmtAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if(mgmtAudioCtx.state === 'suspended') mgmtAudioCtx.resume();
+    if(mgmtAudioCtx.state === 'suspended') await mgmtAudioCtx.resume(); // must be awaited, or notes scheduled right after can get silently dropped
     const t0 = mgmtAudioCtx.currentTime;
-    // classic "ding-dong" hotel front-desk bell, played twice
-    for(let rep=0; rep<2; rep++){
-      const base = t0 + rep*1.8;
+    // classic "ding-dong" hotel front-desk bell, repeated across ~7 seconds
+    const pairSpacing = 1.8;
+    const reps = 4; // 4 × 1.8s ≈ 7.2s total
+    for(let rep=0; rep<reps; rep++){
+      const base = t0 + rep*pairSpacing;
       playBellNote_(mgmtAudioCtx, 880.00, base, 0.9);        // ding (A5)
       playBellNote_(mgmtAudioCtx, 659.25, base + 0.35, 1.1); // dong (E5)
     }
@@ -1128,14 +1130,27 @@ function getMgmtAlertCounts(){
   };
 }
 
+let activeToastCount = 0;
 function showMgmtToast(icon, title, body, targetView){
   const container = document.getElementById('mgmtToastContainer');
+  let backdrop = document.getElementById('mgmtToastBackdrop');
+  if(!backdrop){
+    backdrop = document.createElement('div');
+    backdrop.id = 'mgmtToastBackdrop';
+    backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:199; opacity:0; transition:opacity .25s ease;';
+    document.body.appendChild(backdrop);
+  }
+  activeToastCount++;
+  requestAnimationFrame(()=> backdrop.style.opacity = '1');
+
   const el = document.createElement('div');
   el.className = 'mgmt-toast';
-  el.innerHTML = `<div class="tt-title">${icon} ${title}</div><div class="tt-body">${body}</div><div class="tt-dismiss" style="margin-top:8px; font-size:11px; color:var(--text-faint);">Tap to view · <span style="text-decoration:underline;">Dismiss</span></div>`;
+  el.innerHTML = `<div class="tt-title">${icon} ${title}</div><div class="tt-body">${body}</div><div class="tt-dismiss" style="margin-top:12px; font-size:12px; color:var(--text-faint);">Tap to view · <span style="text-decoration:underline;">Dismiss</span></div>`;
   const dismiss = (navigate)=>{
     el.classList.remove('show');
     setTimeout(()=> el.remove(), 300);
+    activeToastCount--;
+    if(activeToastCount <= 0) backdrop.style.opacity = '0';
     if(navigate) renderView(targetView);
   };
   el.addEventListener('click', (e)=>{
@@ -2129,7 +2144,7 @@ const BUILDERS = {
     ${attendanceConcernsSection()}
     <div class="card">
       <h3>🔔 Alert Tone</h3>
-      <p class="muted" style="margin-bottom:12px;">While this portal stays open in a browser tab, it checks every 60 seconds for new pending requests, open concerns, or fresh suggestions — and plays a "ding-dong" front-desk chime if it finds any. Keep this tab open (even in the background) to hear alerts.</p>
+      <p class="muted" style="margin-bottom:12px;">While this portal stays open in a browser tab, it checks every 60 seconds for new pending requests, open concerns, or fresh suggestions — and plays a "ding-dong" front-desk chime (about 7 seconds) if it finds any. Keep this tab open (even in the background) to hear alerts.</p>
       <button class="btn ghost auto" onclick="playAlertTone()">Test Alert Tone</button>
     </div>`,
 
