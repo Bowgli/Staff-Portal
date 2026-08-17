@@ -216,6 +216,22 @@
 
   ::-webkit-scrollbar{width:8px;}
   ::-webkit-scrollbar-thumb{background:var(--line); border-radius:8px;}
+
+  @media print{
+    @page{ size: landscape; margin: 1cm; }
+    body{ background:#fff !important; }
+    .sidebar, .topbar, .hamburger-btn, .sidebar-backdrop,
+    .no-print, #mgmtToastContainer, #mgmtToastBackdrop{ display:none !important; }
+    .content{ padding:0 !important; }
+    #appRoot, .content{ display:block !important; }
+    .card{ background:#fff !important; border:1px solid #999 !important; box-shadow:none !important; }
+    .card h3{ color:#000 !important; }
+    table{ width:100% !important; border-collapse:collapse !important; }
+    th, td{ border:1px solid #999 !important; color:#000 !important; padding:4px 6px !important; font-size:10px !important; }
+    th{ background:#eee !important; }
+    td select{ -webkit-appearance:none; appearance:none; border:none !important; background:transparent !important; color:#000 !important; font-weight:600; padding:0 !important; }
+    .table-scroll{ overflow:visible !important; }
+  }
 </style>
 </head>
 <body>
@@ -2225,11 +2241,14 @@ const BUILDERS = {
     const sheetName = isNext ? 'NextSchedule' : 'Schedule';
     const filtered = scheduleFilterDept === 'All' ? rows : rows.filter(r => (r.department||'').toUpperCase() === scheduleFilterDept);
     return `
-    <div style="display:flex; gap:8px; margin-bottom:16px;">
-      <button class="btn ${isNext?'ghost':''} auto" style="padding:8px 14px;" onclick="setScheduleViewMode('current')">This Week</button>
-      <button class="btn ${isNext?'':'ghost'} auto" style="padding:8px 14px;" onclick="setScheduleViewMode('next')">Next Week${NEXT_SCHEDULE_ROWS.length?'':' (empty)'}</button>
+    <div class="no-print" style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; justify-content:space-between; align-items:center;">
+      <div style="display:flex; gap:8px;">
+        <button class="btn ${isNext?'ghost':''} auto" style="padding:8px 14px;" onclick="setScheduleViewMode('current')">This Week</button>
+        <button class="btn ${isNext?'':'ghost'} auto" style="padding:8px 14px;" onclick="setScheduleViewMode('next')">Next Week${NEXT_SCHEDULE_ROWS.length?'':' (empty)'}</button>
+      </div>
+      <button class="btn ghost auto" style="padding:8px 14px;" onclick="window.print()">🖨️ Print Schedule</button>
     </div>
-    ${isNext ? `<div class="banner note" style="margin-bottom:16px;">
+    ${isNext ? `<div class="banner note no-print" style="margin-bottom:16px;">
       <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
         <span class="pill ${NEXT_SCHEDULE_PUBLISHED?'ok':'warn'}">${NEXT_SCHEDULE_PUBLISHED?'Published — visible to employees':'Draft — not yet visible to employees'}</span>
       </div>
@@ -2250,12 +2269,12 @@ const BUILDERS = {
         <button class="btn auto" onclick="promoteNextWeek()">Promote to Current Week</button>
       </div>
     </div>` : ''}
-    <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
+    <div class="no-print" style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
       ${['All', ...DEPTS].map(d=>`<button class="btn ${scheduleFilterDept===d?'':'ghost'} auto" style="padding:8px 14px;" onclick="setScheduleFilter('${d}')">${d==='All'?'View All':d.charAt(0)+d.slice(1).toLowerCase()}</button>`).join('')}
     </div>
     <div class="card table-scroll">
       <h3><span class="ic">📅</span> ${isNext ? 'Next Week Schedule' : 'Master Schedule'}</h3>
-      <p class="muted" style="margin-bottom:12px;">Click any shift cell to edit it. Department is a dropdown — use it if someone transfers between venues.</p>
+      <p class="muted no-print" style="margin-bottom:12px;">Click any shift cell to edit it. Department is a dropdown — use it if someone transfers between venues.</p>
       <table>
         <tr><th>Department</th><th>Employee</th><th>Role</th>${days.map(d=>`<th>${fmtDayLabel(d)}</th>`).join('')}</tr>
         ${filtered.map(r=>`<tr>
