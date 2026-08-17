@@ -1035,10 +1035,12 @@ async function safeApiGet(action, fallback){
 async function loadRemoteData(){
   if(!USE_REMOTE()) return;
   try{
-    const [roster, schedule, nextSchedule, attendance, announcements, recognition, requests, accountsStatus, concerns, suggestions, evaluations] = await Promise.all([
+    const myName = (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.fullName) || '';
+    const [roster, schedule, nextSchedule, attendance, announcements, recognition, requests, accountsStatus, concerns, suggestions, evaluations, myConcernsRaw, mySuggestionsRaw] = await Promise.all([
       safeApiGet('roster', []), safeApiGet('schedule', {days:[],rows:[]}), safeApiGet('nextSchedule', {days:[],rows:[],published:false}), safeApiGet('attendance', []),
       safeApiGet('announcements', []), safeApiGet('recognition', []), safeApiGet('requests', []), safeApiGet('accountsStatus', []),
-      safeApiGet('concerns', []), safeApiGet('suggestions', []), safeApiGet('evaluations', [])
+      safeApiGet('concerns', []), safeApiGet('suggestions', []), safeApiGet('evaluations', []),
+      safeApiGet('myConcerns&name=' + encodeURIComponent(myName), []), safeApiGet('mySuggestions&name=' + encodeURIComponent(myName), [])
     ]);
     EMPLOYEE_ROSTER.length = 0;
     roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, position:r.Position, status:r.Status||"Active", attendance:"—"}));
@@ -1068,9 +1070,9 @@ async function loadRemoteData(){
     EMPLOYEE_ACCOUNTS.length = 0;
     accountsStatus.forEach(a => EMPLOYEE_ACCOUNTS.push({employeeName:a.employeeName, fullName:a.fullName, username:a.username, role:"employee"}));
     MOCK.concernsLog = concerns.map(c => ({from:c.From, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID})).reverse();
-    MY_CONCERNS = MOCK.concernsLog.filter(c => CURRENT_EMPLOYEE && c.from === CURRENT_EMPLOYEE.fullName);
+    MY_CONCERNS = myConcernsRaw.map(c => ({from:c.From, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID})).reverse();
     MOCK.suggestionsLog = suggestions.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID})).reverse();
-    MY_SUGGESTIONS = MOCK.suggestionsLog.filter(s => CURRENT_EMPLOYEE && s.from === CURRENT_EMPLOYEE.fullName);
+    MY_SUGGESTIONS = mySuggestionsRaw.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID})).reverse();
   } catch(e){ /* keep whatever was already loaded if a fetch fails */ }
 }
 /* ============================================================
@@ -2095,7 +2097,7 @@ const BUILDERS = {
       </div>
       <div class="card">
         <h3>Your Concern History</h3>
-        <p class="muted" style="margin-bottom:12px;">Concerns submitted anonymously won't show here — that's by design, so anonymity stays real.</p>
+        <p class="muted" style="margin-bottom:12px;">Includes ones you submitted anonymously — management still only sees "Anonymous," this list is for your own eyes only.</p>
         <table>
           <tr><th>Topic</th><th>Date</th><th>Status</th><th></th></tr>
           ${MY_CONCERNS.map(c=>`<tr><td>${c.topic}</td><td>${fmtDateTime(c.date)}</td><td>${statusPill(c.status)}</td>
@@ -2117,7 +2119,7 @@ const BUILDERS = {
       </div>
       <div class="card">
         <h3>Your Suggestion History</h3>
-        <p class="muted" style="margin-bottom:12px;">Ones you submitted anonymously won't show here — that keeps the anonymity real.</p>
+        <p class="muted" style="margin-bottom:12px;">Includes ones you submitted anonymously — management still only sees "Anonymous," this list is for your own eyes only.</p>
         <table>
           <tr><th>Idea</th><th>Date</th><th>Status</th><th></th></tr>
           ${MY_SUGGESTIONS.map(s=>`<tr><td>${s.idea}</td><td>${fmtDateTime(s.date)}</td><td><span class="pill ${s.status==='new'?'warn':'ok'}">${s.status==='new'?'New':'Reviewed'}</span></td>
@@ -2644,7 +2646,7 @@ async function submitMyConcern(){
   btnLoading('concernSubmitBtn');
   const From = anon ? "Anonymous" : CURRENT_EMPLOYEE.fullName;
   if(USE_REMOTE()){
-    const r = await apiPostMinDelay('submitConcern', {From, Topic, Details, Anonymous: anon});
+    const r = await apiPostMinDelay('submitConcern', {From, Topic, Details, Anonymous: anon, SubmittedBy: CURRENT_EMPLOYEE.fullName});
     if(!r.ok){ err.textContent = r.error || "Couldn't submit."; err.style.display='block'; btnReset('concernSubmitBtn','Submit Concern'); return; }
     await loadRemoteData();
   }
@@ -2707,7 +2709,7 @@ async function submitMySuggestion(){
   const From = anon ? "Anonymous" : CURRENT_EMPLOYEE.fullName;
   btnLoading('suggSubmitBtn');
   if(USE_REMOTE()){
-    const r = await apiPostMinDelay('submitSuggestion', {From, Idea, Anonymous: anon});
+    const r = await apiPostMinDelay('submitSuggestion', {From, Idea, Anonymous: anon, SubmittedBy: CURRENT_EMPLOYEE.fullName});
     if(!r.ok){ err.textContent = r.error || "Couldn't submit."; err.style.display='block'; btnReset('suggSubmitBtn','Submit Suggestion'); return; }
     await loadRemoteData();
   }
