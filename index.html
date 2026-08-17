@@ -2484,7 +2484,7 @@ function updateSwapPreview(){
   const preview = document.getElementById('swapPreview');
   const myDayIndex = daySel.selectedIndex;
   const theirDayIndex = document.getElementById('diffDayToggle').checked ? theirDaySel.selectedIndex : myDayIndex;
-  const withName = withSel.value;
+  const withName = readEmployeePicker('reqSwapWith');
   if(!withName){ preview.style.display = 'none'; lastSwapConflictKey = null; return; }
 
   const myRow = findMyScheduleRow(CURRENT_EMPLOYEE.name);
