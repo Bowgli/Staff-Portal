@@ -318,6 +318,11 @@
         </div>
       </div>
       <div class="who">
+        <div id="soundAlertToggle" style="display:none;">
+          <button class="btn ghost auto" onclick="toggleSoundAlerts()" style="padding:8px 14px; font-size:12px; display:flex; align-items:center; gap:6px; white-space:nowrap;">
+            <span id="soundAlertIcon">🔔</span><span id="soundAlertLabel">Sound Alerts: On</span>
+          </button>
+        </div>
         <div>
           <div class="who-name" id="whoName" style="text-align:right;">—</div>
           <div class="who-role" id="whoRole" style="text-align:right;">—</div>
@@ -1095,6 +1100,27 @@ async function initMgmtAudio(){
   } catch(e){ /* Web Audio unavailable — alerts will just stay silent */ }
 }
 
+const SOUND_ALERTS_KEY = "sv_staff_portal_sound_alerts";
+function soundAlertsEnabled(){
+  try{ return localStorage.getItem(SOUND_ALERTS_KEY) !== 'off'; } catch(e){ return true; } // on by default
+}
+function updateSoundAlertUI(){
+  const on = soundAlertsEnabled();
+  const icon = document.getElementById('soundAlertIcon');
+  const label = document.getElementById('soundAlertLabel');
+  if(icon) icon.textContent = on ? '🔔' : '🔕';
+  if(label) label.textContent = on ? 'Sound Alerts: On' : 'Sound Alerts: Off';
+}
+async function toggleSoundAlerts(){
+  const nowOn = !soundAlertsEnabled();
+  try{ localStorage.setItem(SOUND_ALERTS_KEY, nowOn ? 'on' : 'off'); } catch(e){}
+  updateSoundAlertUI();
+  if(nowOn){
+    await initMgmtAudio(); // this click is a real user gesture — the right moment to unlock audio
+    playAlertTone(); // quick confirmation beep so they know it's actually working
+  }
+}
+
 function playBellNote_(ctx, freq, startTime, duration){
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -1191,7 +1217,7 @@ function startMgmtPolling(){
     await loadRemoteData(); // reload first so we can name what actually came in
 
     if(newRequests > 0 || newConcerns > 0 || newSuggestions > 0){
-      playAlertTone();
+      if(soundAlertsEnabled()) playAlertTone();
       if(newRequests > 0){
         const latestTypes = ALL_REQUESTS.filter(r=>r.Status==='pending').slice(0, newRequests).map(r=>r.Type);
         const typeList = latestTypes.length ? latestTypes.join(', ') : '';
@@ -1511,6 +1537,7 @@ function setRole(role){
     activeView = 'home';
     stopMgmtPolling();
     startEmpPolling();
+    document.getElementById('soundAlertToggle').style.display = 'none';
   } else {
     const mgmtInitials = (CURRENT_USER.displayName || "Management").split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
     document.getElementById('acctAvatar').textContent = mgmtInitials;
@@ -1523,6 +1550,8 @@ function setRole(role){
     stopEmpPolling();
     initMgmtAudio();
     startMgmtPolling();
+    document.getElementById('soundAlertToggle').style.display = 'block';
+    updateSoundAlertUI();
   }
   renderNav();
   restoreLastViewOrDefault();
