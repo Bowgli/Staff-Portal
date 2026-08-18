@@ -516,10 +516,21 @@ let MY_GIVEN_EVALUATIONS = []; // evaluations the current employee has given to 
 let attendanceSearchQuery = '';
 let perfFilterMonth = 'All';
 let perfFilterYear = 'All';
+let perfSearchQuery = '';
 function setPerfFilter(type, val){
   if(type==='month') perfFilterMonth = val;
   else perfFilterYear = val;
   renderView('mgmt-performance');
+}
+
+function setPerfSearch(val){
+  perfSearchQuery = val;
+  const cursorPos = document.activeElement && document.activeElement.selectionStart;
+  renderView('mgmt-performance');
+  // renderView rebuilds the whole page, which would otherwise steal
+  // focus away from the search box mid-typing — put it right back
+  const input = document.querySelector('#content input[placeholder^="🔍"]');
+  if(input){ input.focus(); if(cursorPos != null) input.setSelectionRange(cursorPos, cursorPos); }
 }
 
 /* --- Schedule sheet, shaped exactly like the pasted Google Sheet:
@@ -1159,11 +1170,12 @@ async function loadRemoteData(){
   if(!USE_REMOTE()) return;
   try{
     const myName = (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.fullName) || '';
-    const [roster, schedule, nextSchedule, attendance, announcements, recognition, requests, accountsStatus, concerns, suggestions, evaluations, myConcernsRaw, mySuggestionsRaw] = await Promise.all([
+    const [roster, schedule, nextSchedule, attendance, announcements, recognition, requests, accountsStatus, concerns, suggestions, evaluations, myConcernsRaw, mySuggestionsRaw, myGivenEvaluationsRaw] = await Promise.all([
       safeApiGet('roster', []), safeApiGet('schedule', {days:[],rows:[]}), safeApiGet('nextSchedule', {days:[],rows:[],published:false}), safeApiGet('attendance', []),
       safeApiGet('announcements', []), safeApiGet('recognition', []), safeApiGet('requests', []), safeApiGet('accountsStatus', []),
       safeApiGet('concerns', []), safeApiGet('suggestions', []), safeApiGet('evaluations', []),
-      safeApiGet('myConcerns&name=' + encodeURIComponent(myName), []), safeApiGet('mySuggestions&name=' + encodeURIComponent(myName), [])
+      safeApiGet('myConcerns&name=' + encodeURIComponent(myName), []), safeApiGet('mySuggestions&name=' + encodeURIComponent(myName), []),
+      safeApiGet('myGivenEvaluations&name=' + encodeURIComponent(myName), [])
     ]);
     EMPLOYEE_ROSTER.length = 0;
     roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, position:r.Position, status:r.Status||"Active", attendance:"—"}));
@@ -1186,7 +1198,7 @@ async function loadRemoteData(){
     MY_RECOGNITION = MOCK.recognition.filter(r => CURRENT_EMPLOYEE && r.employeeName === CURRENT_EMPLOYEE.name);
     ALL_EVALUATIONS = evaluations.slice().reverse();
     MY_EVALUATIONS = ALL_EVALUATIONS.filter(e => CURRENT_EMPLOYEE && e.EmployeeName === CURRENT_EMPLOYEE.name);
-    MY_GIVEN_EVALUATIONS = ALL_EVALUATIONS.filter(e => CURRENT_EMPLOYEE && e.EvaluatedBy === CURRENT_EMPLOYEE.fullName);
+    MY_GIVEN_EVALUATIONS = myGivenEvaluationsRaw.slice().reverse();
     MOCK.requests = requests.filter(r => r.EmployeeName === (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.name))
       .map(r => ({type:r.Type, date:r.Date, status:r.Status, id:r.ID, details:r.Details, swapDay:r.SwapDay, theirDay:r.TheirDay, swapWithName:r.SwapWithName}));
     ALL_REQUESTS = requests.slice().reverse();
@@ -2206,7 +2218,7 @@ const BUILDERS = {
     </div>
     <div class="card table-scroll">
       <h3>Evaluations You've Given</h3>
-      <p class="muted" style="margin-bottom:12px;">Ones you submitted anonymously won't show here — that keeps the anonymity real.</p>
+      <p class="muted" style="margin-bottom:12px;">Includes ones you submitted anonymously — the employee still only sees "Anonymous," this list is for your own eyes only.</p>
       <table>
         <tr><th>Employee</th><th>Period</th><th>Score</th><th>Rating</th><th></th></tr>
         ${MY_GIVEN_EVALUATIONS.map(e=>`<tr><td>${e.EmployeeName}</td><td>${e.Month} ${e.Year}</td><td class="mono">${e.AverageScore}</td><td>${ratingStars(e.AverageScore)} ${e.RatingLabel}</td>
@@ -2463,9 +2475,17 @@ const BUILDERS = {
     const latestByEmployee = {};
     ALL_EVALUATIONS.forEach(e=>{ if(!latestByEmployee[e.EmployeeName]) latestByEmployee[e.EmployeeName] = e; }); // ALL_EVALUATIONS is newest-first
 
-    const rows = filtered
+    const countByEmployee = {};
+    ALL_EVALUATIONS.forEach(e=>{ countByEmployee[e.EmployeeName] = (countByEmployee[e.EmployeeName]||0) + 1; });
+
+    let rows = filtered
       ? filtered.map(e => ({name:e.EmployeeName, position:(EMPLOYEE_ROSTER.find(r=>r.name===e.EmployeeName)||{}).position||'', e}))
       : EMPLOYEE_ROSTER.map(emp => ({name:emp.name, position:emp.position, e:latestByEmployee[emp.name]}));
+
+    if(perfSearchQuery.trim()){
+      const q = perfSearchQuery.trim().toLowerCase();
+      rows = rows.filter(r => r.name.toLowerCase().includes(q));
+    }
 
     const scored = rows.map(r=>r.e).filter(Boolean).map(e=>Number(e.AverageScore));
     const totalAvg = scored.length ? (scored.reduce((a,b)=>a+b,0)/scored.length).toFixed(2) : '—';
@@ -2500,9 +2520,10 @@ const BUILDERS = {
     <div class="card table-scroll">
       <h3><span class="ic">📊</span> Evaluation Report — All Staff</h3>
       <p class="muted" style="margin-bottom:12px;">${filtered ? 'Showing evaluations for '+perfFilterMonth+' '+perfFilterYear+'.' : "Each employee's most recent monthly evaluation."}</p>
+      <input type="text" placeholder="🔍 Search employee name…" value="${perfSearchQuery}" oninput="setPerfSearch(this.value)" style="margin-bottom:12px;">
       <table>
-        <tr><th>Employee</th><th>Position</th><th>Period</th><th>Score</th><th>Rating</th></tr>
-        ${rows.map(r=>`<tr><td>${r.name}</td><td class="muted">${r.position}</td><td>${r.e ? r.e.Month+' '+r.e.Year : '—'}</td><td class="mono">${r.e ? r.e.AverageScore : '—'}</td><td>${r.e ? ratingStars(r.e.AverageScore)+' '+r.e.RatingLabel : '<span class="muted">Not yet evaluated</span>'}</td></tr>`).join('') || `<tr><td colspan="5" class="muted">No evaluations for this period.</td></tr>`}
+        <tr><th>Employee</th><th>Position</th><th>Period</th><th>Score</th><th>Rating</th><th>Total Records</th></tr>
+        ${rows.map(r=>`<tr><td>${r.name}</td><td class="muted">${r.position}</td><td>${r.e ? r.e.Month+' '+r.e.Year : '—'}</td><td class="mono">${r.e ? r.e.AverageScore : '—'}</td><td>${r.e ? ratingStars(r.e.AverageScore)+' '+r.e.RatingLabel : '<span class="muted">Not yet evaluated</span>'}</td><td class="mono">${countByEmployee[r.name] || 0}</td></tr>`).join('') || `<tr><td colspan="6" class="muted">No evaluations found.</td></tr>`}
       </table>
     </div>`;
   },
@@ -2922,7 +2943,7 @@ async function submitEvaluationNow(){
   if(!Year){ err.textContent="Enter a year."; err.style.display='block'; return; }
 
   const anon = document.getElementById('anonEval').checked;
-  const body = {EmployeeName, Month, Year, EvaluatedBy: anon ? "Anonymous" : CURRENT_EMPLOYEE.fullName};
+  const body = {EmployeeName, Month, Year, EvaluatedBy: anon ? "Anonymous" : CURRENT_EMPLOYEE.fullName, SubmittedBy: CURRENT_EMPLOYEE.fullName};
   for(let i=1;i<=10;i++){ body['Q'+i] = document.getElementById('evalQ'+i).value; }
 
   if(editingEvaluationId){
