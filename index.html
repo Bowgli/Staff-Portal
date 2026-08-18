@@ -1960,18 +1960,13 @@ function attendanceConcernsSection(){
 }
 
 function topPerformersChart(latestByEmployee){
-  const ranked = Object.entries(latestByEmployee)
-    .map(([name,e])=>[name, Number(e.AverageScore)])
-    .sort((a,b)=>b[1]-a[1])
-    .slice(0,10);
+  const all = Object.entries(latestByEmployee).map(([name,e])=>[name, Number(e.AverageScore)]);
+  const ranked = all.slice().sort((a,b)=>b[1]-a[1]);
+  const needsImprovement = all.filter(([,score])=>score>=1.00 && score<=2.49).sort((a,b)=>a[1]-b[1]);
   return `
-    <div class="card" style="margin-bottom:16px;">
-      <h3><span class="ic">🏆</span> Top 10 — Performing Staff</h3>
-      ${ranked.length ? ranked.map(([name,score])=>`
-        <div style="margin-bottom:10px;">
-          <div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>${name}</span><span class="mono">${score}</span></div>
-          <div style="height:8px; background:var(--panel-2); border-radius:6px; overflow:hidden;"><div style="height:100%; width:${(score/5*100).toFixed(0)}%; background:var(--teal);"></div></div>
-        </div>`).join('') : `<p class="muted">No evaluations yet.</p>`}
+    <div class="grid grid-2" style="margin-bottom:16px;">
+      ${renderRankedEvalCard('🏆', 'Performing Staff — All Evaluated', ranked, 'var(--teal)')}
+      ${renderRankedEvalCard('📈', 'Staff for Improvement', needsImprovement, 'var(--red)', 'No staff currently scoring 1.00–2.49.')}
     </div>`;
 }
 
