@@ -562,6 +562,33 @@ function findRowInSchedule(rows, employeeName){
     return scheduleFirst === myFirst;
   }) || null;
 }
+const SCHEDULE_DEPT_ORDER = ["CLUB 88","SAIPAN VEGAS","SLOT TECHNICIAN","SECURITY"];
+function scheduleRolePriority(role){
+  const r = (role||'').toLowerCase();
+  if(r.includes('shift manager')) return 1;
+  if(r.includes('supervisor') && !r.includes('technical') && !r.includes('slot') && !r.includes('assistant')) return 2;
+  if(r.includes('cashier') || r.includes('attendant')) return 3;
+  if(r.includes('membership')) return 4;
+  if(r.includes('technical manager')) return 5;
+  if(r.includes('assistant') || r.includes('technical supervisor')) return 6;
+  if(r.includes('slot tech')) return 7;
+  if(r.includes('security')) return 8;
+  return 99; // anything unrecognized sorts after the known groups
+}
+function sortScheduleRows(rows){
+  return rows.slice().sort((a,b)=>{
+    const deptA = SCHEDULE_DEPT_ORDER.indexOf((a.department||'').toUpperCase());
+    const deptB = SCHEDULE_DEPT_ORDER.indexOf((b.department||'').toUpperCase());
+    const da = deptA === -1 ? 999 : deptA;
+    const db = deptB === -1 ? 999 : deptB;
+    if(da !== db) return da - db;
+    const ra = scheduleRolePriority(a.role);
+    const rb = scheduleRolePriority(b.role);
+    if(ra !== rb) return ra - rb;
+    return (a.name||'').localeCompare(b.name||'');
+  });
+}
+
 function findMyScheduleRow(employeeName){
   return findRowInSchedule(SCHEDULE_ROWS, employeeName);
 }
@@ -2247,7 +2274,7 @@ const BUILDERS = {
     const days = isNext ? NEXT_SCHEDULE_DAYS : SCHEDULE_DAYS;
     const rows = isNext ? NEXT_SCHEDULE_ROWS : SCHEDULE_ROWS;
     const sheetName = isNext ? 'NextSchedule' : 'Schedule';
-    const filtered = scheduleFilterDept === 'All' ? rows : rows.filter(r => (r.department||'').toUpperCase() === scheduleFilterDept);
+    const filtered = sortScheduleRows(scheduleFilterDept === 'All' ? rows : rows.filter(r => (r.department||'').toUpperCase() === scheduleFilterDept));
     return `
     <div class="no-print" style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; justify-content:space-between; align-items:center;">
       <div style="display:flex; gap:8px;">
