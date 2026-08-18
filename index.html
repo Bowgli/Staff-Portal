@@ -1277,6 +1277,7 @@ function getMgmtAlertCounts(){
     requests: ALL_REQUESTS.filter(r=>r.Status==='pending').length,
     concerns: MOCK.concernsLog.filter(c=>c.status==='open').length,
     suggestions: MOCK.suggestionsLog.filter(s=>s.status==='new').length,
+    evaluations: ALL_EVALUATIONS.length,
   };
 }
 
@@ -1324,17 +1325,18 @@ function startMgmtPolling(){
     if(document.hidden) return; // skip while this tab isn't the active/visible one — avoids piling up requests across multiple open tabs
     let counts;
     try{ counts = await apiGet('counts'); } catch(e){ return; } // one cheap call instead of a full 10-fetch reload every cycle
-    const changed = counts.requests !== mgmtAlertBaseline.requests || counts.concerns !== mgmtAlertBaseline.concerns || counts.suggestions !== mgmtAlertBaseline.suggestions;
+    const changed = counts.requests !== mgmtAlertBaseline.requests || counts.concerns !== mgmtAlertBaseline.concerns || counts.suggestions !== mgmtAlertBaseline.suggestions || counts.evaluations !== mgmtAlertBaseline.evaluations;
     if(!changed) return; // nothing new — skip the full reload entirely this cycle
 
     const newRequests = counts.requests - mgmtAlertBaseline.requests;
     const newConcerns = counts.concerns - mgmtAlertBaseline.concerns;
     const newSuggestions = counts.suggestions - mgmtAlertBaseline.suggestions;
+    const newEvaluations = (counts.evaluations||0) - (mgmtAlertBaseline.evaluations||0);
     mgmtAlertBaseline = counts;
 
     await loadRemoteData(); // reload first so we can name what actually came in
 
-    if(newRequests > 0 || newConcerns > 0 || newSuggestions > 0){
+    if(newRequests > 0 || newConcerns > 0 || newSuggestions > 0 || newEvaluations > 0){
       if(soundAlertsEnabled()) playAlertTone();
       if(newRequests > 0){
         const latestTypes = ALL_REQUESTS.filter(r=>r.Status==='pending').slice(0, newRequests).map(r=>r.Type);
@@ -1343,9 +1345,10 @@ function startMgmtPolling(){
       }
       if(newConcerns > 0) showMgmtToast('⚠️', 'New Concern', `${newConcerns} new open concern${newConcerns===1?'':'s'} — tap to view`, 'mgmt-concerns');
       if(newSuggestions > 0) showMgmtToast('💡', 'New Suggestion', `${newSuggestions} new suggestion${newSuggestions===1?'':'s'} — tap to view`, 'mgmt-suggestions');
+      if(newEvaluations > 0) showMgmtToast('📋', 'New Evaluation', `${newEvaluations} new evaluation${newEvaluations===1?'':'s'} submitted — tap to view`, 'mgmt-performance');
     }
     renderNav();
-    if(['mgmt-home','mgmt-requests','mgmt-concerns','mgmt-suggestions'].includes(activeView)) renderView(activeView);
+    if(['mgmt-home','mgmt-requests','mgmt-concerns','mgmt-suggestions','mgmt-performance'].includes(activeView)) renderView(activeView);
   }, 30000); // check every 30 seconds
 }
 
@@ -1361,23 +1364,40 @@ function myRequestsSnapshot(){
   MOCK.requests.forEach(r=>{ if(r.id) snap[r.id] = r.status; });
   return snap;
 }
+function nextScheduleSnapshot(ns){
+  if(ns) return JSON.stringify({published: ns.published, days: ns.days, rows: ns.rows});
+  return JSON.stringify({published: NEXT_SCHEDULE_PUBLISHED, days: NEXT_SCHEDULE_DAYS, rows: NEXT_SCHEDULE_ROWS});
+}
 
+let empNextScheduleBaseline = '';
 function startEmpPolling(){
   if(empPollInterval || !USE_REMOTE()) return;
   empRequestsBaseline = myRequestsSnapshot();
+  empNextScheduleBaseline = nextScheduleSnapshot();
   empPollInterval = setInterval(async ()=>{
     if(document.hidden) return; // skip while this tab isn't the active/visible one
-    const requests = await safeApiGet('requests', null);
-    if(!requests) return; // one cheap call — full reload only happens below if something actually changed
+    const [requests, nextSchedule] = await Promise.all([
+      safeApiGet('requests', null),
+      safeApiGet('nextSchedule', null)
+    ]);
 
-    const currentSnap = {};
-    requests.forEach(r=>{ if(r.EmployeeName === CURRENT_EMPLOYEE.name) currentSnap[r.ID] = r.Status; });
-    const ids = new Set([...Object.keys(currentSnap), ...Object.keys(empRequestsBaseline)]);
-    const changed = [...ids].some(id => currentSnap[id] !== empRequestsBaseline[id]);
-    if(!changed) return;
+    let changed = false;
 
-    empRequestsBaseline = currentSnap;
-    await loadRemoteData(); // picks up everything, including any Schedule change from an approved swap
+    if(requests){
+      const currentSnap = {};
+      requests.forEach(r=>{ if(r.EmployeeName === CURRENT_EMPLOYEE.name) currentSnap[r.ID] = r.Status; });
+      const ids = new Set([...Object.keys(currentSnap), ...Object.keys(empRequestsBaseline)]);
+      if([...ids].some(id => currentSnap[id] !== empRequestsBaseline[id])){ empRequestsBaseline = currentSnap; changed = true; }
+    }
+
+    if(nextSchedule){
+      const snap = nextScheduleSnapshot(nextSchedule);
+      if(snap !== empNextScheduleBaseline){ empNextScheduleBaseline = snap; changed = true; }
+    }
+
+    if(!changed) return; // nothing actually changed — skip the full reload
+
+    await loadRemoteData(); // picks up everything, including any Schedule change from an approved swap or a fresh publish
     if(['home','requests','schedule'].includes(activeView)) renderView(activeView);
   }, 45000); // check every 45 seconds
 }
