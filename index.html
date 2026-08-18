@@ -3037,35 +3037,49 @@ async function deleteRecognitionEntry(id, el){
 
 async function reviewSuggestion(id, el){
   btnLoadingEl(el, 'Marking...');
+  const s = MOCK.suggestionsLog.find(s=>s.id===id);
   if(USE_REMOTE()){
     const r = await apiPost('updateSuggestionStatus', {id, status:"reviewed"});
     if(!r.ok){ alert(r.error || "Couldn't update."); btnResetEl(el); return; }
-    await loadRemoteData();
-  } else {
-    const s = MOCK.suggestionsLog.find(s=>s.id===id);
-    if(s) s.status = "reviewed";
+    if(s && s.status === 'new') mgmtAlertBaseline.suggestions = Math.max(0, mgmtAlertBaseline.suggestions - 1);
   }
+  if(s) s.status = "reviewed";
   renderView('mgmt-suggestions');
 }
 
 async function resolveConcern(id, el){
   btnLoadingEl(el, 'Marking...');
+  const c = MOCK.concernsLog.find(c=>c.id===id);
   if(USE_REMOTE()){
     const r = await apiPost('updateConcernStatus', {id, status:"resolved"});
     if(!r.ok){ alert(r.error || "Couldn't update."); btnResetEl(el); return; }
-    await loadRemoteData();
-  } else {
-    const c = MOCK.concernsLog.find(c=>c.id===id);
-    if(c) c.status = "resolved";
+    if(c && c.status === 'open') mgmtAlertBaseline.concerns = Math.max(0, mgmtAlertBaseline.concerns - 1);
   }
+  if(c) c.status = "resolved";
   renderView('mgmt-concerns');
 }
 
 const savingRequestIds = new Set();
+let scheduleRefreshPromise = null;
+async function refreshScheduleOnly(){
+  // Coalesced: if several Schedule Swap status changes happen at
+  // once, they all share this ONE fetch instead of each firing its
+  // own overlapping reload that could stomp on the others' results.
+  if(scheduleRefreshPromise) return scheduleRefreshPromise;
+  scheduleRefreshPromise = (async ()=>{
+    const [schedule, nextSchedule] = await Promise.all([
+      safeApiGet('schedule', null), safeApiGet('nextSchedule', null)
+    ]);
+    if(schedule){ SCHEDULE_DAYS = schedule.days || []; SCHEDULE_ROWS = schedule.rows || []; }
+    if(nextSchedule){ NEXT_SCHEDULE_DAYS = nextSchedule.days || []; NEXT_SCHEDULE_ROWS = nextSchedule.rows || []; NEXT_SCHEDULE_PUBLISHED = !!nextSchedule.published; }
+  })();
+  try{ await scheduleRefreshPromise; } finally { scheduleRefreshPromise = null; }
+}
+
 async function setRequestStatus(id, status){
   const req = ALL_REQUESTS.find(r=>r.ID===id);
   const previousStatus = req ? req.Status : null;
-  if(req) req.Status = status; // optimistic — reflects instantly, no need to wait on the network
+  if(req) req.Status = status; // optimistic — this IS the correct value once the write below succeeds, no need to re-fetch it
   savingRequestIds.add(id);
   renderView('mgmt-requests');
 
@@ -3078,8 +3092,17 @@ async function setRequestStatus(id, status){
       renderView('mgmt-requests');
       return;
     }
-    await loadRemoteData(); // pick up any side effects too, e.g. the Schedule tab changing from a swap
-    mgmtAlertBaseline = getMgmtAlertCounts(); // this was our own change — don't let the next poll mistake it for a new incoming item
+    // Adjust the alert baseline directly for THIS known change,
+    // instead of re-deriving it from a full reload — a reload here
+    // used to race with other concurrent status changes and could
+    // catch one of them mid-flight, misreporting it as a new
+    // incoming item to the next poll cycle.
+    if(previousStatus === 'pending' && status !== 'pending') mgmtAlertBaseline.requests = Math.max(0, mgmtAlertBaseline.requests - 1);
+    if(previousStatus !== 'pending' && status === 'pending') mgmtAlertBaseline.requests = mgmtAlertBaseline.requests + 1;
+
+    if(req && req.Type === 'Schedule Swap'){
+      await refreshScheduleOnly(); // only a Schedule Swap actually touches the Schedule tab — refresh just that, not everything
+    }
     renderView('mgmt-requests');
   } else {
     savingRequestIds.delete(id);
