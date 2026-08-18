@@ -2495,11 +2495,12 @@ const BUILDERS = {
         <tr><th>Employee</th><th>Type</th><th>Details</th><th>Date</th><th>Status</th></tr>
         ${ALL_REQUESTS.map(r=>`<tr><td>${r.EmployeeName}</td><td>${r.Type}${r.Type==='Schedule Swap' && r.SwapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.SwapDay)}${r.TheirDay && r.TheirDay!==r.SwapDay ? ' ↔ '+fmtDayLabel(r.TheirDay) : ''} ↔ ${r.SwapWithName}</span>` : ''}</td><td class="muted">${r.Details||''}</td><td>${fmtDateTime(r.Date)}</td>
           <td>
+            ${savingRequestIds.has(r.ID) ? `<span class="btn-spinner"></span><span class="muted" style="font-size:12px;">Saving...</span>` : `
             <select class="status-select ${r.Status}" onchange="this.className='status-select '+this.value; setRequestStatus('${r.ID}', this.value)">
               <option value="pending" ${r.Status==='pending'?'selected':''}>Pending</option>
               <option value="approved" ${r.Status==='approved'?'selected':''}>Approved</option>
               <option value="declined" ${r.Status==='declined'?'selected':''}>Declined</option>
-            </select>
+            </select>`}
           </td></tr>`).join('') || `<tr><td colspan="5" class="muted">No requests yet.</td></tr>`}
       </table>
     </div>`,
@@ -2510,7 +2511,7 @@ const BUILDERS = {
       <table>
         <tr><th>From</th><th>Topic</th><th>Details</th><th>Date</th><th>Status</th><th></th></tr>
         ${MOCK.concernsLog.map(c=>`<tr><td>${c.from}</td><td>${c.topic}</td><td class="muted">${c.details||''}</td><td>${fmtDateTime(c.date)}</td><td>${statusPill(c.status)}</td>
-          <td>${c.status==='open' ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="resolveConcern('${c.id}')">Mark Resolved</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="6" class="muted">No concerns reported yet.</td></tr>`}
+          <td>${c.status==='open' ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="resolveConcern('${c.id}', this)">Mark Resolved</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="6" class="muted">No concerns reported yet.</td></tr>`}
       </table>
     </div>`,
 
@@ -2520,7 +2521,7 @@ const BUILDERS = {
       <table>
         <tr><th>From</th><th>Idea</th><th>Date</th><th>Status</th><th></th></tr>
         ${MOCK.suggestionsLog.map(s=>`<tr><td>${s.from}</td><td>${s.idea}</td><td>${fmtDateTime(s.date)}</td><td><span class="pill ${s.status==='new'?'warn':'ok'}">${s.status==='new'?'New':'Reviewed'}</span></td>
-          <td>${s.status==='new' ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="reviewSuggestion('${s.id}')">Mark Reviewed</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="5" class="muted">No suggestions yet.</td></tr>`}
+          <td>${s.status==='new' ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="reviewSuggestion('${s.id}', this)">Mark Reviewed</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="5" class="muted">No suggestions yet.</td></tr>`}
       </table>
     </div>`,
 
@@ -2993,10 +2994,11 @@ async function deleteRecognitionEntry(id, el){
   });
 }
 
-async function reviewSuggestion(id){
+async function reviewSuggestion(id, el){
+  btnLoadingEl(el, 'Marking...');
   if(USE_REMOTE()){
     const r = await apiPost('updateSuggestionStatus', {id, status:"reviewed"});
-    if(!r.ok){ alert(r.error || "Couldn't update."); return; }
+    if(!r.ok){ alert(r.error || "Couldn't update."); btnResetEl(el); return; }
     await loadRemoteData();
   } else {
     const s = MOCK.suggestionsLog.find(s=>s.id===id);
@@ -3005,10 +3007,11 @@ async function reviewSuggestion(id){
   renderView('mgmt-suggestions');
 }
 
-async function resolveConcern(id){
+async function resolveConcern(id, el){
+  btnLoadingEl(el, 'Marking...');
   if(USE_REMOTE()){
     const r = await apiPost('updateConcernStatus', {id, status:"resolved"});
-    if(!r.ok){ alert(r.error || "Couldn't update."); return; }
+    if(!r.ok){ alert(r.error || "Couldn't update."); btnResetEl(el); return; }
     await loadRemoteData();
   } else {
     const c = MOCK.concernsLog.find(c=>c.id===id);
@@ -3017,14 +3020,17 @@ async function resolveConcern(id){
   renderView('mgmt-concerns');
 }
 
+const savingRequestIds = new Set();
 async function setRequestStatus(id, status){
   const req = ALL_REQUESTS.find(r=>r.ID===id);
   const previousStatus = req ? req.Status : null;
   if(req) req.Status = status; // optimistic — reflects instantly, no need to wait on the network
+  savingRequestIds.add(id);
   renderView('mgmt-requests');
 
   if(USE_REMOTE()){
     const r = await apiPost('updateRequestStatus', {id, status});
+    savingRequestIds.delete(id);
     if(!r.ok){
       if(req) req.Status = previousStatus; // revert since it didn't actually save
       alert(r.error || "Couldn't update.");
@@ -3034,6 +3040,8 @@ async function setRequestStatus(id, status){
     await loadRemoteData(); // pick up any side effects too, e.g. the Schedule tab changing from a swap
     mgmtAlertBaseline = getMgmtAlertCounts(); // this was our own change — don't let the next poll mistake it for a new incoming item
     renderView('mgmt-requests');
+  } else {
+    savingRequestIds.delete(id);
   }
 }
 
