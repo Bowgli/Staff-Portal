@@ -385,7 +385,7 @@
    replace MOCK / SCHEDULE_SHEET / ATTENDANCE_LOG / USERS with
    fetch() calls that return the same shape.
    ============================================================ */
-const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbyE6p142bIZ_fei_VjP07C6Dd2MPFha0zgZXCi0x2wE3XdusjfnJS6FyvdVu98uNvPtLQ/exec"; // paste your deployed Apps Script Web App URL here once ready
+const SHEET_API_URL = "https://staff-portal-cache.techsupport-saipanvegas.workers.dev"; // Cloudflare Worker cache layer in front of the Apps Script Web App
 const USE_REMOTE = () => SHEET_API_URL.trim().length > 0;
 
 const API_TIMEOUT_MS = 20000; // if the server doesn't respond in 20s, give up rather than hang forever
