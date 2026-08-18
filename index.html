@@ -3012,10 +3012,8 @@ async function issueRecognitionNow(){
   if(USE_REMOTE()){
     const r = await apiPostMinDelay('issueRecognition', {EmployeeName, AwardTitle, Note});
     if(!r.ok){ err.textContent = r.error || "Couldn't issue award."; err.style.display='block'; btn.disabled=false; btn.innerHTML='Issue Award'; return; }
-    await loadRemoteData();
-  } else {
-    MOCK.recognition.unshift({medal:"🏆", name:AwardTitle, desc:Note, employeeName:EmployeeName, date:"Just now"});
   }
+  MOCK.recognition.unshift({medal:"🏆", name:AwardTitle, desc:Note, employeeName:EmployeeName, date:"Just now"});
   btn.innerHTML = `✓ Sent`;
   await new Promise(r=>setTimeout(r, 600));
   renderView('mgmt-recognition');
@@ -3027,10 +3025,8 @@ async function deleteRecognitionEntry(id, el){
     if(USE_REMOTE()){
       const r = await apiPost('deleteRecognition', {id});
       if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
-      await loadRemoteData();
-    } else {
-      MOCK.recognition = MOCK.recognition.filter(r=>r.id!==id);
     }
+    MOCK.recognition = MOCK.recognition.filter(r=>r.id!==id);
     renderView('mgmt-recognition');
   });
 }
@@ -3138,10 +3134,8 @@ async function postAnnouncement(){
   if(USE_REMOTE()){
     const r = await apiPostMinDelay('postAnnouncement', {Title, Body, PostedBy: CURRENT_USER.displayName, TargetType, TargetValue});
     if(!r.ok){ err.textContent = r.error || "Couldn't post."; err.style.display='block'; btn.disabled=false; btn.innerHTML='Post'; return; }
-    await loadRemoteData();
-  } else {
-    ALL_ANNOUNCEMENTS.unshift({Title, Body, Date:"Just now", TargetType, TargetValue});
   }
+  ALL_ANNOUNCEMENTS.unshift({Title, Body, Date:"Just now", TargetType, TargetValue});
   btn.innerHTML = `✓ Sent`;
   await new Promise(r=>setTimeout(r, 600));
   renderView('mgmt-announcements');
@@ -3153,10 +3147,8 @@ async function deleteAnnouncementEntry(id, el){
     if(USE_REMOTE()){
       const r = await apiPost('deleteAnnouncement', {id});
       if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
-      await loadRemoteData();
-    } else {
-      ALL_ANNOUNCEMENTS = ALL_ANNOUNCEMENTS.filter(a=>a.ID!==id);
     }
+    ALL_ANNOUNCEMENTS = ALL_ANNOUNCEMENTS.filter(a=>a.ID!==id);
     renderView('mgmt-announcements');
   });
 }
@@ -3179,10 +3171,8 @@ async function deleteAttendanceEntry(id, el){
     if(USE_REMOTE()){
       const r = await apiPost('deleteAttendance', {id});
       if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
-      await loadRemoteData();
-    } else {
-      ATTENDANCE_LOG = ATTENDANCE_LOG.filter(a=>a.id!==id);
     }
+    ATTENDANCE_LOG = ATTENDANCE_LOG.filter(a=>a.id!==id);
     renderView('mgmt-attendance');
   });
 }
@@ -3202,11 +3192,9 @@ async function submitAttendanceLog(){
 
   if(USE_REMOTE()){
     await apiPostMinDelay('logAttendance', {employeeName:name, day:date, time, status, remarks});
-    await loadRemoteData();
-  } else {
-    ATTENDANCE_LOG = ATTENDANCE_LOG.filter(a => !(a.name===name && a.date===date));
-    ATTENDANCE_LOG.push({name, date, time, status, remarks});
   }
+  ATTENDANCE_LOG = ATTENDANCE_LOG.filter(a => !(a.name===name && a.date===date));
+  ATTENDANCE_LOG.push({name, date, time, status, remarks});
   btn.innerHTML = `✓ Sent`;
   await new Promise(r=>setTimeout(r, 600));
   renderView('mgmt-attendance');
