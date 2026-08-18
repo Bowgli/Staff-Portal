@@ -571,9 +571,10 @@ function scheduleRolePriority(role){
   if(r.includes('attendant')) return 4;
   if(r.includes('membership')) return 5;
   if(r.includes('technical manager')) return 6;
-  if(r.includes('assistant') || r.includes('technical supervisor')) return 7;
-  if(r.includes('slot tech')) return 8;
-  if(r.includes('security')) return 9;
+  if(r.includes('assistant')) return 8; // Assistant Technical Supervisor — after the plain Technical Supervisor
+  if(r.includes('technical supervisor')) return 7;
+  if(r.includes('slot tech')) return 9;
+  if(r.includes('security')) return 10;
   return 99; // anything unrecognized sorts after the known groups
 }
 function sortScheduleRows(rows){
