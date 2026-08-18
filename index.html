@@ -385,7 +385,7 @@
    replace MOCK / SCHEDULE_SHEET / ATTENDANCE_LOG / USERS with
    fetch() calls that return the same shape.
    ============================================================ */
-const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbyE6p142bIZ_fei_VjP07C6Dd2MPFha0zgZXCi0x2wE3XdusjfnJS6FyvdVu98uNvPtLQ/exec"; // paste your deployed Apps Script Web App URL here once ready
+const SHEET_API_URL = ""; // paste your deployed Apps Script Web App URL here once ready
 const USE_REMOTE = () => SHEET_API_URL.trim().length > 0;
 
 const API_TIMEOUT_MS = 20000; // if the server doesn't respond in 20s, give up rather than hang forever
@@ -635,7 +635,7 @@ async function updateNextWeekDates(){
 }
 
 async function promoteNextWeek(){
-  if(!confirm("This replaces the current week's schedule with what's in Next Week, and clears Next Week for the following round. Continue?")) return;
+  if(!confirm("This replaces the current week's schedule with what's in Next Week. Next Week's content stays as-is afterward — a ready starting point for the following round. Continue?")) return;
   if(USE_REMOTE()){
     const r = await apiPost('promoteNextWeekSchedule', {});
     if(!r.ok){ alert(r.error || "Couldn't promote."); return; }
@@ -643,6 +643,7 @@ async function promoteNextWeek(){
   }
   scheduleViewMode = 'current';
   renderView('mgmt-schedule');
+  alert("✅ New schedule sent successfully! It's now the current week — everyone will see it right away.");
 }
 
 async function publishNextWeek(){
