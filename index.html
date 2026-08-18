@@ -2489,29 +2489,27 @@ const BUILDERS = {
     const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
     return `
-    <div class="grid grid-2" style="margin-bottom:16px;">
-      <div class="card stat-card"><div class="num">${totalAvg}</div><div class="label">Total average score${filtered?' — '+perfFilterMonth+' '+perfFilterYear:' (latest per staff)'}</div></div>
-      <div class="card">
-        <h3>Filter by Period</h3>
-        <div class="grid grid-2">
-          <div>
-            <label>Month</label>
-            <select onchange="setPerfFilter('month', this.value)">
-              <option ${perfFilterMonth==='All'?'selected':''}>All Months</option>
-              ${months.map(m=>`<option ${perfFilterMonth===m?'selected':''}>${m}</option>`).join('')}
-            </select>
-          </div>
-          <div>
-            <label>Year</label>
-            <select onchange="setPerfFilter('year', this.value)">
-              <option ${perfFilterYear==='All'?'selected':''}>All Years</option>
-              ${years.map(y=>`<option ${perfFilterYear===y?'selected':''}>${y}</option>`).join('')}
-            </select>
-          </div>
+    <div class="card stat-card" style="margin-bottom:16px;"><div class="num">${totalAvg}</div><div class="label">Total average score${filtered?' — '+perfFilterMonth+' '+perfFilterYear:' (latest per staff)'}</div></div>
+    ${topPerformersChart(latestByEmployee)}
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Filter by Period</h3>
+      <div class="grid grid-2">
+        <div>
+          <label>Month</label>
+          <select onchange="setPerfFilter('month', this.value)">
+            <option ${perfFilterMonth==='All'?'selected':''}>All Months</option>
+            ${months.map(m=>`<option ${perfFilterMonth===m?'selected':''}>${m}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label>Year</label>
+          <select onchange="setPerfFilter('year', this.value)">
+            <option ${perfFilterYear==='All'?'selected':''}>All Years</option>
+            ${years.map(y=>`<option ${perfFilterYear===y?'selected':''}>${y}</option>`).join('')}
+          </select>
         </div>
       </div>
     </div>
-    ${topPerformersChart(latestByEmployee)}
     <div class="card table-scroll">
       <h3><span class="ic">📊</span> Evaluation Report — All Staff</h3>
       <p class="muted" style="margin-bottom:12px;">${filtered ? 'Showing evaluations for '+perfFilterMonth+' '+perfFilterYear+'.' : "Each employee's most recent monthly evaluation."}</p>
