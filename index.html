@@ -567,12 +567,13 @@ function scheduleRolePriority(role){
   const r = (role||'').toLowerCase();
   if(r.includes('shift manager')) return 1;
   if(r.includes('supervisor') && !r.includes('technical') && !r.includes('slot') && !r.includes('assistant')) return 2;
-  if(r.includes('cashier') || r.includes('attendant')) return 3;
-  if(r.includes('membership')) return 4;
-  if(r.includes('technical manager')) return 5;
-  if(r.includes('assistant') || r.includes('technical supervisor')) return 6;
-  if(r.includes('slot tech')) return 7;
-  if(r.includes('security')) return 8;
+  if(r.includes('cashier')) return 3;
+  if(r.includes('attendant')) return 4;
+  if(r.includes('membership')) return 5;
+  if(r.includes('technical manager')) return 6;
+  if(r.includes('assistant') || r.includes('technical supervisor')) return 7;
+  if(r.includes('slot tech')) return 8;
+  if(r.includes('security')) return 9;
   return 99; // anything unrecognized sorts after the known groups
 }
 function sortScheduleRows(rows){
