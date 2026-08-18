@@ -1427,7 +1427,14 @@ function logout(){
   document.getElementById('loginUser').value = '';
   document.getElementById('loginPass').value = '';
   document.getElementById('appRoot').style.display = 'none';
+  document.getElementById('loadingGate').classList.remove('active'); // defensive — this must never be left covering the real login form
   document.getElementById('loginGate').classList.add('active');
+  btnReset('loginBtn', 'Log In'); // in case a previous login attempt left it mid-spinner
+  const backdrop = document.getElementById('mgmtToastBackdrop');
+  if(backdrop) backdrop.remove(); // don't leave an invisible full-page overlay behind blocking clicks on the login form
+  const toastContainer = document.getElementById('mgmtToastContainer');
+  if(toastContainer) toastContainer.innerHTML = '';
+  activeToastCount = 0;
 }
 ['loginUser','loginPass'].forEach(id=>{
   document.addEventListener('DOMContentLoaded', ()=>{
