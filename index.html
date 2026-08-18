@@ -1090,6 +1090,41 @@ async function safeApiGet(action, fallback){
   catch(e){ return fallback; }
 }
 
+/* Lightweight refreshes for an employee's own submit/edit/delete on
+   Requests, Concerns, or Suggestions — only fetch the 1-2 endpoints
+   actually needed instead of the full ~13-endpoint reload every
+   other action uses. Each Apps Script call has real latency, so
+   cutting a single-item action down to just what it needs makes
+   these everyday actions feel noticeably faster. */
+async function refreshMyRequests(){
+  if(!USE_REMOTE()) return;
+  const requests = await safeApiGet('requests', null);
+  if(!requests) return;
+  ALL_REQUESTS = requests;
+  MY_REQUESTS = ALL_REQUESTS
+    .filter(r => CURRENT_EMPLOYEE && r.EmployeeName === CURRENT_EMPLOYEE.name)
+    .map(r => ({type:r.Type, date:r.Date, status:r.Status, id:r.ID, details:r.Details, swapDay:r.SwapDay, theirDay:r.TheirDay, swapWithName:r.SwapWithName}));
+  MOCK.requests = MY_REQUESTS;
+}
+async function refreshMyConcerns(){
+  if(!USE_REMOTE()) return;
+  const myName = (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.fullName) || '';
+  const [concerns, myConcernsRaw] = await Promise.all([
+    safeApiGet('concerns', null), safeApiGet('myConcerns&name=' + encodeURIComponent(myName), null)
+  ]);
+  if(concerns) MOCK.concernsLog = concerns.map(c => ({from:c.From, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID})).reverse();
+  if(myConcernsRaw) MY_CONCERNS = myConcernsRaw.map(c => ({from:c.From, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID})).reverse();
+}
+async function refreshMySuggestions(){
+  if(!USE_REMOTE()) return;
+  const myName = (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.fullName) || '';
+  const [suggestions, mySuggestionsRaw] = await Promise.all([
+    safeApiGet('suggestions', null), safeApiGet('mySuggestions&name=' + encodeURIComponent(myName), null)
+  ]);
+  if(suggestions) MOCK.suggestionsLog = suggestions.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID})).reverse();
+  if(mySuggestionsRaw) MY_SUGGESTIONS = mySuggestionsRaw.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID})).reverse();
+}
+
 async function loadRemoteData(){
   if(!USE_REMOTE()) return;
   try{
@@ -1281,7 +1316,7 @@ function startMgmtPolling(){
     }
     renderNav();
     if(['mgmt-home','mgmt-requests','mgmt-concerns','mgmt-suggestions'].includes(activeView)) renderView(activeView);
-  }, 60000); // check every 60 seconds
+  }, 30000); // check every 30 seconds
 }
 
 function stopMgmtPolling(){
@@ -2637,7 +2672,7 @@ async function submitMyRequestInner(){
     if(USE_REMOTE()){
       const r = await apiPostMinDelay('editRequest', {id:editingRequestId, Type, Details, SwapDay, TheirDay, SwapWithName});
       if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('reqSubmitBtn','Update Request'); return; }
-      await loadRemoteData();
+      await refreshMyRequests();
     } else {
       const req = MOCK.requests.find(x=>x.id===editingRequestId);
       if(req){ req.type = Type; req.details = Details; req.swapDay = SwapDay; req.theirDay = TheirDay; req.swapWithName = SwapWithName; }
@@ -2654,7 +2689,7 @@ async function submitMyRequestInner(){
   if(USE_REMOTE()){
     const r = await apiPostMinDelay('submitRequest', {EmployeeName: CURRENT_EMPLOYEE.name, Type, Details, SwapDay, TheirDay, SwapWithName});
     if(!r.ok){ err.textContent = r.error || "Couldn't submit."; err.style.display='block'; btnReset('reqSubmitBtn','Submit Request'); return; }
-    await loadRemoteData();
+    await refreshMyRequests();
   } else {
     MOCK.requests.unshift({type:Type, date:"Just now", status:"pending", swapDay:SwapDay, theirDay:TheirDay, swapWithName:SwapWithName});
   }
@@ -2689,7 +2724,7 @@ async function deleteMyRequest(id){
   if(USE_REMOTE()){
     const r = await apiPost('deleteRequest', {id});
     if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
-    await loadRemoteData();
+    await refreshMyRequests();
   } else {
     MOCK.requests = MOCK.requests.filter(x=>x.id!==id);
   }
@@ -2710,7 +2745,7 @@ async function submitMyConcern(){
     if(USE_REMOTE()){
       const r = await apiPostMinDelay('editConcern', {id:editingConcernId, Topic, Details});
       if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('concernSubmitBtn','Update Concern'); return; }
-      await loadRemoteData();
+      await refreshMyConcerns();
     } else {
       const c = MY_CONCERNS.find(x=>x.id===editingConcernId);
       if(c){ c.topic = Topic; c.details = Details; }
@@ -2728,7 +2763,7 @@ async function submitMyConcern(){
   if(USE_REMOTE()){
     const r = await apiPostMinDelay('submitConcern', {From, Topic, Details, Anonymous: anon, SubmittedBy: CURRENT_EMPLOYEE.fullName});
     if(!r.ok){ err.textContent = r.error || "Couldn't submit."; err.style.display='block'; btnReset('concernSubmitBtn','Submit Concern'); return; }
-    await loadRemoteData();
+    await refreshMyConcerns();
   }
   await btnSent('concernSubmitBtn');
   document.getElementById('concernDetails').value='';
@@ -2750,7 +2785,7 @@ async function deleteMyConcern(id){
   if(USE_REMOTE()){
     const r = await apiPost('deleteConcern', {id});
     if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
-    await loadRemoteData();
+    await refreshMyConcerns();
   } else {
     MY_CONCERNS = MY_CONCERNS.filter(x=>x.id!==id);
   }
@@ -2772,7 +2807,7 @@ async function submitMySuggestion(){
     if(USE_REMOTE()){
       const r = await apiPostMinDelay('editSuggestion', {id:editingSuggestionId, Idea});
       if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('suggSubmitBtn','Update Suggestion'); return; }
-      await loadRemoteData();
+      await refreshMySuggestions();
     } else {
       const s = MY_SUGGESTIONS.find(x=>x.id===editingSuggestionId);
       if(s) s.idea = Idea;
@@ -2791,7 +2826,7 @@ async function submitMySuggestion(){
   if(USE_REMOTE()){
     const r = await apiPostMinDelay('submitSuggestion', {From, Idea, Anonymous: anon, SubmittedBy: CURRENT_EMPLOYEE.fullName});
     if(!r.ok){ err.textContent = r.error || "Couldn't submit."; err.style.display='block'; btnReset('suggSubmitBtn','Submit Suggestion'); return; }
-    await loadRemoteData();
+    await refreshMySuggestions();
   }
   await btnSent('suggSubmitBtn');
   document.getElementById('suggIdea').value='';
@@ -2813,7 +2848,7 @@ async function deleteMySuggestion(id){
   if(USE_REMOTE()){
     const r = await apiPost('deleteSuggestion', {id});
     if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
-    await loadRemoteData();
+    await refreshMySuggestions();
   } else {
     MY_SUGGESTIONS = MY_SUGGESTIONS.filter(x=>x.id!==id);
   }
