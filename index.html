@@ -445,6 +445,36 @@ function btnReset(id, label){
   if(b) { b.disabled = false; b.textContent = label; }
 }
 
+/* Same idea as the id-based helpers above, but operates directly on
+   a passed button element — needed for buttons that repeat once per
+   row in a list (Delete on each request/concern/etc.), which don't
+   have a stable unique id to look up. */
+function btnLoadingEl(el, label){
+  if(!el) return;
+  el.dataset.origText = el.textContent;
+  el.disabled = true;
+  el.innerHTML = `<span class="btn-spinner"></span>${label || 'Deleting...'}`;
+}
+function btnResetEl(el){
+  if(!el) return;
+  el.disabled = false;
+  el.textContent = el.dataset.origText || 'Delete';
+}
+
+/* Wraps a delete action with a confirm dialog and a loading state on
+   the exact button that was clicked — used by every "Delete" button
+   in the app so each one gives immediate visual feedback instead of
+   just sitting there unresponsive while the request is in flight. */
+async function confirmAndDelete(el, message, action){
+  if(!confirm(message)) return;
+  btnLoadingEl(el);
+  try{
+    await action();
+  } finally {
+    btnResetEl(el); // harmless if the row/button no longer exists after a re-render
+  }
+}
+
 /* --- Management accounts. Fixed/provisioned separately — not
    self-service. Replace with real auth before going live. --- */
 const MANAGEMENT_USERS = [
@@ -2160,7 +2190,7 @@ const BUILDERS = {
       <table>
         <tr><th>Employee</th><th>Period</th><th>Score</th><th>Rating</th><th></th></tr>
         ${MY_GIVEN_EVALUATIONS.map(e=>`<tr><td>${e.EmployeeName}</td><td>${e.Month} ${e.Year}</td><td class="mono">${e.AverageScore}</td><td>${ratingStars(e.AverageScore)} ${e.RatingLabel}</td>
-          <td><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditEvaluation('${e.ID}')">Edit</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteMyEvaluation('${e.ID}')">Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">You haven't evaluated anyone yet.</td></tr>`}
+          <td><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditEvaluation('${e.ID}')">Edit</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteMyEvaluation('${e.ID}', this)">Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">You haven't evaluated anyone yet.</td></tr>`}
       </table>
     </div>`,
 
@@ -2193,7 +2223,7 @@ const BUILDERS = {
         <table>
           <tr><th>Type</th><th>Date</th><th>Status</th><th></th></tr>
           ${MOCK.requests.map(r=>`<tr><td>${r.type}${r.type==='Schedule Swap' && r.swapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.swapDay)}${r.theirDay && r.theirDay!==r.swapDay ? ' ↔ '+fmtDayLabel(r.theirDay) : ''} ↔ ${r.swapWithName}</span>` : ''}</td><td>${fmtDateTime(r.date)}</td><td>${statusPill(r.status)}</td>
-            <td>${r.status==='pending' ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditRequest('${r.id}')">Edit</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteMyRequest('${r.id}')">Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No requests yet.</td></tr>`}
+            <td>${r.status==='pending' ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditRequest('${r.id}')">Edit</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteMyRequest('${r.id}', this)">Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No requests yet.</td></tr>`}
         </table>
       </div>
     </div>`,
@@ -2218,7 +2248,7 @@ const BUILDERS = {
         <table>
           <tr><th>Topic</th><th>Date</th><th>Status</th><th></th></tr>
           ${MY_CONCERNS.map(c=>`<tr><td>${c.topic}</td><td>${fmtDateTime(c.date)}</td><td>${statusPill(c.status)}</td>
-            <td>${c.status==='open' ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditConcern('${c.id}')">Edit</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteMyConcern('${c.id}')">Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No concerns submitted yet.</td></tr>`}
+            <td>${c.status==='open' ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditConcern('${c.id}')">Edit</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteMyConcern('${c.id}', this)">Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No concerns submitted yet.</td></tr>`}
         </table>
       </div>
     </div>`,
@@ -2240,7 +2270,7 @@ const BUILDERS = {
         <table>
           <tr><th>Idea</th><th>Date</th><th>Status</th><th></th></tr>
           ${MY_SUGGESTIONS.map(s=>`<tr><td>${s.idea}</td><td>${fmtDateTime(s.date)}</td><td><span class="pill ${s.status==='new'?'warn':'ok'}">${s.status==='new'?'New':'Reviewed'}</span></td>
-            <td>${s.status==='new' ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditSuggestion('${s.id}')">Edit</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteMySuggestion('${s.id}')">Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No suggestions submitted yet.</td></tr>`}
+            <td>${s.status==='new' ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditSuggestion('${s.id}')">Edit</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteMySuggestion('${s.id}', this)">Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No suggestions submitted yet.</td></tr>`}
         </table>
       </div>
     </div>`,
@@ -2512,7 +2542,7 @@ const BUILDERS = {
       <table>
         <tr><th>Employee</th><th>Award</th><th>Note</th><th>Date</th><th></th></tr>
         ${MOCK.recognition.map(r=>`<tr><td>${r.employeeName||''}</td><td>${r.name}</td><td class="muted">${r.desc}</td><td>${fmtDateTime(r.date)}</td>
-          <td><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteRecognitionEntry('${r.id}')">Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">No awards issued yet.</td></tr>`}
+          <td><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteRecognitionEntry('${r.id}', this)">Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">No awards issued yet.</td></tr>`}
       </table>
     </div>`,
 
@@ -2550,7 +2580,7 @@ const BUILDERS = {
       <table>
         <tr><th>Title</th><th>Sent to</th><th>Date</th><th></th></tr>
         ${ALL_ANNOUNCEMENTS.map(a=>`<tr><td>${a.Title}</td><td class="muted">${a.TargetType==='All'?'All Staff':a.TargetType==='Position'?a.TargetValue:a.TargetValue}</td><td>${fmtDateTime(a.Date)}</td>
-          <td><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteAnnouncementEntry('${a.ID}')">Delete</button></td></tr>`).join('') || `<tr><td colspan="4" class="muted">No announcements posted yet.</td></tr>`}
+          <td><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteAnnouncementEntry('${a.ID}', this)">Delete</button></td></tr>`).join('') || `<tr><td colspan="4" class="muted">No announcements posted yet.</td></tr>`}
       </table>
     </div>`,
 };
@@ -2719,16 +2749,17 @@ function startEditRequest(id){
   window.scrollTo({top:0, behavior:'smooth'});
 }
 
-async function deleteMyRequest(id){
-  if(!confirm("Delete this request? This can't be undone.")) return;
-  if(USE_REMOTE()){
-    const r = await apiPost('deleteRequest', {id});
-    if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
-    await refreshMyRequests();
-  } else {
-    MOCK.requests = MOCK.requests.filter(x=>x.id!==id);
-  }
-  renderView('requests');
+async function deleteMyRequest(id, el){
+  await confirmAndDelete(el, "Delete this request? This can't be undone.", async ()=>{
+    if(USE_REMOTE()){
+      const r = await apiPost('deleteRequest', {id});
+      if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
+      await refreshMyRequests();
+    } else {
+      MOCK.requests = MOCK.requests.filter(x=>x.id!==id);
+    }
+    renderView('requests');
+  });
 }
 
 async function submitMyConcern(){
@@ -2780,16 +2811,17 @@ function startEditConcern(id){
   document.getElementById('concernSubmitBtn').textContent = 'Update Concern';
 }
 
-async function deleteMyConcern(id){
-  if(!confirm("Delete this concern? This can't be undone.")) return;
-  if(USE_REMOTE()){
-    const r = await apiPost('deleteConcern', {id});
-    if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
-    await refreshMyConcerns();
-  } else {
-    MY_CONCERNS = MY_CONCERNS.filter(x=>x.id!==id);
-  }
-  renderView('concern');
+async function deleteMyConcern(id, el){
+  await confirmAndDelete(el, "Delete this concern? This can't be undone.", async ()=>{
+    if(USE_REMOTE()){
+      const r = await apiPost('deleteConcern', {id});
+      if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
+      await refreshMyConcerns();
+    } else {
+      MY_CONCERNS = MY_CONCERNS.filter(x=>x.id!==id);
+    }
+    renderView('concern');
+  });
 }
 
 let editingSuggestionId = null;
@@ -2843,16 +2875,17 @@ function startEditSuggestion(id){
   window.scrollTo({top:0, behavior:'smooth'});
 }
 
-async function deleteMySuggestion(id){
-  if(!confirm("Delete this suggestion? This can't be undone.")) return;
-  if(USE_REMOTE()){
-    const r = await apiPost('deleteSuggestion', {id});
-    if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
-    await refreshMySuggestions();
-  } else {
-    MY_SUGGESTIONS = MY_SUGGESTIONS.filter(x=>x.id!==id);
-  }
-  renderView('suggestion');
+async function deleteMySuggestion(id, el){
+  await confirmAndDelete(el, "Delete this suggestion? This can't be undone.", async ()=>{
+    if(USE_REMOTE()){
+      const r = await apiPost('deleteSuggestion', {id});
+      if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
+      await refreshMySuggestions();
+    } else {
+      MY_SUGGESTIONS = MY_SUGGESTIONS.filter(x=>x.id!==id);
+    }
+    renderView('suggestion');
+  });
 }
 
 let editingEvaluationId = null;
@@ -2909,14 +2942,15 @@ function startEditEvaluation(id){
   window.scrollTo({top:0, behavior:'smooth'});
 }
 
-async function deleteMyEvaluation(id){
-  if(!confirm("Delete this evaluation? This can't be undone.")) return;
-  if(USE_REMOTE()){
-    const r = await apiPost('deleteEvaluation', {id});
-    if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
-    await loadRemoteData();
-  }
-  renderView('evaluate');
+async function deleteMyEvaluation(id, el){
+  await confirmAndDelete(el, "Delete this evaluation? This can't be undone.", async ()=>{
+    if(USE_REMOTE()){
+      const r = await apiPost('deleteEvaluation', {id});
+      if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
+      await loadRemoteData();
+    }
+    renderView('evaluate');
+  });
 }
 
 async function issueRecognitionNow(){
@@ -2946,16 +2980,17 @@ async function issueRecognitionNow(){
   document.getElementById('recogOk').style.display='block';
 }
 
-async function deleteRecognitionEntry(id){
-  if(!confirm("Delete this award? This can't be undone.")) return;
-  if(USE_REMOTE()){
-    const r = await apiPost('deleteRecognition', {id});
-    if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
-    await loadRemoteData();
-  } else {
-    MOCK.recognition = MOCK.recognition.filter(r=>r.id!==id);
-  }
-  renderView('mgmt-recognition');
+async function deleteRecognitionEntry(id, el){
+  await confirmAndDelete(el, "Delete this award? This can't be undone.", async ()=>{
+    if(USE_REMOTE()){
+      const r = await apiPost('deleteRecognition', {id});
+      if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
+      await loadRemoteData();
+    } else {
+      MOCK.recognition = MOCK.recognition.filter(r=>r.id!==id);
+    }
+    renderView('mgmt-recognition');
+  });
 }
 
 async function reviewSuggestion(id){
@@ -3041,23 +3076,24 @@ async function postAnnouncement(){
   document.getElementById('annOk').style.display='block';
 }
 
-async function deleteAnnouncementEntry(id){
-  if(!confirm("Delete this announcement? This can't be undone.")) return;
-  if(USE_REMOTE()){
-    const r = await apiPost('deleteAnnouncement', {id});
-    if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
-    await loadRemoteData();
-  } else {
-    ALL_ANNOUNCEMENTS = ALL_ANNOUNCEMENTS.filter(a=>a.ID!==id);
-  }
-  renderView('mgmt-announcements');
+async function deleteAnnouncementEntry(id, el){
+  await confirmAndDelete(el, "Delete this announcement? This can't be undone.", async ()=>{
+    if(USE_REMOTE()){
+      const r = await apiPost('deleteAnnouncement', {id});
+      if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
+      await loadRemoteData();
+    } else {
+      ALL_ANNOUNCEMENTS = ALL_ANNOUNCEMENTS.filter(a=>a.ID!==id);
+    }
+    renderView('mgmt-announcements');
+  });
 }
 
 function renderAttendanceLogRows(){
   const q = attendanceSearchQuery.toLowerCase();
   const filtered = ATTENDANCE_LOG.filter(a=>a.name.toLowerCase().includes(q))
     .slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  return filtered.map(a=>`<tr><td>${a.name}</td><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td><td><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteAttendanceEntry('${a.id}')">Delete</button></td></tr>`).join('')
+  return filtered.map(a=>`<tr><td>${a.name}</td><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td><td><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteAttendanceEntry('${a.id}', this)">Delete</button></td></tr>`).join('')
     || `<tr><td colspan="6" class="muted">${attendanceSearchQuery ? 'No entries match that search.' : 'No entries logged yet.'}</td></tr>`;
 }
 function filterAttendanceLog(val){
@@ -3066,16 +3102,17 @@ function filterAttendanceLog(val){
   if(rows) rows.innerHTML = renderAttendanceLogRows(); // update rows only — keeps the search box focused
 }
 
-async function deleteAttendanceEntry(id){
-  if(!confirm("Delete this attendance entry? This can't be undone.")) return;
-  if(USE_REMOTE()){
-    const r = await apiPost('deleteAttendance', {id});
-    if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
-    await loadRemoteData();
-  } else {
-    ATTENDANCE_LOG = ATTENDANCE_LOG.filter(a=>a.id!==id);
-  }
-  renderView('mgmt-attendance');
+async function deleteAttendanceEntry(id, el){
+  await confirmAndDelete(el, "Delete this attendance entry? This can't be undone.", async ()=>{
+    if(USE_REMOTE()){
+      const r = await apiPost('deleteAttendance', {id});
+      if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
+      await loadRemoteData();
+    } else {
+      ATTENDANCE_LOG = ATTENDANCE_LOG.filter(a=>a.id!==id);
+    }
+    renderView('mgmt-attendance');
+  });
 }
 
 async function submitAttendanceLog(){
