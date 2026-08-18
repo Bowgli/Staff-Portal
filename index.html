@@ -1458,6 +1458,7 @@ function openResetModal(employeeName){
     : `${employeeName} has no account yet. Set a username and password for them.`;
   document.getElementById('acctModalUsernameField').style.display = acct ? 'none' : 'block';
   document.getElementById('acctModalUsername').value = acct ? acct.username : '';
+  document.getElementById('acctModalFullName').value = acct ? (acct.fullName || '') : '';
   document.getElementById('acctModalPass').value = '';
   document.getElementById('acctModalErr').style.display = 'none';
   document.getElementById('acctModal').classList.add('active');
