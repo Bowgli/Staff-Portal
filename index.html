@@ -1900,6 +1900,11 @@ function disciplinaryCasesTableSection(rows, title){
     </div>`;
 }
 
+function viewEmployeeDisciplinaryHistory(employeeName){
+  discFilter.employee = employeeName;
+  renderView('mgmt-disciplinary');
+}
+
 function setDiscEmployeeFilter(val){
   discFilter.employee = val;
   const cursorPos = document.activeElement && document.activeElement.selectionStart;
@@ -2751,14 +2756,18 @@ const BUILDERS = {
     ${disciplinaryCasesTableSection(ALL_DISCIPLINARY_RECORDS, 'Disciplinary Cases')}
     <div style="margin-top:16px;">${disciplinarySummarySection()}</div>`,
 
-  "mgmt-employees": ()=>`
+  "mgmt-employees": ()=>{
+    const discCountByEmployee = {};
+    ALL_DISCIPLINARY_RECORDS.forEach(d=>{ if(d.Status !== 'Draft') discCountByEmployee[d.EmployeeName] = (discCountByEmployee[d.EmployeeName]||0) + 1; });
+    return `
     <div class="card table-scroll">
       <h3><span class="ic">👥</span> Staff Directory</h3>
       <table>
-        <tr><th>Name</th><th>Position</th><th>Status</th><th>Attendance</th></tr>
-        ${EMPLOYEE_ROSTER.map(e=>`<tr><td>${e.name}</td><td>${e.position}</td><td>${statusPill(e.status)}</td><td class="mono">${e.attendance}</td></tr>`).join('')}
+        <tr><th>Name</th><th>Position</th><th>Status</th><th>Attendance</th><th>Disciplinary Records</th></tr>
+        ${EMPLOYEE_ROSTER.map(e=>`<tr><td>${e.name}</td><td>${e.position}</td><td>${statusPill(e.status)}</td><td class="mono">${e.attendance}</td><td>${discCountByEmployee[e.name] ? `<button class="btn ghost auto" style="padding:4px 10px;" onclick="viewEmployeeDisciplinaryHistory('${e.name.replace(/'/g,"\\'")}')">${discCountByEmployee[e.name]} record${discCountByEmployee[e.name]===1?'':'s'}</button>` : '<span class="muted">None</span>'}</td></tr>`).join('')}
       </table>
-    </div>`,
+    </div>`;
+  },
 
   "mgmt-accounts": ()=>`
     <div class="banner note"><b>Note:</b> only management can create or reset an employee's login — there's no self-registration. Photos are also assigned by management, not uploaded by employees themselves.</div>
