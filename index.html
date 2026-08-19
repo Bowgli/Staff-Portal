@@ -515,7 +515,7 @@ let MY_EVALUATIONS = [];     // the current employee's own evaluation history (r
 let MY_GIVEN_EVALUATIONS = []; // evaluations the current employee has given to others
 let ALL_DISCIPLINARY_RECORDS = []; // full records, management-only
 let MY_DISCIPLINARY_RECORDS = []; // scoped to the current employee, excludes Drafts and internal-only fields
-let discFilter = { employee:'', department:'All', violation:'All', level:'All', status:'All', dateFrom:'', dateTo:'' };
+let discFilter = { employee:'', department:'All', position:'All', violation:'All', level:'All', status:'All', dateFrom:'', dateTo:'' };
 let discSummaryPeriod = ''; // "YYYY-MM", defaults to current month on first view
 let discDetailCaseId = null; // which case mgmt-disciplinary-detail is showing
 let discCaseAttachments = []; // [{fileId, fileName}] staged during the New Case form, before save
@@ -1783,6 +1783,7 @@ function setRole(role){
    Disciplinary Records
    ============================================================ */
 const DISC_VIOLATION_TYPES = ["Attendance / Tardiness","Absence","Undertime","Work Performance","Company Policy","Workplace Conduct","Customer Service","Safety","Insubordination","Other"];
+const DISC_POSITIONS = ["Shift Manager","Supervisor","Cashier","Membership","Slot Attendant","Slot Technician Supervisor","Assistant Slot Technician Supervisor","Slot Technician","Security"];
 const DISC_LEVELS = ["Level 1 – Coaching / Verbal Reminder","Level 2 – Written Warning","Level 3 – Written Warning + Suspension","Level 4 – Final Review","Level 5 – Employment Decision"];
 const DISC_STATUSES = ["Draft","Under Review","Pending Approval","Final Review","Action Issued","Closed","No Action"];
 const DISC_EMPLOYMENT_DECISIONS = ["Continue Employment","Final Warning","Additional Review","Other Management Action","Termination"];
@@ -1802,10 +1803,33 @@ function discStatusPill(status){
   };
   return `<span class="pill ${map[status]||'warn'}">${status||'Draft'}</span>`;
 }
+function monthlyDisciplinarySummaryCard(){
+  const now = new Date();
+  const period = discSummaryPeriod || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const [sy, sm] = period.split('-').map(Number);
+  const inPeriod = ALL_DISCIPLINARY_RECORDS.filter(d=>{
+    if(!d.DateReported) return false;
+    const dt = new Date(d.DateReported);
+    return !isNaN(dt) && dt.getFullYear()===sy && (dt.getMonth()+1)===sm && d.Status !== 'Draft';
+  });
+  const byViolation = {};
+  inPeriod.forEach(d=> discParseViolations(d.ViolationTypes).forEach(v=>{ byViolation[v] = (byViolation[v]||0)+1; }));
+  const periodLabel = new Date(sy, sm-1, 1).toLocaleDateString('en-US', {month:'long', year:'numeric'});
+  return `
+    <div class="card clickable" style="margin-top:16px;" onclick="renderView('mgmt-disciplinary')">
+      <h3><span class="ic">📁</span> Monthly Disciplinary Summary — ${periodLabel}</h3>
+      <table>
+        <tr><td>Total Cases</td><td class="mono" style="text-align:right;">${inPeriod.length}</td></tr>
+        ${Object.keys(byViolation).length ? Object.entries(byViolation).map(([v,c])=>`<tr><td class="muted">${v}</td><td class="mono" style="text-align:right;">${c}</td></tr>`).join('') : `<tr><td colspan="2" class="muted">No violations logged this period.</td></tr>`}
+      </table>
+    </div>`;
+}
+
 function discFilteredRecords(){
   return ALL_DISCIPLINARY_RECORDS.filter(d=>{
     if(discFilter.employee && !(d.EmployeeName||'').toLowerCase().includes(discFilter.employee.toLowerCase())) return false;
     if(discFilter.department !== 'All' && d.Department !== discFilter.department) return false;
+    if(discFilter.position !== 'All' && d.Position !== discFilter.position) return false;
     if(discFilter.violation !== 'All' && !discParseViolations(d.ViolationTypes).includes(discFilter.violation)) return false;
     if(discFilter.level !== 'All' && d.DisciplinaryLevel !== discFilter.level) return false;
     if(discFilter.status !== 'All' && d.Status !== discFilter.status) return false;
@@ -1819,7 +1843,7 @@ function setDiscFilter(field, val){
   renderView('mgmt-disciplinary');
 }
 function resetDiscFilter(){
-  discFilter = { employee:'', department:'All', violation:'All', level:'All', status:'All', dateFrom:'', dateTo:'' };
+  discFilter = { employee:'', department:'All', position:'All', violation:'All', level:'All', status:'All', dateFrom:'', dateTo:'' };
   renderView('mgmt-disciplinary');
 }
 function setDiscSummaryPeriod(val){
@@ -1902,7 +1926,7 @@ async function saveDisciplinaryCase(status){
 
   const payload = {
     DateReported: document.getElementById('discDateReported').value,
-    ReportedBy: CURRENT_USER.displayName,
+    ReportedBy: document.getElementById('discReportedBy').value.trim() || CURRENT_USER.displayName,
     EmployeeName: employeeName,
     Position: emp ? emp.position : '',
     Department: empSchedRow ? empSchedRow.department : '',
@@ -2639,7 +2663,8 @@ const BUILDERS = {
       <div class="card stat-card clickable" onclick="renderView('mgmt-suggestions')"><div class="num">${MOCK.suggestionsLog.filter(s=>s.status==='new').length}</div><div class="label">New suggestions</div></div>
       <div class="card stat-card clickable" onclick="renderView('mgmt-attendance')"><div class="num">${ATTENDANCE_LOG.length}</div><div class="label">Attendance entries logged</div></div>
     </div>
-    ${attendanceConcernsSection()}`,
+    ${attendanceConcernsSection()}
+    ${monthlyDisciplinarySummaryCard()}`,
 
   "mgmt-employees": ()=>`
     <div class="card table-scroll">
@@ -2867,8 +2892,15 @@ const BUILDERS = {
         <div>
           <label>Department</label>
           <select onchange="setDiscFilter('department', this.value)">
-            <option ${discFilter.department==='All'?'selected':''}>All Departments</option>
+            <option value="All" ${discFilter.department==='All'?'selected':''}>All Departments</option>
             ${depts.map(d=>`<option ${discFilter.department===d?'selected':''}>${d}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label>Position</label>
+          <select onchange="setDiscFilter('position', this.value)">
+            <option value="All" ${discFilter.position==='All'?'selected':''}>All Positions</option>
+            ${DISC_POSITIONS.map(p=>`<option ${discFilter.position===p?'selected':''}>${p}</option>`).join('')}
           </select>
         </div>
         <div>
@@ -2947,7 +2979,7 @@ const BUILDERS = {
         <div><label>Date Reported</label><input type="date" id="discDateReported" value="${localDate}"></div>
       </div>
       <label>Reported By</label>
-      <input type="text" value="${CURRENT_USER.displayName}" disabled>
+      <input type="text" id="discReportedBy" value="${CURRENT_USER.displayName}" placeholder="Type your full name">
     </div>
 
     <div class="card" style="margin-bottom:16px;">
