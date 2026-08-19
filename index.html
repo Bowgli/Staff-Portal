@@ -1878,12 +1878,16 @@ function disciplinarySummarySection(){
 }
 
 function disciplinaryCasesTableSection(rows, title){
+  const filtered = discFilter.employee
+    ? rows.filter(d => (d.EmployeeName||'').toLowerCase().includes(discFilter.employee.toLowerCase()))
+    : rows;
   return `
     <div class="card table-scroll">
       <h3><span class="ic">📁</span> ${title || 'Disciplinary Cases'}</h3>
+      ${employeePickerHtml('discCaseSearch', EMPLOYEE_ROSTER, `value="${discFilter.employee}" oninput="setDiscEmployeeFilter(this.value)" placeholder="🔍 Search employee name…" style="margin-bottom:12px;"`)}
       <table>
         <tr><th>Case #</th><th>Employee</th><th>Date Reported</th><th>Violation</th><th>Level</th><th>Status</th><th></th></tr>
-        ${rows.map(d=>`<tr>
+        ${filtered.map(d=>`<tr>
           <td class="mono">${d.CaseNumber||''}</td>
           <td>${d.EmployeeName}</td>
           <td>${fmtDateTime(d.DateReported)}</td>
@@ -1896,40 +1900,12 @@ function disciplinaryCasesTableSection(rows, title){
     </div>`;
 }
 
-function discFilteredRecords(){
-  return ALL_DISCIPLINARY_RECORDS.filter(d=>{
-    if(discFilter.employee && !(d.EmployeeName||'').toLowerCase().includes(discFilter.employee.toLowerCase())) return false;
-    if(discFilter.department !== 'All' && d.Department !== discFilter.department) return false;
-    if(discFilter.position !== 'All' && d.Position !== discFilter.position) return false;
-    if(discFilter.violation !== 'All' && !discParseViolations(d.ViolationTypes).includes(discFilter.violation)) return false;
-    if(discFilter.level !== 'All' && d.DisciplinaryLevel !== discFilter.level) return false;
-    if(discFilter.status !== 'All' && d.Status !== discFilter.status) return false;
-    if(discFilter.dateFrom){ const dt = new Date(d.DateReported); if(isNaN(dt) || dt < new Date(discFilter.dateFrom)) return false; }
-    if(discFilter.dateTo){ const dt = new Date(d.DateReported); if(isNaN(dt) || dt > new Date(discFilter.dateTo + 'T23:59:59')) return false; }
-    return true;
-  });
-}
-function setDiscFilter(field, val){
-  discFilter[field] = val;
-  renderView('mgmt-disciplinary');
-}
 function setDiscEmployeeFilter(val){
   discFilter.employee = val;
-  const name = val.split(' — ')[0].trim();
-  const match = EMPLOYEE_ROSTER.find(e => e.name.toLowerCase() === name.toLowerCase());
-  if(match){
-    discFilter.position = DISC_POSITIONS.includes(match.position) ? match.position : discFilter.position;
-    const schedRow = findMyScheduleRow(match.name);
-    if(schedRow && schedRow.department) discFilter.department = schedRow.department;
-  }
   const cursorPos = document.activeElement && document.activeElement.selectionStart;
-  renderView('mgmt-disciplinary');
-  const input = document.getElementById('discFilterEmp');
+  renderView(activeView);
+  const input = document.getElementById('discCaseSearch');
   if(input){ input.focus(); if(cursorPos != null) input.setSelectionRange(cursorPos, cursorPos); }
-}
-function resetDiscFilter(){
-  discFilter = { employee:'', department:'All', position:'All', violation:'All', level:'All', status:'All', dateFrom:'', dateTo:'' };
-  renderView('mgmt-disciplinary');
 }
 function setDiscSummaryPeriod(val){
   discSummaryPeriod = val;
@@ -2772,8 +2748,8 @@ const BUILDERS = {
       <div class="card stat-card clickable" onclick="renderView('mgmt-attendance')"><div class="num">${ATTENDANCE_LOG.length}</div><div class="label">Attendance entries logged</div></div>
     </div>
     ${attendanceConcernsSection()}
-    ${disciplinarySummarySection()}
-    ${disciplinaryCasesTableSection(ALL_DISCIPLINARY_RECORDS, 'Disciplinary Cases')}`,
+    ${disciplinaryCasesTableSection(ALL_DISCIPLINARY_RECORDS, 'Disciplinary Cases')}
+    <div style="margin-top:16px;">${disciplinarySummarySection()}</div>`,
 
   "mgmt-employees": ()=>`
     <div class="card table-scroll">
@@ -2968,70 +2944,13 @@ const BUILDERS = {
   },
 
   "mgmt-disciplinary": ()=>{
-    const depts = Array.from(new Set(ALL_DISCIPLINARY_RECORDS.map(d=>d.Department).filter(Boolean))).sort();
-    const rows = discFilteredRecords();
-
     return `
     <div class="no-print" style="display:flex; justify-content:flex-end; margin-bottom:16px;">
       <button onclick="renderView('mgmt-disciplinary-new')">+ New Case</button>
     </div>
 
-    <div class="card" style="margin-bottom:16px;">
-      <h3>Filter Disciplinary Reports</h3>
-      <div class="grid grid-2">
-        <div>
-          <label>Employee</label>
-          ${employeePickerHtml('discFilterEmp', EMPLOYEE_ROSTER, `value="${discFilter.employee}" oninput="setDiscEmployeeFilter(this.value)" placeholder="All employees…"`)}
-        </div>
-        <div>
-          <label>Department</label>
-          <select onchange="setDiscFilter('department', this.value)">
-            <option value="All" ${discFilter.department==='All'?'selected':''}>All Departments</option>
-            ${depts.map(d=>`<option ${discFilter.department===d?'selected':''}>${d}</option>`).join('')}
-          </select>
-        </div>
-        <div>
-          <label>Position</label>
-          <select onchange="setDiscFilter('position', this.value)">
-            <option value="All" ${discFilter.position==='All'?'selected':''}>All Positions</option>
-            ${DISC_POSITIONS.map(p=>`<option ${discFilter.position===p?'selected':''}>${p}</option>`).join('')}
-          </select>
-        </div>
-        <div>
-          <label>Violation</label>
-          <select onchange="setDiscFilter('violation', this.value)">
-            <option value="All" ${discFilter.violation==='All'?'selected':''}>All Types</option>
-            ${DISC_VIOLATION_TYPES.map(v=>`<option ${discFilter.violation===v?'selected':''}>${v}</option>`).join('')}
-          </select>
-        </div>
-        <div>
-          <label>Level</label>
-          <select onchange="setDiscFilter('level', this.value)">
-            <option value="All" ${discFilter.level==='All'?'selected':''}>All Levels</option>
-            ${DISC_LEVELS.map(l=>`<option ${discFilter.level===l?'selected':''}>${l}</option>`).join('')}
-          </select>
-        </div>
-        <div>
-          <label>Status</label>
-          <select onchange="setDiscFilter('status', this.value)">
-            <option value="All" ${discFilter.status==='All'?'selected':''}>All Statuses</option>
-            ${DISC_STATUSES.map(s=>`<option ${discFilter.status===s?'selected':''}>${s}</option>`).join('')}
-          </select>
-        </div>
-        <div>
-          <label>Date From</label>
-          <input type="date" value="${discFilter.dateFrom}" onchange="setDiscFilter('dateFrom', this.value)">
-        </div>
-        <div>
-          <label>Date To</label>
-          <input type="date" value="${discFilter.dateTo}" onchange="setDiscFilter('dateTo', this.value)">
-        </div>
-      </div>
-      <button class="btn ghost auto" style="margin-top:8px;" onclick="resetDiscFilter()">Reset Filters</button>
-    </div>
-
-    ${disciplinarySummarySection()}
-    ${disciplinaryCasesTableSection(rows, 'Disciplinary Cases')}`;
+    ${disciplinaryCasesTableSection(ALL_DISCIPLINARY_RECORDS, 'Disciplinary Cases')}
+    <div style="margin-top:16px;">${disciplinarySummarySection()}</div>`;
   },
 
   "mgmt-disciplinary-new": ()=>{
