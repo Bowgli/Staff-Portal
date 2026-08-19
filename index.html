@@ -1191,6 +1191,16 @@ async function refreshMySuggestions(){
   if(suggestions) MOCK.suggestionsLog = suggestions.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID})).reverse();
   if(mySuggestionsRaw) MY_SUGGESTIONS = mySuggestionsRaw.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID})).reverse();
 }
+async function refreshDisciplinaryOnly(){
+  if(!USE_REMOTE()) return;
+  const myName = (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.fullName) || '';
+  const [disciplinaryRecords, myDisciplinaryRaw] = await Promise.all([
+    safeApiGet('disciplinaryRecords', null),
+    safeApiGet('myDisciplinaryRecords&name=' + encodeURIComponent(myName), null)
+  ]);
+  if(disciplinaryRecords) ALL_DISCIPLINARY_RECORDS = disciplinaryRecords.slice().reverse();
+  if(myDisciplinaryRaw) MY_DISCIPLINARY_RECORDS = myDisciplinaryRaw.slice().reverse();
+}
 
 async function loadRemoteData(){
   if(!USE_REMOTE()) return;
@@ -1693,7 +1703,10 @@ async function submitEmployeeDiscResponse(id){
   if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnReset('myDiscRespBtn','Submit Response'); return; }
   const rec = MY_DISCIPLINARY_RECORDS.find(x=>x.ID===id);
   if(rec) rec.EmployeeResponse = text;
-  openMyDisciplinaryCase(id); // re-render the modal — it now shows the locked, read-only response
+  const btn = document.getElementById('myDiscRespBtn');
+  if(btn){ btn.disabled = true; btn.innerHTML = 'Response Submitted'; }
+  await new Promise(res=>setTimeout(res, 900));
+  openMyDisciplinaryCase(id); // now shows the locked, read-only response
 }
 
 function computeRecentActivity(){
@@ -1924,8 +1937,52 @@ function setDiscSummaryYear(val){
   discSummaryYear = Number(val);
   renderView(activeView);
 }
+let discIncidentEditMode = false;
 function openDisciplinaryCase(id){
   discDetailCaseId = id;
+  discIncidentEditMode = false;
+  renderView('mgmt-disciplinary-detail');
+}
+function toggleDiscIncidentEdit(on){
+  discIncidentEditMode = on;
+  renderView('mgmt-disciplinary-detail');
+}
+function toggleDiscEditLocationOther(){
+  const isOther = document.getElementById('discEditLocation').value === 'Other';
+  document.getElementById('discEditLocationOtherField').style.display = isOther ? 'block' : 'none';
+}
+function toggleDiscEditViolationOther(){
+  const isChecked = document.getElementById('discEditV_Other').checked;
+  document.getElementById('discEditViolationOtherField').style.display = isChecked ? 'block' : 'none';
+}
+async function saveDiscIncidentEdit(){
+  const err = document.getElementById('discEditIncidentErr');
+  err.style.display = 'none';
+  const violations = Array.from(document.querySelectorAll('.discEditViolationCb:checked')).map(cb=>cb.value);
+  const description = document.getElementById('discEditDescription').value.trim();
+  if(!violations.length){ err.textContent = "Select at least one violation type."; err.style.display='block'; return; }
+  if(!description){ err.textContent = "Description can't be empty."; err.style.display='block'; return; }
+  const location = document.getElementById('discEditLocation').value;
+  const fields = {
+    id: discDetailCaseId,
+    IncidentDate: document.getElementById('discEditIncidentDate').value,
+    IncidentTime: document.getElementById('discEditIncidentTime').value,
+    Location: location,
+    LocationOther: location==='Other' ? document.getElementById('discEditLocationOther').value.trim() : '',
+    ViolationTypes: JSON.stringify(violations),
+    ViolationOther: violations.includes('Other') ? document.getElementById('discEditViolationOther').value.trim() : '',
+    Description: description,
+    PolicyInvolved: document.getElementById('discEditPolicy').value.trim(),
+    Witnesses: document.getElementById('discEditWitnesses').value.trim(),
+    stage: 'edited',
+  };
+  const btn = document.getElementById('discSaveIncidentBtn');
+  btnLoadingEl(btn, 'Saving...');
+  const r = await apiPost('updateDisciplinaryCase', fields);
+  if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnResetEl(btn); return; }
+  await refreshDisciplinaryOnly();
+  await btnSentEl(btn, 'Saved');
+  discIncidentEditMode = false;
   renderView('mgmt-disciplinary-detail');
 }
 
@@ -2028,7 +2085,7 @@ async function saveDisciplinaryCase(status){
   btnLoading(btnId, status==='Draft' ? 'Saving...' : 'Submitting...');
   const r = await apiPost('saveDisciplinaryCase', payload);
   if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnReset(btnId, status==='Draft'?'Save Draft':'Submit Report'); return; }
-  await loadRemoteData();
+  await refreshDisciplinaryOnly();
   discNewCaseEmployee = '';
   discCaseAttachments = [];
   renderView('mgmt-disciplinary');
@@ -2055,7 +2112,7 @@ async function saveDiscReview(el){
   };
   const r = await apiPost('updateDisciplinaryCase', fields);
   if(!r.ok){ alert(r.error || "Couldn't save the review — please try again."); btnResetEl(el); return; }
-  await loadRemoteData();
+  await refreshDisciplinaryOnly();
   await btnSentEl(el, 'Saved');
   renderView('mgmt-disciplinary-detail');
 }
@@ -2067,7 +2124,7 @@ async function saveDiscLevel(el){
   const fields = { id: discDetailCaseId, DisciplinaryLevel: level, EmploymentDecision: level===DISC_LEVELS[4] ? (empDecisionEl ? empDecisionEl.value : '') : '' };
   const r = await apiPost('updateDisciplinaryCase', fields);
   if(!r.ok){ alert(r.error || "Couldn't save the level — please try again."); btnResetEl(el); return; }
-  await loadRemoteData();
+  await refreshDisciplinaryOnly();
   await btnSentEl(el, 'Saved');
   renderView('mgmt-disciplinary-detail');
 }
@@ -2084,7 +2141,7 @@ async function saveDiscApproval(el){
   };
   const r = await apiPost('updateDisciplinaryCase', fields);
   if(!r.ok){ alert(r.error || "Couldn't save the approval — please try again."); btnResetEl(el); return; }
-  await loadRemoteData();
+  await refreshDisciplinaryOnly();
   await btnSentEl(el, 'Saved');
   renderView('mgmt-disciplinary-detail');
 }
@@ -2100,7 +2157,7 @@ async function saveDiscFinalAction(el){
   };
   const r = await apiPost('updateDisciplinaryCase', fields);
   if(!r.ok){ alert(r.error || "Couldn't save the final action — please try again."); btnResetEl(el); return; }
-  await loadRemoteData();
+  await refreshDisciplinaryOnly();
   await btnSentEl(el, 'Saved');
   renderView('mgmt-disciplinary-detail');
 }
@@ -2112,7 +2169,7 @@ async function saveDiscStatus(el){
   const fields = { id: discDetailCaseId, Status: status, stage: stageMap[status] || '' };
   const r = await apiPost('updateDisciplinaryCase', fields);
   if(!r.ok){ alert(r.error || "Couldn't update the status — please try again."); btnResetEl(el); return; }
-  await loadRemoteData();
+  await refreshDisciplinaryOnly();
   await btnSentEl(el, 'Updated');
   renderView('mgmt-disciplinary-detail');
 }
@@ -2316,24 +2373,36 @@ function fmtDateTime(raw){
   const timePart = d.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'});
   return `${datePart} ${timePart}`;
 }
-/* Formats the plain "YYYY-MM-DD" value from a <input type="date">
-   into something readable — noon avoids any timezone rollover
-   pushing it to the wrong day. */
+/* Formats a date field into MM-DD-YYYY. Robust against both a clean
+   "YYYY-MM-DD" (from <input type="date">) and an already-corrupted
+   full ISO datetime string (from before the backend was fixed to
+   stop Sheets auto-converting these into real Date cells). */
 function fmtDiscDate(raw){
   if(!raw) return '—';
-  const d = new Date(raw + 'T12:00:00');
-  if(isNaN(d)) return raw;
-  return d.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+  const str = String(raw);
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(str) ? new Date(str + 'T12:00:00') : new Date(str);
+  if(isNaN(d)) return str;
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const dd = String(d.getDate()).padStart(2,'0');
+  return `${mm}-${dd}-${d.getFullYear()}`;
 }
-/* Formats the plain "HH:MM" value from a <input type="time"> into
-   a 12-hour clock reading. */
+/* Formats a time field into h:mmAM/PM (no space). Robust against
+   both a clean "HH:MM" (from <input type="time">) and an
+   already-corrupted full ISO datetime string. */
 function fmtDiscTime(raw){
   if(!raw) return '—';
-  const parts = raw.split(':').map(Number);
-  if(isNaN(parts[0])) return raw;
-  const d = new Date();
-  d.setHours(parts[0], parts[1]||0, 0, 0);
-  return d.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit', hour12:true});
+  const str = String(raw);
+  let h, m;
+  if(/^\d{1,2}:\d{2}$/.test(str)){
+    [h, m] = str.split(':').map(Number);
+  } else {
+    const d = new Date(str);
+    if(isNaN(d)) return str;
+    h = d.getHours(); m = d.getMinutes();
+  }
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = (h % 12) || 12;
+  return `${h12}:${String(m).padStart(2,'0')}${ampm}`;
 }
 function fmtLogDate(raw){
   if(!raw) return '—';
@@ -2986,6 +3055,7 @@ const BUILDERS = {
     const empSchedRow = discNewCaseEmployee ? findMyScheduleRow(discNewCaseEmployee) : null;
     const now = new Date();
     const localDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    const localTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
     return `
     <div class="card" style="margin-bottom:16px;">
       <h3>Case Information</h3>
@@ -3013,7 +3083,7 @@ const BUILDERS = {
       <h3>Incident Information</h3>
       <div class="grid grid-2">
         <div><label>Incident Date</label><input type="date" id="discIncidentDate" value="${localDate}"></div>
-        <div><label>Incident Time</label><input type="time" id="discIncidentTime"></div>
+        <div><label>Incident Time</label><input type="time" id="discIncidentTime" value="${localTime}"></div>
       </div>
       <label>Location</label>
       <select id="discLocation" onchange="toggleDiscLocationOther()">
@@ -3097,17 +3167,54 @@ const BUILDERS = {
     </div>
 
     <div class="card" style="margin-bottom:16px;">
-      <h3>Incident Information</h3>
-      <table>
-        <tr><td class="muted">Incident Date</td><td>${fmtDiscDate(d.IncidentDate)}</td></tr>
-        <tr><td class="muted">Incident Time</td><td>${fmtDiscTime(d.IncidentTime)}</td></tr>
-        <tr><td class="muted">Location</td><td>${d.Location==='Other' ? d.LocationOther : d.Location}</td></tr>
-        <tr><td class="muted">Violation Type</td><td>${discParseViolations(d.ViolationTypes).map(v=>v==='Other'?d.ViolationOther:v).join(', ')}</td></tr>
-        <tr><td class="muted" style="vertical-align:top;">Description</td><td style="white-space:pre-wrap;">${d.Description||''}</td></tr>
-        <tr><td class="muted">Policy / Rule</td><td>${d.PolicyInvolved||'—'}</td></tr>
-        <tr><td class="muted">Witnesses</td><td>${d.Witnesses||'—'}</td></tr>
-        <tr><td class="muted" style="vertical-align:top;">Attachments</td><td>${attachmentIds.length ? attachmentIds.map((id,i)=>`<a href="#" onclick="downloadDiscAttachment('${id}','${attachmentNames[i]||'file'}'); return false;">📎 ${attachmentNames[i]||'Attachment '+(i+1)}</a>`).join('<br>') : '<span class="muted">None</span>'}</td></tr>
-      </table>
+      <h3 style="display:flex; justify-content:space-between; align-items:center;">
+        <span>Incident Information</span>
+        ${!discIncidentEditMode ? `<button class="btn ghost auto no-print" style="padding:4px 10px; font-size:13px;" onclick="toggleDiscIncidentEdit(true)">Edit</button>` : ''}
+      </h3>
+      ${discIncidentEditMode ? `
+        <div class="grid grid-2">
+          <div><label>Incident Date</label><input type="date" id="discEditIncidentDate" value="${d.IncidentDate||''}"></div>
+          <div><label>Incident Time</label><input type="time" id="discEditIncidentTime" value="${d.IncidentTime||''}"></div>
+        </div>
+        <label>Location</label>
+        <select id="discEditLocation" onchange="toggleDiscEditLocationOther()">
+          <option ${d.Location==='Club 88'?'selected':''}>Club 88</option>
+          <option ${d.Location==='Saipan Vegas'?'selected':''}>Saipan Vegas</option>
+          <option ${d.Location==='Other'?'selected':''}>Other</option>
+        </select>
+        <div id="discEditLocationOtherField" style="display:${d.Location==='Other'?'block':'none'};">
+          <label>Please Specify Location</label>
+          <input type="text" id="discEditLocationOther" value="${d.LocationOther||''}">
+        </div>
+        <label>Type of Violation</label>
+        ${DISC_VIOLATION_TYPES.map(v=>`<div class="checkbox-row"><input type="checkbox" id="discEditV_${v.replace(/[^a-zA-Z]/g,'')}" value="${v}" class="discEditViolationCb" ${discParseViolations(d.ViolationTypes).includes(v)?'checked':''} onchange="${v==='Other'?'toggleDiscEditViolationOther()':''}"><label for="discEditV_${v.replace(/[^a-zA-Z]/g,'')}">${v}</label></div>`).join('')}
+        <div id="discEditViolationOtherField" style="display:${discParseViolations(d.ViolationTypes).includes('Other')?'block':'none'}; margin-top:8px;">
+          <label>Please Specify</label>
+          <input type="text" id="discEditViolationOther" value="${d.ViolationOther||''}">
+        </div>
+        <label>Description of Incident</label>
+        <textarea id="discEditDescription" rows="5">${d.Description||''}</textarea>
+        <label>Policy / Rule Involved</label>
+        <input type="text" id="discEditPolicy" value="${d.PolicyInvolved||''}">
+        <label>Witnesses</label>
+        <input type="text" id="discEditWitnesses" value="${d.Witnesses||''}">
+        <p id="discEditIncidentErr" class="login-err"></p>
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <button class="btn ghost auto" onclick="toggleDiscIncidentEdit(false)">Cancel</button>
+          <button class="btn auto" id="discSaveIncidentBtn" onclick="saveDiscIncidentEdit()">Save Changes</button>
+        </div>
+      ` : `
+        <table>
+          <tr><td class="muted">Incident Date</td><td>${fmtDiscDate(d.IncidentDate)}</td></tr>
+          <tr><td class="muted">Incident Time</td><td>${fmtDiscTime(d.IncidentTime)}</td></tr>
+          <tr><td class="muted">Location</td><td>${d.Location==='Other' ? d.LocationOther : d.Location}</td></tr>
+          <tr><td class="muted">Violation Type</td><td>${discParseViolations(d.ViolationTypes).map(v=>v==='Other'?d.ViolationOther:v).join(', ')}</td></tr>
+          <tr><td class="muted" style="vertical-align:top;">Description</td><td style="white-space:pre-wrap;">${d.Description||''}</td></tr>
+          <tr><td class="muted">Policy / Rule</td><td>${d.PolicyInvolved||'—'}</td></tr>
+          <tr><td class="muted">Witnesses</td><td>${d.Witnesses||'—'}</td></tr>
+          <tr><td class="muted" style="vertical-align:top;">Attachments</td><td>${attachmentIds.length ? attachmentIds.map((id,i)=>`<a href="#" onclick="downloadDiscAttachment('${id}','${attachmentNames[i]||'file'}'); return false;">📎 ${attachmentNames[i]||'Attachment '+(i+1)}</a>`).join('<br>') : '<span class="muted">None</span>'}</td></tr>
+        </table>
+      `}
     </div>
 
     <div class="card" style="margin-bottom:16px;">
