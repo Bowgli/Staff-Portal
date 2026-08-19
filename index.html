@@ -1179,7 +1179,7 @@ async function refreshMyConcerns(){
   const [concerns, myConcernsRaw] = await Promise.all([
     safeApiGet('concerns', null), safeApiGet('myConcerns&name=' + encodeURIComponent(myName), null)
   ]);
-  if(concerns) MOCK.concernsLog = concerns.map(c => ({from:c.From, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID})).reverse();
+  if(concerns) MOCK.concernsLog = concerns.map(c => ({from:c.From, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID, coworkerName:c.CoworkerName, concernTypes:c.ConcernTypes, requestCCTV:c.RequestCCTV, cctvDate:c.CCTVDate, cctvTime:c.CCTVTime})).reverse();
   if(myConcernsRaw) MY_CONCERNS = myConcernsRaw.map(c => ({from:c.From, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID})).reverse();
 }
 async function refreshMySuggestions(){
@@ -1243,7 +1243,7 @@ async function loadRemoteData(){
     ALL_REQUESTS = requests.slice().reverse();
     EMPLOYEE_ACCOUNTS.length = 0;
     accountsStatus.forEach(a => EMPLOYEE_ACCOUNTS.push({employeeName:a.employeeName, fullName:a.fullName, username:a.username, role:"employee"}));
-    MOCK.concernsLog = concerns.map(c => ({from:c.From, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID})).reverse();
+    MOCK.concernsLog = concerns.map(c => ({from:c.From, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID, coworkerName:c.CoworkerName, concernTypes:c.ConcernTypes, requestCCTV:c.RequestCCTV, cctvDate:c.CCTVDate, cctvTime:c.CCTVTime})).reverse();
     MY_CONCERNS = myConcernsRaw.map(c => ({from:c.From, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID})).reverse();
     MOCK.suggestionsLog = suggestions.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID})).reverse();
     MY_SUGGESTIONS = mySuggestionsRaw.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID})).reverse();
@@ -1827,6 +1827,7 @@ function setRole(role){
    Disciplinary Records
    ============================================================ */
 const DISC_VIOLATION_TYPES = ["Attendance / Tardiness","Absence","Undertime","Work Performance","Company Policy","Workplace Conduct","Customer Service","Safety","Insubordination","Phone / Mobile Device Usage","Other"];
+const DISC_CONCERN_TYPES = ["Abusive Behavior","Disrespectful Attitude","Threatening Behavior","Refusal to Follow Policy and Procedure","Creating Disturbance to Customer"];
 const DISC_POSITIONS = ["Shift Manager","Supervisor","Cashier","Membership","Slot Attendant","Slot Technician Supervisor","Assistant Slot Technician Supervisor","Slot Technician","Security"];
 const DISC_LEVELS = ["Level 1 – Coaching / Verbal Reminder","Level 2 – Written Warning","Level 3 – Written Warning + Suspension","Level 4 – Final Review","Level 5 – Employment Decision"];
 const DISC_STATUSES = ["Draft","Under Review","Pending Approval","Final Review","Action Issued","Closed","No Action"];
@@ -2804,7 +2805,7 @@ const BUILDERS = {
       <div class="card">
         <h3><span class="ic">📝</span> File a Request</h3>
         <label>Request type</label>
-        <select id="reqType" onchange="toggleSwapFields()"><option>Leave Request</option><option>Schedule Swap</option><option>Uniform Replacement</option><option>Other</option></select>
+        <select id="reqType" onchange="toggleSwapFields()"><option>Leave Request</option><option>Schedule Swap</option><option>Uniform Replacement</option><option>Certificate of Employment (COE)</option><option>Other</option></select>
         <div id="swapFields" style="display:none;">
           <label>Your day to give up</label>
           <select id="reqSwapDay" onchange="syncTheirDayDefault(); updateSwapPreview()">${SCHEDULE_DAYS.map(d=>`<option value="${d}">${fmtDayLabel(d)}</option>`).join('')}</select>
@@ -2839,7 +2840,20 @@ const BUILDERS = {
         <h3><span class="ic">⚠️</span> Report a Concern</h3>
         <p class="muted">This goes directly to management. Your name is attached unless you check anonymous below.</p>
         <label>What's the concern about?</label>
-        <select id="concernTopic"><option>Workplace safety</option><option>Coworker conduct</option><option>Facilities</option><option>Other</option></select>
+        <select id="concernTopic" onchange="toggleConcernCoworkerFields()"><option>Workplace safety</option><option>Coworker conduct</option><option>Facilities</option><option>Other</option></select>
+        <div id="concernCoworkerFields" style="display:none;">
+          <label>Coworker Name</label>
+          ${employeePickerHtml('concernCoworkerName', EMPLOYEE_ROSTER.filter(e=>e.name!==CURRENT_EMPLOYEE.name))}
+          <label>Type of Concern</label>
+          ${DISC_CONCERN_TYPES.map(t=>`<div class="checkbox-row"><input type="checkbox" id="concernT_${t.replace(/[^a-zA-Z]/g,'')}" value="${t}" class="concernTypeCb"><label for="concernT_${t.replace(/[^a-zA-Z]/g,'')}">${t}</label></div>`).join('')}
+          <div class="checkbox-row"><input type="checkbox" id="concernCCTV" onchange="toggleConcernCCTVFields()"><label for="concernCCTV">Request CCTV Footage Review</label></div>
+          <div id="concernCCTVFields" style="display:none;">
+            <div class="grid grid-2">
+              <div><label>Date of Incident</label><input type="date" id="concernCCTVDate"></div>
+              <div><label>Approximate Time</label><input type="time" id="concernCCTVTime"></div>
+            </div>
+          </div>
+        </div>
         <label>Details</label>
         <textarea id="concernDetails" placeholder="Describe what happened..."></textarea>
         <div class="checkbox-row"><input type="checkbox" id="anonConcern"><label for="anonConcern">Submit anonymously</label></div>
@@ -3479,7 +3493,7 @@ const BUILDERS = {
       <h3><span class="ic">⚠️</span> All Reported Concerns</h3>
       <table>
         <tr><th>From</th><th>Topic</th><th>Details</th><th>Date</th><th>Status</th><th></th></tr>
-        ${MOCK.concernsLog.map(c=>`<tr><td>${c.from}</td><td>${c.topic}</td><td class="muted">${c.details||''}</td><td>${fmtDateTime(c.date)}</td><td>${statusPill(c.status)}</td>
+        ${MOCK.concernsLog.map(c=>`<tr><td>${c.from}</td><td>${c.topic}${c.coworkerName ? `<br><span class="muted" style="font-size:11px;">Coworker: ${c.coworkerName}${c.concernTypes ? ' — '+discParseViolations(c.concernTypes).join(', ') : ''}${c.requestCCTV ? '<br>📹 CCTV review requested: '+fmtDiscDate(c.cctvDate)+(c.cctvTime?' '+fmtDiscTime(c.cctvTime):'') : ''}</span>` : ''}</td><td class="muted">${c.details||''}</td><td>${fmtDateTime(c.date)}</td><td>${statusPill(c.status)}</td>
           <td>${c.status==='open' ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="resolveConcern('${c.id}', this)">Mark Resolved</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="6" class="muted">No concerns reported yet.</td></tr>`}
       </table>
     </div>`,
@@ -3573,6 +3587,15 @@ async function startTelegramLink(){
 
 let editingRequestId = null;
 let editingConcernId = null;
+
+function toggleConcernCoworkerFields(){
+  const isCoworker = document.getElementById('concernTopic').value === 'Coworker conduct';
+  document.getElementById('concernCoworkerFields').style.display = isCoworker ? 'block' : 'none';
+}
+function toggleConcernCCTVFields(){
+  const wantsCCTV = document.getElementById('concernCCTV').checked;
+  document.getElementById('concernCCTVFields').style.display = wantsCCTV ? 'block' : 'none';
+}
 
 function toggleSwapFields(){
   const isSwap = document.getElementById('reqType').value === 'Schedule Swap';
@@ -3741,10 +3764,25 @@ async function submitMyConcern(){
   err.style.display='none'; ok.style.display='none';
   if(!Details){ err.textContent="Describe what happened."; err.style.display='block'; return; }
 
+  let CoworkerName = '', ConcernTypes = '', RequestCCTV = false, CCTVDate = '', CCTVTime = '';
+  if(Topic === 'Coworker conduct'){
+    CoworkerName = readEmployeePicker('concernCoworkerName');
+    if(!CoworkerName){ err.textContent="Type the coworker's name and pick a match from the suggestions."; err.style.display='block'; return; }
+    const types = Array.from(document.querySelectorAll('.concernTypeCb:checked')).map(cb=>cb.value);
+    if(!types.length){ err.textContent="Select at least one Type of Concern."; err.style.display='block'; return; }
+    ConcernTypes = JSON.stringify(types);
+    RequestCCTV = document.getElementById('concernCCTV').checked;
+    if(RequestCCTV){
+      CCTVDate = document.getElementById('concernCCTVDate').value;
+      CCTVTime = document.getElementById('concernCCTVTime').value;
+      if(!CCTVDate){ err.textContent="Add the date of the incident for the CCTV review."; err.style.display='block'; return; }
+    }
+  }
+
   if(editingConcernId){
     btnLoading('concernSubmitBtn', 'Updating...');
     if(USE_REMOTE()){
-      const r = await apiPostMinDelay('editConcern', {id:editingConcernId, Topic, Details});
+      const r = await apiPostMinDelay('editConcern', {id:editingConcernId, Topic, Details, CoworkerName, ConcernTypes, RequestCCTV, CCTVDate, CCTVTime});
       if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('concernSubmitBtn','Update Concern'); return; }
       await refreshMyConcerns();
     } else {
@@ -3762,7 +3800,7 @@ async function submitMyConcern(){
   btnLoading('concernSubmitBtn');
   const From = anon ? "Anonymous" : CURRENT_EMPLOYEE.fullName;
   if(USE_REMOTE()){
-    const r = await apiPostMinDelay('submitConcern', {From, Topic, Details, Anonymous: anon, SubmittedBy: CURRENT_EMPLOYEE.fullName});
+    const r = await apiPostMinDelay('submitConcern', {From, Topic, Details, Anonymous: anon, SubmittedBy: CURRENT_EMPLOYEE.fullName, CoworkerName, ConcernTypes, RequestCCTV, CCTVDate, CCTVTime});
     if(!r.ok){ err.textContent = r.error || "Couldn't submit."; err.style.display='block'; btnReset('concernSubmitBtn','Submit Concern'); return; }
     await refreshMyConcerns();
   }
