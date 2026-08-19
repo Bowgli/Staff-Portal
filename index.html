@@ -1782,7 +1782,7 @@ function setRole(role){
 /* ============================================================
    Disciplinary Records
    ============================================================ */
-const DISC_VIOLATION_TYPES = ["Attendance / Tardiness","Absence","Undertime","Work Performance","Company Policy","Workplace Conduct","Customer Service","Safety","Insubordination","Other"];
+const DISC_VIOLATION_TYPES = ["Attendance / Tardiness","Absence","Undertime","Work Performance","Company Policy","Workplace Conduct","Customer Service","Safety","Insubordination","Phone / Mobile Device Usage","Other"];
 const DISC_POSITIONS = ["Shift Manager","Supervisor","Cashier","Membership","Slot Attendant","Slot Technician Supervisor","Assistant Slot Technician Supervisor","Slot Technician","Security"];
 const DISC_LEVELS = ["Level 1 – Coaching / Verbal Reminder","Level 2 – Written Warning","Level 3 – Written Warning + Suspension","Level 4 – Final Review","Level 5 – Employment Decision"];
 const DISC_STATUSES = ["Draft","Under Review","Pending Approval","Final Review","Action Issued","Closed","No Action"];
@@ -1863,8 +1863,18 @@ function openDisciplinaryCase(id){
 function onDiscNewEmpChange(val){
   const name = val.split(' — ')[0].trim();
   const match = EMPLOYEE_ROSTER.find(e => e.name.toLowerCase() === name.toLowerCase());
-  discNewCaseEmployee = match ? match.name : '';
-  renderView('mgmt-disciplinary-new');
+  const posField = document.getElementById('discEmpPosition');
+  const deptField = document.getElementById('discEmpDepartment');
+  if(match){
+    discNewCaseEmployee = match.name;
+    if(posField) posField.value = match.position;
+    const schedRow = findMyScheduleRow(match.name);
+    if(deptField) deptField.value = schedRow ? schedRow.department : '';
+  } else {
+    discNewCaseEmployee = '';
+    if(posField) posField.value = '';
+    if(deptField) deptField.value = '';
+  }
 }
 
 function toggleDiscLocationOther(){
@@ -2987,8 +2997,8 @@ const BUILDERS = {
       <label>Employee</label>
       ${employeePickerHtml('discNewEmp', EMPLOYEE_ROSTER, `oninput="onDiscNewEmpChange(this.value)"`)}
       <div class="grid grid-2" style="margin-top:8px;">
-        <div><label>Position</label><input type="text" value="${emp ? emp.position : ''}" disabled></div>
-        <div><label>Department</label><input type="text" value="${empSchedRow ? empSchedRow.department : ''}" disabled></div>
+        <div><label>Position</label><input type="text" id="discEmpPosition" value="${emp ? emp.position : ''}" disabled></div>
+        <div><label>Department</label><input type="text" id="discEmpDepartment" value="${empSchedRow ? empSchedRow.department : ''}" disabled></div>
       </div>
       <label>Supervisor <span class="muted">(optional — not tracked automatically)</span></label>
       <input type="text" id="discSupervisor" placeholder="e.g. Marites Albero">
