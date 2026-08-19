@@ -521,6 +521,8 @@ let ALL_DISCIPLINARY_RECORDS = []; // full records, management-only
 let MY_DISCIPLINARY_RECORDS = []; // scoped to the current employee, excludes Drafts and internal-only fields
 let discFilter = { employee:'', department:'All', position:'All', violation:'All', level:'All', status:'All', dateFrom:'', dateTo:'' };
 let discSummaryPeriod = ''; // "YYYY-MM", defaults to current month on first view
+let discSummaryMode = 'month'; // 'month' or 'year'
+let discSummaryYear = new Date().getFullYear();
 let discDetailCaseId = null; // which case mgmt-disciplinary-detail is showing
 let discCaseAttachments = []; // [{fileId, fileName}] staged during the New Case form, before save
 let discNewCaseEmployee = ''; // selected employee name in the New Case form, drives the auto-filled Position/Department
@@ -1138,7 +1140,20 @@ async function restoreSession(){
    Sheet once logged in, replacing the mock constants in place so
    the rest of the UI code doesn't need to change. No-op locally. */
 async function safeApiGet(action, fallback){
-  try{ return await apiGet(action); }
+  try{
+    const result = await apiGet(action);
+    if(Array.isArray(fallback) && !Array.isArray(result)){
+      // The backend responded, but not in the shape we expected —
+      // most likely an outdated Apps Script deployment that doesn't
+      // recognize this action yet (returns {error:"..."} instead of
+      // a list). Falling back here stops that one bad response from
+      // crashing the rest of loadRemoteData() and corrupting
+      // unrelated data that already loaded fine.
+      console.warn(`safeApiGet('${action}') expected an array but got:`, result);
+      return fallback;
+    }
+    return result;
+  }
   catch(e){ return fallback; }
 }
 
@@ -1807,24 +1822,76 @@ function discStatusPill(status){
   };
   return `<span class="pill ${map[status]||'warn'}">${status||'Draft'}</span>`;
 }
-function monthlyDisciplinarySummaryCard(){
+function disciplinarySummarySection(){
   const now = new Date();
-  const period = discSummaryPeriod || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const [sy, sm] = period.split('-').map(Number);
-  const inPeriod = ALL_DISCIPLINARY_RECORDS.filter(d=>{
-    if(!d.DateReported) return false;
-    const dt = new Date(d.DateReported);
-    return !isNaN(dt) && dt.getFullYear()===sy && (dt.getMonth()+1)===sm && d.Status !== 'Draft';
-  });
+  if(!discSummaryPeriod) discSummaryPeriod = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
+  let inPeriod, periodLabel;
+  if(discSummaryMode === 'year'){
+    inPeriod = ALL_DISCIPLINARY_RECORDS.filter(d=>{
+      if(!d.DateReported) return false;
+      const dt = new Date(d.DateReported);
+      return !isNaN(dt) && dt.getFullYear()===discSummaryYear && d.Status !== 'Draft';
+    });
+    periodLabel = String(discSummaryYear);
+  } else {
+    const [sy, sm] = discSummaryPeriod.split('-').map(Number);
+    inPeriod = ALL_DISCIPLINARY_RECORDS.filter(d=>{
+      if(!d.DateReported) return false;
+      const dt = new Date(d.DateReported);
+      return !isNaN(dt) && dt.getFullYear()===sy && (dt.getMonth()+1)===sm && d.Status !== 'Draft';
+    });
+    periodLabel = new Date(sy, sm-1, 1).toLocaleDateString('en-US', {month:'long', year:'numeric'});
+  }
+
   const byViolation = {};
   inPeriod.forEach(d=> discParseViolations(d.ViolationTypes).forEach(v=>{ byViolation[v] = (byViolation[v]||0)+1; }));
-  const periodLabel = new Date(sy, sm-1, 1).toLocaleDateString('en-US', {month:'long', year:'numeric'});
+  const byLevel = {};
+  DISC_LEVELS.forEach(l=> byLevel[l] = 0);
+  inPeriod.forEach(d=>{ if(d.DisciplinaryLevel) byLevel[d.DisciplinaryLevel] = (byLevel[d.DisciplinaryLevel]||0)+1; });
+
+  const years = Array.from(new Set(ALL_DISCIPLINARY_RECORDS.map(d=>{ const dt = new Date(d.DateReported); return isNaN(dt)?null:dt.getFullYear(); }).filter(Boolean))).sort((a,b)=>b-a);
+  if(!years.includes(discSummaryYear)) years.unshift(discSummaryYear);
+
   return `
-    <div class="card clickable" style="margin-top:16px;" onclick="renderView('mgmt-disciplinary')">
-      <h3><span class="ic">📁</span> Monthly Disciplinary Summary — ${periodLabel}</h3>
+    <div class="card" style="margin-bottom:16px;">
+      <h3><span class="ic">📊</span> ${discSummaryMode==='year'?'Yearly':'Monthly'} Disciplinary Summary</h3>
+      <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
+        <select onchange="setDiscSummaryMode(this.value)" style="width:auto;">
+          <option value="month" ${discSummaryMode==='month'?'selected':''}>By Month</option>
+          <option value="year" ${discSummaryMode==='year'?'selected':''}>By Year</option>
+        </select>
+        ${discSummaryMode==='year'
+          ? `<select onchange="setDiscSummaryYear(this.value)" style="width:auto;">${years.map(y=>`<option ${discSummaryYear===y?'selected':''}>${y}</option>`).join('')}</select>`
+          : `<input type="month" value="${discSummaryPeriod}" onchange="setDiscSummaryPeriod(this.value)" style="max-width:180px;">`
+        }
+      </div>
+      <p style="font-weight:600; margin-bottom:8px;">${periodLabel.toUpperCase()} DISCIPLINARY SUMMARY</p>
       <table>
         <tr><td>Total Cases</td><td class="mono" style="text-align:right;">${inPeriod.length}</td></tr>
         ${Object.keys(byViolation).length ? Object.entries(byViolation).map(([v,c])=>`<tr><td class="muted">${v}</td><td class="mono" style="text-align:right;">${c}</td></tr>`).join('') : `<tr><td colspan="2" class="muted">No violations logged this period.</td></tr>`}
+      </table>
+      <table style="margin-top:12px;">
+        ${DISC_LEVELS.map(l=>`<tr><td class="muted">${l}</td><td class="mono" style="text-align:right;">${byLevel[l]||0}</td></tr>`).join('')}
+      </table>
+    </div>`;
+}
+
+function disciplinaryCasesTableSection(rows, title){
+  return `
+    <div class="card table-scroll">
+      <h3><span class="ic">📁</span> ${title || 'Disciplinary Cases'}</h3>
+      <table>
+        <tr><th>Case #</th><th>Employee</th><th>Date Reported</th><th>Violation</th><th>Level</th><th>Status</th><th></th></tr>
+        ${rows.map(d=>`<tr>
+          <td class="mono">${d.CaseNumber||''}</td>
+          <td>${d.EmployeeName}</td>
+          <td>${fmtDateTime(d.DateReported)}</td>
+          <td class="muted">${discParseViolations(d.ViolationTypes).join(', ')||''}</td>
+          <td>${d.DisciplinaryLevel||'<span class="muted">—</span>'}</td>
+          <td>${discStatusPill(d.Status)}</td>
+          <td><button class="btn ghost auto" style="padding:5px 10px;" onclick="openDisciplinaryCase('${d.ID}')">View Case</button></td>
+        </tr>`).join('') || `<tr><td colspan="7" class="muted">No matching cases.</td></tr>`}
       </table>
     </div>`;
 }
@@ -1846,19 +1913,36 @@ function setDiscFilter(field, val){
   discFilter[field] = val;
   renderView('mgmt-disciplinary');
 }
+function setDiscEmployeeFilter(val){
+  discFilter.employee = val;
+  const name = val.split(' — ')[0].trim();
+  const match = EMPLOYEE_ROSTER.find(e => e.name.toLowerCase() === name.toLowerCase());
+  if(match){
+    discFilter.position = DISC_POSITIONS.includes(match.position) ? match.position : discFilter.position;
+    const schedRow = findMyScheduleRow(match.name);
+    if(schedRow && schedRow.department) discFilter.department = schedRow.department;
+  }
+  const cursorPos = document.activeElement && document.activeElement.selectionStart;
+  renderView('mgmt-disciplinary');
+  const input = document.getElementById('discFilterEmp');
+  if(input){ input.focus(); if(cursorPos != null) input.setSelectionRange(cursorPos, cursorPos); }
+}
 function resetDiscFilter(){
   discFilter = { employee:'', department:'All', position:'All', violation:'All', level:'All', status:'All', dateFrom:'', dateTo:'' };
   renderView('mgmt-disciplinary');
 }
 function setDiscSummaryPeriod(val){
   discSummaryPeriod = val;
-  renderView('mgmt-disciplinary');
+  renderView(activeView);
 }
-function openDisciplinaryCase(id){
-  discDetailCaseId = id;
-  renderView('mgmt-disciplinary-detail');
+function setDiscSummaryMode(val){
+  discSummaryMode = val;
+  renderView(activeView);
 }
-
+function setDiscSummaryYear(val){
+  discSummaryYear = Number(val);
+  renderView(activeView);
+}
 function openDisciplinaryCase(id){
   discDetailCaseId = id;
   renderView('mgmt-disciplinary-detail');
@@ -2688,7 +2772,8 @@ const BUILDERS = {
       <div class="card stat-card clickable" onclick="renderView('mgmt-attendance')"><div class="num">${ATTENDANCE_LOG.length}</div><div class="label">Attendance entries logged</div></div>
     </div>
     ${attendanceConcernsSection()}
-    ${monthlyDisciplinarySummaryCard()}`,
+    ${disciplinarySummarySection()}
+    ${disciplinaryCasesTableSection(ALL_DISCIPLINARY_RECORDS, 'Disciplinary Cases')}`,
 
   "mgmt-employees": ()=>`
     <div class="card table-scroll">
@@ -2886,21 +2971,6 @@ const BUILDERS = {
     const depts = Array.from(new Set(ALL_DISCIPLINARY_RECORDS.map(d=>d.Department).filter(Boolean))).sort();
     const rows = discFilteredRecords();
 
-    const now = new Date();
-    if(!discSummaryPeriod) discSummaryPeriod = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-    const [sy, sm] = discSummaryPeriod.split('-').map(Number);
-    const inPeriod = ALL_DISCIPLINARY_RECORDS.filter(d=>{
-      if(!d.DateReported) return false;
-      const dt = new Date(d.DateReported);
-      return !isNaN(dt) && dt.getFullYear()===sy && (dt.getMonth()+1)===sm && d.Status !== 'Draft';
-    });
-    const byViolation = {};
-    inPeriod.forEach(d=> discParseViolations(d.ViolationTypes).forEach(v=>{ byViolation[v] = (byViolation[v]||0)+1; }));
-    const byLevel = {};
-    DISC_LEVELS.forEach(l=> byLevel[l] = 0);
-    inPeriod.forEach(d=>{ if(d.DisciplinaryLevel) byLevel[d.DisciplinaryLevel] = (byLevel[d.DisciplinaryLevel]||0)+1; });
-    const periodLabel = new Date(sy, sm-1, 1).toLocaleDateString('en-US', {month:'long', year:'numeric'});
-
     return `
     <div class="no-print" style="display:flex; justify-content:flex-end; margin-bottom:16px;">
       <button onclick="renderView('mgmt-disciplinary-new')">+ New Case</button>
@@ -2911,7 +2981,7 @@ const BUILDERS = {
       <div class="grid grid-2">
         <div>
           <label>Employee</label>
-          ${employeePickerHtml('discFilterEmp', EMPLOYEE_ROSTER, `value="${discFilter.employee}" oninput="setDiscFilter('employee', this.value)" placeholder="All employees…"`)}
+          ${employeePickerHtml('discFilterEmp', EMPLOYEE_ROSTER, `value="${discFilter.employee}" oninput="setDiscEmployeeFilter(this.value)" placeholder="All employees…"`)}
         </div>
         <div>
           <label>Department</label>
@@ -2960,34 +3030,8 @@ const BUILDERS = {
       <button class="btn ghost auto" style="margin-top:8px;" onclick="resetDiscFilter()">Reset Filters</button>
     </div>
 
-    <div class="card" style="margin-bottom:16px;">
-      <h3><span class="ic">📊</span> Monthly Disciplinary Summary</h3>
-      <input type="month" value="${discSummaryPeriod}" onchange="setDiscSummaryPeriod(this.value)" style="max-width:220px; margin-bottom:12px;">
-      <p style="font-weight:600; margin-bottom:8px;">${periodLabel.toUpperCase()} DISCIPLINARY SUMMARY</p>
-      <table>
-        <tr><td>Total Cases</td><td class="mono" style="text-align:right;">${inPeriod.length}</td></tr>
-        ${Object.keys(byViolation).length ? Object.entries(byViolation).map(([v,c])=>`<tr><td class="muted">${v}</td><td class="mono" style="text-align:right;">${c}</td></tr>`).join('') : `<tr><td colspan="2" class="muted">No violations logged this period.</td></tr>`}
-      </table>
-      <table style="margin-top:12px;">
-        ${DISC_LEVELS.map(l=>`<tr><td class="muted">${l}</td><td class="mono" style="text-align:right;">${byLevel[l]||0}</td></tr>`).join('')}
-      </table>
-    </div>
-
-    <div class="card table-scroll">
-      <h3><span class="ic">📁</span> Disciplinary Cases</h3>
-      <table>
-        <tr><th>Case #</th><th>Employee</th><th>Date Reported</th><th>Violation</th><th>Level</th><th>Status</th><th></th></tr>
-        ${rows.map(d=>`<tr>
-          <td class="mono">${d.CaseNumber||''}</td>
-          <td>${d.EmployeeName}</td>
-          <td>${fmtDateTime(d.DateReported)}</td>
-          <td class="muted">${discParseViolations(d.ViolationTypes).join(', ')||''}</td>
-          <td>${d.DisciplinaryLevel||'<span class="muted">—</span>'}</td>
-          <td>${discStatusPill(d.Status)}</td>
-          <td><button class="btn ghost auto" style="padding:5px 10px;" onclick="openDisciplinaryCase('${d.ID}')">View Case</button></td>
-        </tr>`).join('') || `<tr><td colspan="7" class="muted">No matching cases.</td></tr>`}
-      </table>
-    </div>`;
+    ${disciplinarySummarySection()}
+    ${disciplinaryCasesTableSection(rows, 'Disciplinary Cases')}`;
   },
 
   "mgmt-disciplinary-new": ()=>{
