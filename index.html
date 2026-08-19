@@ -1027,7 +1027,7 @@ const MOCK = {
   ],
   recognition: [{medal:"🥇", name:"Employee of the Month — July", desc:"Awarded for guest service excellence."},{medal:"🎖️", name:"Perfect Attendance — Q2", desc:"Zero late clock-ins for the quarter."}],
   policies: ["Customer Service Policy","Cleanliness Policy","Professional Conduct Policy"],
-  concernsLog: [{from:"Anonymous", topic:"Break room AC not working", date:"Aug 11", status:"open"},{from:"J. Cruz", topic:"Scheduling conflict with training", date:"Aug 9", status:"resolved"}],
+  concernsLog: [{from:"Anonymous", topic:"Break room AC not working", date:"Aug 11", status:"Open"},{from:"J. Cruz", topic:"Scheduling conflict with training", date:"Aug 9", status:"Resolved"}],
   suggestionsLog: [{from:"Anonymous", topic:"Add water station near Table 9", date:"Aug 10"},{from:"L. Reyes", topic:"Extend meal break by 10 minutes", date:"Aug 6"}],
 };
 
@@ -1179,7 +1179,7 @@ async function refreshMyConcerns(){
   const [concerns, myConcernsRaw] = await Promise.all([
     safeApiGet('concerns', null), safeApiGet('myConcerns&name=' + encodeURIComponent(myName), null)
   ]);
-  if(concerns) MOCK.concernsLog = concerns.map(c => ({from:c.From, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID, coworkerName:c.CoworkerName, concernTypes:c.ConcernTypes, requestCCTV:c.RequestCCTV, cctvDate:c.CCTVDate, cctvTime:c.CCTVTime})).reverse();
+  if(concerns) MOCK.concernsLog = concerns.map(c => ({from:c.From, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID, coworkerName:c.CoworkerName, concernTypes:c.ConcernTypes, requestCCTV:c.RequestCCTV, cctvDate:c.CCTVDate, cctvTime:c.CCTVTime, investigationNotes:c.InvestigationNotes, investigatedBy:c.InvestigatedBy, actionTaken:c.ActionTaken})).reverse();
   if(myConcernsRaw) MY_CONCERNS = myConcernsRaw.map(c => ({from:c.From, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID})).reverse();
 }
 async function refreshMySuggestions(){
@@ -1243,7 +1243,7 @@ async function loadRemoteData(){
     ALL_REQUESTS = requests.slice().reverse();
     EMPLOYEE_ACCOUNTS.length = 0;
     accountsStatus.forEach(a => EMPLOYEE_ACCOUNTS.push({employeeName:a.employeeName, fullName:a.fullName, username:a.username, role:"employee"}));
-    MOCK.concernsLog = concerns.map(c => ({from:c.From, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID, coworkerName:c.CoworkerName, concernTypes:c.ConcernTypes, requestCCTV:c.RequestCCTV, cctvDate:c.CCTVDate, cctvTime:c.CCTVTime})).reverse();
+    MOCK.concernsLog = concerns.map(c => ({from:c.From, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID, coworkerName:c.CoworkerName, concernTypes:c.ConcernTypes, requestCCTV:c.RequestCCTV, cctvDate:c.CCTVDate, cctvTime:c.CCTVTime, investigationNotes:c.InvestigationNotes, investigatedBy:c.InvestigatedBy, actionTaken:c.ActionTaken})).reverse();
     MY_CONCERNS = myConcernsRaw.map(c => ({from:c.From, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID})).reverse();
     MOCK.suggestionsLog = suggestions.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID})).reverse();
     MY_SUGGESTIONS = mySuggestionsRaw.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID})).reverse();
@@ -1326,7 +1326,7 @@ async function playAlertTone(){
 function getMgmtAlertCounts(){
   return {
     requests: ALL_REQUESTS.filter(r=>r.Status==='pending').length,
-    concerns: MOCK.concernsLog.filter(c=>c.status==='open').length,
+    concerns: MOCK.concernsLog.filter(c=>c.status==='Open').length,
     suggestions: MOCK.suggestionsLog.filter(s=>s.status==='new').length,
     evaluations: ALL_EVALUATIONS.length,
   };
@@ -1730,8 +1730,8 @@ function computeRecentActivity(){
     }
   });
   MY_CONCERNS.forEach(c=>{
-    if(c.status==='resolved'){
-      items.push({title:`Your concern "${c.topic}" was marked resolved`, time:fmtDateTime(c.date)});
+    if(c.status==='Resolved' || c.status==='No Action Needed'){
+      items.push({title:`Your concern "${c.topic}" was marked ${c.status.toLowerCase()}`, time:fmtDateTime(c.date)});
     }
   });
   MOCK.recognition.forEach(r=>{
@@ -1828,6 +1828,12 @@ function setRole(role){
    ============================================================ */
 const DISC_VIOLATION_TYPES = ["Attendance / Tardiness","Absence","Undertime","Work Performance","Company Policy","Workplace Conduct","Customer Service","Safety","Insubordination","Phone / Mobile Device Usage","Other"];
 const DISC_CONCERN_TYPES = ["Abusive Behavior","Disrespectful Attitude","Threatening Behavior","Refusal to Follow Policy and Procedure","Creating Disturbance to Customer"];
+const CONCERN_STATUSES = ["Open","Under Investigation","Resolved","No Action Needed"];
+function concernStatusPill(status){
+  const map = { "Open":"warn", "Under Investigation":"warn", "Resolved":"ok", "No Action Needed":"ok" };
+  return `<span class="pill ${map[status]||'warn'}">${status||'Open'}</span>`;
+}
+let discDetailConcernId = null; // which concern mgmt-concern-detail is showing
 const DISC_POSITIONS = ["Shift Manager","Supervisor","Cashier","Membership","Slot Attendant","Slot Technician Supervisor","Assistant Slot Technician Supervisor","Slot Technician","Security"];
 const DISC_LEVELS = ["Level 1 – Coaching / Verbal Reminder","Level 2 – Written Warning","Level 3 – Written Warning + Suspension","Level 4 – Final Review","Level 5 – Employment Decision"];
 const DISC_STATUSES = ["Draft","Under Review","Pending Approval","Final Review","Action Issued","Closed","No Action"];
@@ -2310,7 +2316,7 @@ function renderNav(){
         badge = pending > 0 ? pending : null;
       }
       if(item.id === 'mgmt-concerns'){
-        const open = MOCK.concernsLog.filter(c=>c.status==='open').length;
+        const open = MOCK.concernsLog.filter(c=>c.status==='Open').length;
         badge = open > 0 ? open : null;
       }
       if(item.id === 'mgmt-suggestions'){
@@ -2360,6 +2366,7 @@ const TITLES = {
   "mgmt-disciplinary-detail":["Case Details","Full record, review, and timeline"],
   "mgmt-requests":["Manage Requests","Approve or decline pending requests"],
   "mgmt-concerns":["Concerns Log","All reported concerns"],
+  "mgmt-concern-detail":["Concern Report","Full details and investigation"],
   "mgmt-suggestions":["Suggestions Log","All submitted suggestions"],
   "mgmt-recognition":["Recognition Management","Issue awards and recognitions"],
   "mgmt-announcements":["Post Announcements","Compose company-wide updates"],
@@ -2867,7 +2874,7 @@ const BUILDERS = {
         <table>
           <tr><th>Topic</th><th>Date</th><th>Status</th><th></th></tr>
           ${MY_CONCERNS.map(c=>`<tr><td>${c.topic}</td><td>${fmtDateTime(c.date)}</td><td>${statusPill(c.status)}</td>
-            <td>${c.status==='open' ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditConcern('${c.id}')">Edit</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteMyConcern('${c.id}', this)">Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No concerns submitted yet.</td></tr>`}
+            <td>${c.status==='Open' ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditConcern('${c.id}')">Edit</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteMyConcern('${c.id}', this)">Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No concerns submitted yet.</td></tr>`}
         </table>
       </div>
     </div>`,
@@ -2932,7 +2939,7 @@ const BUILDERS = {
     <div class="grid grid-5" style="margin-bottom:16px;">
       <div class="card stat-card clickable" onclick="renderView('mgmt-employees')"><div class="num">${EMPLOYEE_ROSTER.length}</div><div class="label">Active staff</div></div>
       <div class="card stat-card clickable" onclick="renderView('mgmt-requests')"><div class="num">${ALL_REQUESTS.filter(r=>r.Status==='pending').length}</div><div class="label">Pending requests</div></div>
-      <div class="card stat-card clickable" onclick="renderView('mgmt-concerns')"><div class="num">${MOCK.concernsLog.filter(c=>c.status==='open').length}</div><div class="label">Open concerns</div></div>
+      <div class="card stat-card clickable" onclick="renderView('mgmt-concerns')"><div class="num">${MOCK.concernsLog.filter(c=>c.status==='Open').length}</div><div class="label">Open concerns</div></div>
       <div class="card stat-card clickable" onclick="renderView('mgmt-suggestions')"><div class="num">${MOCK.suggestionsLog.filter(s=>s.status==='new').length}</div><div class="label">New suggestions</div></div>
       <div class="card stat-card clickable" onclick="renderView('mgmt-attendance')"><div class="num">${ATTENDANCE_LOG.length}</div><div class="label">Attendance entries logged</div></div>
     </div>
@@ -3492,11 +3499,50 @@ const BUILDERS = {
     <div class="card">
       <h3><span class="ic">⚠️</span> All Reported Concerns</h3>
       <table>
-        <tr><th>From</th><th>Topic</th><th>Details</th><th>Date</th><th>Status</th><th></th></tr>
-        ${MOCK.concernsLog.map(c=>`<tr><td>${c.from}</td><td>${c.topic}${c.coworkerName ? `<br><span class="muted" style="font-size:11px;">Coworker: ${c.coworkerName}${c.concernTypes ? ' — '+discParseViolations(c.concernTypes).join(', ') : ''}${c.requestCCTV ? '<br>📹 CCTV review requested: '+fmtDiscDate(c.cctvDate)+(c.cctvTime?' '+fmtDiscTime(c.cctvTime):'') : ''}</span>` : ''}</td><td class="muted">${c.details||''}</td><td>${fmtDateTime(c.date)}</td><td>${statusPill(c.status)}</td>
-          <td>${c.status==='open' ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="resolveConcern('${c.id}', this)">Mark Resolved</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="6" class="muted">No concerns reported yet.</td></tr>`}
+        <tr><th>From</th><th>Topic</th><th>Date</th><th>Status</th><th></th></tr>
+        ${MOCK.concernsLog.map(c=>`<tr><td>${c.from}</td><td>${c.topic}${c.coworkerName ? `<br><span class="muted" style="font-size:11px;">Coworker: ${c.coworkerName}</span>` : ''}</td><td>${fmtDateTime(c.date)}</td><td>${concernStatusPill(c.status)}</td>
+          <td><button class="btn ghost auto" style="padding:5px 10px;" onclick="openConcernDetail('${c.id}')">View Report</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">No concerns reported yet.</td></tr>`}
       </table>
     </div>`,
+
+  "mgmt-concern-detail": ()=>{
+    const c = MOCK.concernsLog.find(x=>x.id===discDetailConcernId);
+    if(!c) return `<div class="empty"><div class="ic">⚠️</div>Concern not found.</div>`;
+    return `
+    <div class="no-print" style="margin-bottom:16px;">
+      <button class="btn ghost auto" onclick="renderView('mgmt-concerns')">← Back to All Reported Concerns</button>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Report Details</h3>
+      <table>
+        <tr><td class="muted">Reported By</td><td>${c.from}</td></tr>
+        <tr><td class="muted">Date</td><td>${fmtDateTime(c.date)}</td></tr>
+        <tr><td class="muted">Topic</td><td>${c.topic}</td></tr>
+        ${c.coworkerName ? `<tr><td class="muted">Coworker Name</td><td>${c.coworkerName}</td></tr>` : ''}
+        ${c.concernTypes ? `<tr><td class="muted">Type of Concern</td><td>${discParseViolations(c.concernTypes).join(', ')}</td></tr>` : ''}
+        <tr><td class="muted" style="vertical-align:top;">Details</td><td style="white-space:pre-wrap;">${c.details||''}</td></tr>
+        ${c.requestCCTV ? `<tr><td class="muted">CCTV Footage Requested</td><td>📹 ${fmtDiscDate(c.cctvDate)}${c.cctvTime ? ' '+fmtDiscTime(c.cctvTime) : ''}</td></tr>` : ''}
+      </table>
+    </div>
+
+    <div class="card">
+      <h3>Investigation</h3>
+      <p class="muted" style="margin-bottom:8px;">Use this space to note findings while looking into the report, and record what action was taken.</p>
+      <label>Investigation Notes</label>
+      <textarea id="concernInvNotes" rows="4" placeholder="Findings, interviews, evidence reviewed…">${c.investigationNotes||''}</textarea>
+      <label>Investigated By</label>
+      <input type="text" id="concernInvBy" value="${c.investigatedBy||''}" placeholder="e.g. Marites Albero">
+      <label>Action Taken</label>
+      <textarea id="concernActionTaken" rows="3" placeholder="What was done, if anything…">${c.actionTaken||''}</textarea>
+      <label>Status</label>
+      <select id="concernStatusSelect">
+        ${CONCERN_STATUSES.map(s=>`<option ${c.status===s?'selected':''}>${s}</option>`).join('')}
+      </select>
+      <p id="concernInvErr" class="login-err"></p>
+      <button class="btn auto" id="concernInvSaveBtn" style="margin-top:10px;" onclick="saveConcernInvestigation()">Save</button>
+    </div>`;
+  },
 
   "mgmt-suggestions": ()=>`
     <div class="card">
@@ -4009,16 +4055,33 @@ async function reviewSuggestion(id, el){
   renderView('mgmt-suggestions');
 }
 
-async function resolveConcern(id, el){
-  btnLoadingEl(el, 'Marking...');
-  const c = MOCK.concernsLog.find(c=>c.id===id);
+function openConcernDetail(id){
+  discDetailConcernId = id;
+  renderView('mgmt-concern-detail');
+}
+
+async function saveConcernInvestigation(){
+  const c = MOCK.concernsLog.find(c=>c.id===discDetailConcernId);
+  const err = document.getElementById('concernInvErr');
+  err.style.display = 'none';
+  const status = document.getElementById('concernStatusSelect').value;
+  const fields = {
+    id: discDetailConcernId,
+    Status: status,
+    InvestigationNotes: document.getElementById('concernInvNotes').value.trim(),
+    InvestigatedBy: document.getElementById('concernInvBy').value.trim(),
+    ActionTaken: document.getElementById('concernActionTaken').value.trim(),
+  };
+  const btn = document.getElementById('concernInvSaveBtn');
+  btnLoadingEl(btn, 'Saving...');
   if(USE_REMOTE()){
-    const r = await apiPost('updateConcernStatus', {id, status:"resolved"});
-    if(!r.ok){ alert(r.error || "Couldn't update."); btnResetEl(el); return; }
-    if(c && c.status === 'open') mgmtAlertBaseline.concerns = Math.max(0, mgmtAlertBaseline.concerns - 1);
+    const r = await apiPost('updateConcernInvestigation', fields);
+    if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnResetEl(btn); return; }
+    if(c && c.status === 'Open' && status !== 'Open') mgmtAlertBaseline.concerns = Math.max(0, mgmtAlertBaseline.concerns - 1);
   }
-  if(c) c.status = "resolved";
-  renderView('mgmt-concerns');
+  if(c){ c.status = status; c.investigationNotes = fields.InvestigationNotes; c.investigatedBy = fields.InvestigatedBy; c.actionTaken = fields.ActionTaken; }
+  await btnSentEl(btn, 'Saved');
+  renderView('mgmt-concern-detail');
 }
 
 const savingRequestIds = new Set();
