@@ -460,6 +460,10 @@ function btnResetEl(el){
   el.disabled = false;
   el.textContent = el.dataset.origText || 'Delete';
 }
+async function btnSentEl(el, label){
+  if(el) el.innerHTML = '✓ ' + (label || 'Saved');
+  await new Promise(r=>setTimeout(r, 600));
+}
 
 /* Wraps a delete action with a confirm dialog and a loading state on
    the exact button that was clicked — used by every "Delete" button
@@ -1974,7 +1978,8 @@ async function downloadDiscAttachment(fileId, fileName){
   a.click();
 }
 
-async function saveDiscReview(){
+async function saveDiscReview(el){
+  btnLoadingEl(el, 'Saving...');
   const fields = {
     id: discDetailCaseId,
     ManagementFindings: document.getElementById('discFindings').value.trim(),
@@ -1984,22 +1989,26 @@ async function saveDiscReview(){
     stage: 'review',
   };
   const r = await apiPost('updateDisciplinaryCase', fields);
-  if(!r.ok){ alert(r.error || "Couldn't save."); return; }
+  if(!r.ok){ alert(r.error || "Couldn't save the review — please try again."); btnResetEl(el); return; }
   await loadRemoteData();
+  await btnSentEl(el, 'Saved');
   renderView('mgmt-disciplinary-detail');
 }
 
-async function saveDiscLevel(){
+async function saveDiscLevel(el){
+  btnLoadingEl(el, 'Saving...');
   const level = document.getElementById('discLevelSelect').value;
   const empDecisionEl = document.querySelector('input[name="discEmpDecision"]:checked');
   const fields = { id: discDetailCaseId, DisciplinaryLevel: level, EmploymentDecision: level===DISC_LEVELS[4] ? (empDecisionEl ? empDecisionEl.value : '') : '' };
   const r = await apiPost('updateDisciplinaryCase', fields);
-  if(!r.ok){ alert(r.error || "Couldn't save."); return; }
+  if(!r.ok){ alert(r.error || "Couldn't save the level — please try again."); btnResetEl(el); return; }
   await loadRemoteData();
+  await btnSentEl(el, 'Saved');
   renderView('mgmt-disciplinary-detail');
 }
 
-async function saveDiscApproval(){
+async function saveDiscApproval(el){
+  btnLoadingEl(el, 'Saving...');
   const fields = {
     id: discDetailCaseId,
     ReviewedBy: document.getElementById('discReviewedBy').value.trim(),
@@ -2009,12 +2018,14 @@ async function saveDiscApproval(){
     stage: document.getElementById('discApprovalStatus').value === 'Approved' ? 'approved' : 'approval',
   };
   const r = await apiPost('updateDisciplinaryCase', fields);
-  if(!r.ok){ alert(r.error || "Couldn't save."); return; }
+  if(!r.ok){ alert(r.error || "Couldn't save the approval — please try again."); btnResetEl(el); return; }
   await loadRemoteData();
+  await btnSentEl(el, 'Saved');
   renderView('mgmt-disciplinary-detail');
 }
 
-async function saveDiscFinalAction(){
+async function saveDiscFinalAction(el){
+  btnLoadingEl(el, 'Saving...');
   const fields = {
     id: discDetailCaseId,
     ActionTaken: document.getElementById('discActionTaken').value.trim(),
@@ -2023,18 +2034,21 @@ async function saveDiscFinalAction(){
     stage: 'final',
   };
   const r = await apiPost('updateDisciplinaryCase', fields);
-  if(!r.ok){ alert(r.error || "Couldn't save."); return; }
+  if(!r.ok){ alert(r.error || "Couldn't save the final action — please try again."); btnResetEl(el); return; }
   await loadRemoteData();
+  await btnSentEl(el, 'Saved');
   renderView('mgmt-disciplinary-detail');
 }
 
-async function saveDiscStatus(){
+async function saveDiscStatus(el){
+  btnLoadingEl(el, 'Updating...');
   const status = document.getElementById('discStatusSelect').value;
   const stageMap = {"Closed":"closed", "No Action":"noaction"};
   const fields = { id: discDetailCaseId, Status: status, stage: stageMap[status] || '' };
   const r = await apiPost('updateDisciplinaryCase', fields);
-  if(!r.ok){ alert(r.error || "Couldn't save."); return; }
+  if(!r.ok){ alert(r.error || "Couldn't update the status — please try again."); btnResetEl(el); return; }
   await loadRemoteData();
+  await btnSentEl(el, 'Updated');
   renderView('mgmt-disciplinary-detail');
 }
 
@@ -2946,7 +2960,20 @@ const BUILDERS = {
       <button class="btn ghost auto" style="margin-top:8px;" onclick="resetDiscFilter()">Reset Filters</button>
     </div>
 
-    <div class="card table-scroll" style="margin-bottom:16px;">
+    <div class="card" style="margin-bottom:16px;">
+      <h3><span class="ic">📊</span> Monthly Disciplinary Summary</h3>
+      <input type="month" value="${discSummaryPeriod}" onchange="setDiscSummaryPeriod(this.value)" style="max-width:220px; margin-bottom:12px;">
+      <p style="font-weight:600; margin-bottom:8px;">${periodLabel.toUpperCase()} DISCIPLINARY SUMMARY</p>
+      <table>
+        <tr><td>Total Cases</td><td class="mono" style="text-align:right;">${inPeriod.length}</td></tr>
+        ${Object.keys(byViolation).length ? Object.entries(byViolation).map(([v,c])=>`<tr><td class="muted">${v}</td><td class="mono" style="text-align:right;">${c}</td></tr>`).join('') : `<tr><td colspan="2" class="muted">No violations logged this period.</td></tr>`}
+      </table>
+      <table style="margin-top:12px;">
+        ${DISC_LEVELS.map(l=>`<tr><td class="muted">${l}</td><td class="mono" style="text-align:right;">${byLevel[l]||0}</td></tr>`).join('')}
+      </table>
+    </div>
+
+    <div class="card table-scroll">
       <h3><span class="ic">📁</span> Disciplinary Cases</h3>
       <table>
         <tr><th>Case #</th><th>Employee</th><th>Date Reported</th><th>Violation</th><th>Level</th><th>Status</th><th></th></tr>
@@ -2959,19 +2986,6 @@ const BUILDERS = {
           <td>${discStatusPill(d.Status)}</td>
           <td><button class="btn ghost auto" style="padding:5px 10px;" onclick="openDisciplinaryCase('${d.ID}')">View Case</button></td>
         </tr>`).join('') || `<tr><td colspan="7" class="muted">No matching cases.</td></tr>`}
-      </table>
-    </div>
-
-    <div class="card">
-      <h3><span class="ic">📊</span> Monthly Disciplinary Summary</h3>
-      <input type="month" value="${discSummaryPeriod}" onchange="setDiscSummaryPeriod(this.value)" style="max-width:220px; margin-bottom:12px;">
-      <p style="font-weight:600; margin-bottom:8px;">${periodLabel.toUpperCase()} DISCIPLINARY SUMMARY</p>
-      <table>
-        <tr><td>Total Cases</td><td class="mono" style="text-align:right;">${inPeriod.length}</td></tr>
-        ${Object.keys(byViolation).length ? Object.entries(byViolation).map(([v,c])=>`<tr><td class="muted">${v}</td><td class="mono" style="text-align:right;">${c}</td></tr>`).join('') : `<tr><td colspan="2" class="muted">No violations logged this period.</td></tr>`}
-      </table>
-      <table style="margin-top:12px;">
-        ${DISC_LEVELS.map(l=>`<tr><td class="muted">${l}</td><td class="mono" style="text-align:right;">${byLevel[l]||0}</td></tr>`).join('')}
       </table>
     </div>`;
   },
@@ -3121,7 +3135,7 @@ const BUILDERS = {
       <input type="text" id="discRecommended" value="${d.RecommendedAction||''}">
       <label>Management Comments</label>
       <textarea id="discComments" rows="3">${d.ManagementComments||''}</textarea>
-      <button class="btn ghost auto" onclick="saveDiscReview()">Save Review</button>
+      <button class="btn ghost auto" onclick="saveDiscReview(this)">Save Review</button>
     </div>
 
     <div class="card" style="margin-bottom:16px;">
@@ -3135,7 +3149,7 @@ const BUILDERS = {
         <label>Employment Decision</label>
         ${DISC_EMPLOYMENT_DECISIONS.map(o=>`<div class="checkbox-row"><input type="radio" name="discEmpDecision" id="discED_${o.replace(/[^a-zA-Z]/g,'')}" value="${o}" ${d.EmploymentDecision===o?'checked':''}><label for="discED_${o.replace(/[^a-zA-Z]/g,'')}">${o}</label></div>`).join('')}
       </div>
-      <button class="btn ghost auto" style="margin-top:8px;" onclick="saveDiscLevel()">Save Level</button>
+      <button class="btn ghost auto" style="margin-top:8px;" onclick="saveDiscLevel(this)">Save Level</button>
     </div>
 
     <div class="card" style="margin-bottom:16px;">
@@ -3154,7 +3168,7 @@ const BUILDERS = {
           </select>
         </div>
       </div>
-      <button class="btn ghost auto" onclick="saveDiscApproval()">Save Approval</button>
+      <button class="btn ghost auto" onclick="saveDiscApproval(this)">Save Approval</button>
     </div>
 
     <div class="card" style="margin-bottom:16px;">
@@ -3165,7 +3179,7 @@ const BUILDERS = {
       </div>
       <label>Additional Comments</label>
       <textarea id="discFinalComments" rows="3">${d.FinalComments||''}</textarea>
-      <button class="btn ghost auto" onclick="saveDiscFinalAction()">Save Final Action</button>
+      <button class="btn ghost auto" onclick="saveDiscFinalAction(this)">Save Final Action</button>
     </div>
 
     <div class="card" style="margin-bottom:16px;">
@@ -3173,7 +3187,7 @@ const BUILDERS = {
       <select id="discStatusSelect">
         ${DISC_STATUSES.filter(s=>s!=='Draft').map(s=>`<option ${d.Status===s?'selected':''}>${s}</option>`).join('')}
       </select>
-      <button class="btn ghost auto" style="margin-top:8px;" onclick="saveDiscStatus()">Update Status</button>
+      <button class="btn ghost auto" style="margin-top:8px;" onclick="saveDiscStatus(this)">Update Status</button>
     </div>
 
     <div class="card">
