@@ -1884,7 +1884,7 @@ function disciplinaryCasesTableSection(rows, title){
   return `
     <div class="card table-scroll">
       <h3><span class="ic">📁</span> ${title || 'Disciplinary Cases'}</h3>
-      ${employeePickerHtml('discCaseSearch', EMPLOYEE_ROSTER, `value="${discFilter.employee}" oninput="setDiscEmployeeFilter(this.value)" placeholder="🔍 Search employee name…" style="margin-bottom:12px;"`)}
+      <input type="text" id="discCaseSearch" placeholder="🔍 Search employee name…" value="${discFilter.employee}" oninput="setDiscEmployeeFilter(this.value)" style="margin-bottom:12px;">
       <table>
         <tr><th>Case #</th><th>Employee</th><th>Date Reported</th><th>Violation</th><th>Level</th><th>Status</th><th></th></tr>
         ${filtered.map(d=>`<tr>
