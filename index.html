@@ -513,6 +513,13 @@ let MY_RECOGNITION = [];     // the current employee's own recognitions/awards
 let ALL_EVALUATIONS = [];    // full evaluations list, for the Management view
 let MY_EVALUATIONS = [];     // the current employee's own evaluation history (received)
 let MY_GIVEN_EVALUATIONS = []; // evaluations the current employee has given to others
+let ALL_DISCIPLINARY_RECORDS = []; // full records, management-only
+let MY_DISCIPLINARY_RECORDS = []; // scoped to the current employee, excludes Drafts and internal-only fields
+let discFilter = { employee:'', department:'All', violation:'All', level:'All', status:'All', dateFrom:'', dateTo:'' };
+let discSummaryPeriod = ''; // "YYYY-MM", defaults to current month on first view
+let discDetailCaseId = null; // which case mgmt-disciplinary-detail is showing
+let discCaseAttachments = []; // [{fileId, fileName}] staged during the New Case form, before save
+let discNewCaseEmployee = ''; // selected employee name in the New Case form, drives the auto-filled Position/Department
 let attendanceSearchQuery = '';
 let perfFilterMonth = 'All';
 let perfFilterYear = 'All';
@@ -1170,12 +1177,13 @@ async function loadRemoteData(){
   if(!USE_REMOTE()) return;
   try{
     const myName = (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.fullName) || '';
-    const [roster, schedule, nextSchedule, attendance, announcements, recognition, requests, accountsStatus, concerns, suggestions, evaluations, myConcernsRaw, mySuggestionsRaw, myGivenEvaluationsRaw] = await Promise.all([
+    const [roster, schedule, nextSchedule, attendance, announcements, recognition, requests, accountsStatus, concerns, suggestions, evaluations, myConcernsRaw, mySuggestionsRaw, myGivenEvaluationsRaw, disciplinaryRecords, myDisciplinaryRaw] = await Promise.all([
       safeApiGet('roster', []), safeApiGet('schedule', {days:[],rows:[]}), safeApiGet('nextSchedule', {days:[],rows:[],published:false}), safeApiGet('attendance', []),
       safeApiGet('announcements', []), safeApiGet('recognition', []), safeApiGet('requests', []), safeApiGet('accountsStatus', []),
       safeApiGet('concerns', []), safeApiGet('suggestions', []), safeApiGet('evaluations', []),
       safeApiGet('myConcerns&name=' + encodeURIComponent(myName), []), safeApiGet('mySuggestions&name=' + encodeURIComponent(myName), []),
-      safeApiGet('myGivenEvaluations&name=' + encodeURIComponent(myName), [])
+      safeApiGet('myGivenEvaluations&name=' + encodeURIComponent(myName), []),
+      safeApiGet('disciplinaryRecords', []), safeApiGet('myDisciplinaryRecords&name=' + encodeURIComponent(myName), [])
     ]);
     EMPLOYEE_ROSTER.length = 0;
     roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, position:r.Position, status:r.Status||"Active", attendance:"—"}));
@@ -1199,6 +1207,8 @@ async function loadRemoteData(){
     ALL_EVALUATIONS = evaluations.slice().reverse();
     MY_EVALUATIONS = ALL_EVALUATIONS.filter(e => CURRENT_EMPLOYEE && e.EmployeeName === CURRENT_EMPLOYEE.name);
     MY_GIVEN_EVALUATIONS = myGivenEvaluationsRaw.slice().reverse();
+    ALL_DISCIPLINARY_RECORDS = disciplinaryRecords.slice().reverse();
+    MY_DISCIPLINARY_RECORDS = myDisciplinaryRaw.slice().reverse();
     MOCK.requests = requests.filter(r => r.EmployeeName === (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.name))
       .map(r => ({type:r.Type, date:r.Date, status:r.Status, id:r.ID, details:r.Details, swapDay:r.SwapDay, theirDay:r.TheirDay, swapWithName:r.SwapWithName}));
     ALL_REQUESTS = requests.slice().reverse();
@@ -1526,6 +1536,7 @@ const NAV = {
       {id:"requests", ic:"📝", label:"My Requests"},
       {id:"concern", ic:"⚠️", label:"Report a Concern"},
       {id:"suggestion", ic:"💡", label:"Suggestion Box"},
+      {id:"my-disciplinary", ic:"📁", label:"My Records"},
       {id:"notifications", ic:"🔔", label:"Notifications"},
     ]},
   ],
@@ -1537,6 +1548,7 @@ const NAV = {
       {id:"mgmt-schedule", ic:"📅", label:"Master Schedule"},
       {id:"mgmt-attendance", ic:"🕐", label:"Attendance / Log Absence"},
       {id:"mgmt-performance", ic:"📊", label:"Performance Reports"},
+      {id:"mgmt-disciplinary", ic:"📁", label:"Disciplinary Reports"},
     ]},
     {group:"Requests & Feedback", items:[
       {id:"mgmt-requests", ic:"📝", label:"Manage Requests"},
@@ -1617,6 +1629,52 @@ let expandedResponsibility = null;
 function toggleResponsibility(pos){
   expandedResponsibility = (expandedResponsibility === pos) ? null : pos;
   renderView('duties');
+}
+
+function openMyDisciplinaryCase(id){
+  const d = MY_DISCIPLINARY_RECORDS.find(x=>x.ID===id);
+  if(!d) return;
+  const modal = document.getElementById('myDiscDetailModal');
+  modal.innerHTML = `
+    <div class="card" style="margin-top:16px;">
+      <h3>${d.CaseNumber||''}</h3>
+      <table>
+        <tr><td class="muted">Status</td><td>${discStatusPill(d.Status)}</td></tr>
+        <tr><td class="muted">Incident Date</td><td>${d.IncidentDate||''} ${d.IncidentTime||''}</td></tr>
+        <tr><td class="muted">Location</td><td>${d.Location==='Other' ? d.LocationOther : d.Location||''}</td></tr>
+        <tr><td class="muted">Violation Type</td><td>${discParseViolations(d.ViolationTypes).map(v=>v==='Other'?d.ViolationOther:v).join(', ')}</td></tr>
+        <tr><td class="muted" style="vertical-align:top;">Description</td><td style="white-space:pre-wrap;">${d.Description||''}</td></tr>
+        <tr><td class="muted">Policy / Rule</td><td>${d.PolicyInvolved||'—'}</td></tr>
+        ${d.DisciplinaryLevel ? `<tr><td class="muted">Disciplinary Level</td><td>${d.DisciplinaryLevel}</td></tr>` : ''}
+        ${d.ActionTaken ? `<tr><td class="muted">Action Taken</td><td>${d.ActionTaken}</td></tr>` : ''}
+        ${d.EffectiveDate ? `<tr><td class="muted">Effective Date</td><td>${d.EffectiveDate}</td></tr>` : ''}
+      </table>
+      <div style="margin-top:16px;">
+        <label>Your Response</label>
+        <p class="muted" style="font-size:12.5px; margin-bottom:8px;">Add your explanation or response to this case — it becomes part of the record.</p>
+        <textarea id="myDiscResponseText" rows="4" placeholder="Your explanation or response…">${d.EmployeeResponse||''}</textarea>
+        <p id="myDiscRespErr" class="login-err"></p>
+        <p id="myDiscRespOk" class="login-ok">Response saved.</p>
+        <button class="btn auto" id="myDiscRespBtn" onclick="submitEmployeeDiscResponse('${id}')">${d.EmployeeResponse ? 'Update Response' : 'Submit Response'}</button>
+        <button class="btn ghost auto" onclick="document.getElementById('myDiscDetailModal').innerHTML=''">Close</button>
+      </div>
+    </div>`;
+  modal.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+async function submitEmployeeDiscResponse(id){
+  const text = document.getElementById('myDiscResponseText').value.trim();
+  const err = document.getElementById('myDiscRespErr');
+  const ok = document.getElementById('myDiscRespOk');
+  err.style.display='none'; ok.style.display='none';
+  if(!text){ err.textContent = "Write a response first."; err.style.display='block'; return; }
+  btnLoading('myDiscRespBtn', 'Saving...');
+  const r = await apiPost('addEmployeeResponse', {id, employeeName: CURRENT_EMPLOYEE.name, response: text});
+  if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnReset('myDiscRespBtn','Submit Response'); return; }
+  const rec = MY_DISCIPLINARY_RECORDS.find(x=>x.ID===id);
+  if(rec) rec.EmployeeResponse = text;
+  ok.style.display='block';
+  btnReset('myDiscRespBtn', 'Update Response');
 }
 
 function computeRecentActivity(){
@@ -1721,6 +1779,231 @@ function setRole(role){
    faster than scrolling a long <select> once the roster gets big.
    Used everywhere the app needs to pick one employee from the
    full roster. */
+/* ============================================================
+   Disciplinary Records
+   ============================================================ */
+const DISC_VIOLATION_TYPES = ["Attendance / Tardiness","Absence","Undertime","Work Performance","Company Policy","Workplace Conduct","Customer Service","Safety","Insubordination","Other"];
+const DISC_LEVELS = ["Level 1 – Coaching / Verbal Reminder","Level 2 – Written Warning","Level 3 – Written Warning + Suspension","Level 4 – Final Review","Level 5 – Employment Decision"];
+const DISC_STATUSES = ["Draft","Under Review","Pending Approval","Final Review","Action Issued","Closed","No Action"];
+const DISC_EMPLOYMENT_DECISIONS = ["Continue Employment","Final Warning","Additional Review","Other Management Action","Termination"];
+
+function discParseViolations(raw){
+  if(!raw) return [];
+  try{ const arr = JSON.parse(raw); return Array.isArray(arr) ? arr : [String(raw)]; } catch(e){ return String(raw).split(',').map(s=>s.trim()).filter(Boolean); }
+}
+function discParseTimeline(raw){
+  if(!raw) return [];
+  try{ const arr = JSON.parse(raw); return Array.isArray(arr) ? arr : []; } catch(e){ return []; }
+}
+function discStatusPill(status){
+  const map = {
+    "Draft":"warn", "Under Review":"warn", "Pending Approval":"warn",
+    "Final Review":"warn", "Action Issued":"ok", "Closed":"ok", "No Action":"ok",
+  };
+  return `<span class="pill ${map[status]||'warn'}">${status||'Draft'}</span>`;
+}
+function discFilteredRecords(){
+  return ALL_DISCIPLINARY_RECORDS.filter(d=>{
+    if(discFilter.employee && !(d.EmployeeName||'').toLowerCase().includes(discFilter.employee.toLowerCase())) return false;
+    if(discFilter.department !== 'All' && d.Department !== discFilter.department) return false;
+    if(discFilter.violation !== 'All' && !discParseViolations(d.ViolationTypes).includes(discFilter.violation)) return false;
+    if(discFilter.level !== 'All' && d.DisciplinaryLevel !== discFilter.level) return false;
+    if(discFilter.status !== 'All' && d.Status !== discFilter.status) return false;
+    if(discFilter.dateFrom){ const dt = new Date(d.DateReported); if(isNaN(dt) || dt < new Date(discFilter.dateFrom)) return false; }
+    if(discFilter.dateTo){ const dt = new Date(d.DateReported); if(isNaN(dt) || dt > new Date(discFilter.dateTo + 'T23:59:59')) return false; }
+    return true;
+  });
+}
+function setDiscFilter(field, val){
+  discFilter[field] = val;
+  renderView('mgmt-disciplinary');
+}
+function resetDiscFilter(){
+  discFilter = { employee:'', department:'All', violation:'All', level:'All', status:'All', dateFrom:'', dateTo:'' };
+  renderView('mgmt-disciplinary');
+}
+function setDiscSummaryPeriod(val){
+  discSummaryPeriod = val;
+  renderView('mgmt-disciplinary');
+}
+function openDisciplinaryCase(id){
+  discDetailCaseId = id;
+  renderView('mgmt-disciplinary-detail');
+}
+
+function openDisciplinaryCase(id){
+  discDetailCaseId = id;
+  renderView('mgmt-disciplinary-detail');
+}
+
+function onDiscNewEmpChange(val){
+  const name = val.split(' — ')[0].trim();
+  const match = EMPLOYEE_ROSTER.find(e => e.name.toLowerCase() === name.toLowerCase());
+  discNewCaseEmployee = match ? match.name : '';
+  renderView('mgmt-disciplinary-new');
+}
+
+function toggleDiscLocationOther(){
+  const isOther = document.getElementById('discLocation').value === 'Other';
+  document.getElementById('discLocationOtherField').style.display = isOther ? 'block' : 'none';
+}
+function toggleDiscViolationOther(){
+  const isChecked = document.getElementById('discV_Other').checked;
+  document.getElementById('discViolationOtherField').style.display = isChecked ? 'block' : 'none';
+}
+
+function renderDiscAttachmentList(){
+  if(!discCaseAttachments.length) return `<p class="muted" style="font-size:13px;">No attachments added yet.</p>`;
+  return discCaseAttachments.map((f,i)=>`<div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0; border-bottom:0.5px solid var(--line);"><span>📎 ${f.fileName}</span><button class="btn ghost auto" style="padding:3px 8px; font-size:12px;" onclick="removeDiscAttachment(${i})">Remove</button></div>`).join('');
+}
+function removeDiscAttachment(i){
+  discCaseAttachments.splice(i,1);
+  document.getElementById('discAttachmentList').innerHTML = renderDiscAttachmentList();
+}
+async function handleDiscFileUpload(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  if(file.size > 10*1024*1024){ alert("File must be under 10MB."); event.target.value=''; return; }
+  if(!USE_REMOTE()){ alert("Connect the backend first — attachments need the live Sheet connection."); event.target.value=''; return; }
+
+  const reader = new FileReader();
+  reader.onload = async ()=>{
+    const base64 = reader.result.split(',')[1];
+    const listEl = document.getElementById('discAttachmentList');
+    listEl.innerHTML = `<p class="muted" style="font-size:13px;"><span class="btn-spinner"></span>Uploading ${file.name}…</p>` + renderDiscAttachmentList();
+    const r = await apiPost('uploadDisciplinaryFile', {base64, mimeType: file.type, fileName: file.name});
+    if(!r.ok){ alert(r.error || "Upload failed."); listEl.innerHTML = renderDiscAttachmentList(); return; }
+    discCaseAttachments.push({fileId: r.fileId, fileName: r.fileName});
+    listEl.innerHTML = renderDiscAttachmentList();
+    event.target.value = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+function discCollectViolations(){
+  return Array.from(document.querySelectorAll('.discViolationCb:checked')).map(cb=>cb.value);
+}
+
+async function saveDisciplinaryCase(status){
+  const err = document.getElementById('discFormErr');
+  err.style.display = 'none';
+  const employeeName = discNewCaseEmployee;
+  if(!employeeName){ err.textContent = "Select an employee from the suggestions."; err.style.display='block'; return; }
+  const violations = discCollectViolations();
+  const description = document.getElementById('discDescription').value.trim();
+  if(status !== 'Draft'){
+    if(!violations.length){ err.textContent = "Select at least one violation type before submitting."; err.style.display='block'; return; }
+    if(!description){ err.textContent = "Add a description of the incident before submitting."; err.style.display='block'; return; }
+  }
+
+  const emp = EMPLOYEE_ROSTER.find(e=>e.name===employeeName);
+  const empSchedRow = findMyScheduleRow(employeeName);
+  const location = document.getElementById('discLocation').value;
+
+  const payload = {
+    DateReported: document.getElementById('discDateReported').value,
+    ReportedBy: CURRENT_USER.displayName,
+    EmployeeName: employeeName,
+    Position: emp ? emp.position : '',
+    Department: empSchedRow ? empSchedRow.department : '',
+    Supervisor: document.getElementById('discSupervisor').value.trim(),
+    IncidentDate: document.getElementById('discIncidentDate').value,
+    IncidentTime: document.getElementById('discIncidentTime').value,
+    Location: location,
+    LocationOther: location==='Other' ? document.getElementById('discLocationOther').value.trim() : '',
+    ViolationTypes: JSON.stringify(violations),
+    ViolationOther: violations.includes('Other') ? document.getElementById('discViolationOther').value.trim() : '',
+    Description: description,
+    PolicyInvolved: document.getElementById('discPolicy').value.trim(),
+    Witnesses: document.getElementById('discWitnesses').value.trim(),
+    AttachmentFileIds: discCaseAttachments.map(f=>f.fileId).join(','),
+    AttachmentNames: discCaseAttachments.map(f=>f.fileName).join(','),
+    Status: status,
+  };
+
+  const btnId = status === 'Draft' ? 'discDraftBtn' : 'discSubmitBtn';
+  btnLoading(btnId, status==='Draft' ? 'Saving...' : 'Submitting...');
+  const r = await apiPost('saveDisciplinaryCase', payload);
+  if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnReset(btnId, status==='Draft'?'Save Draft':'Submit Report'); return; }
+  await loadRemoteData();
+  discNewCaseEmployee = '';
+  discCaseAttachments = [];
+  renderView('mgmt-disciplinary');
+}
+
+async function downloadDiscAttachment(fileId, fileName){
+  const r = await apiGet('photo&id=' + fileId);
+  if(!r.ok){ alert("Couldn't load that file."); return; }
+  const a = document.createElement('a');
+  a.href = `data:${r.mime};base64,${r.base64}`;
+  a.download = fileName;
+  a.click();
+}
+
+async function saveDiscReview(){
+  const fields = {
+    id: discDetailCaseId,
+    ManagementFindings: document.getElementById('discFindings').value.trim(),
+    PreviousRelatedCases: document.getElementById('discPrevCases').value.trim(),
+    RecommendedAction: document.getElementById('discRecommended').value.trim(),
+    ManagementComments: document.getElementById('discComments').value.trim(),
+    stage: 'review',
+  };
+  const r = await apiPost('updateDisciplinaryCase', fields);
+  if(!r.ok){ alert(r.error || "Couldn't save."); return; }
+  await loadRemoteData();
+  renderView('mgmt-disciplinary-detail');
+}
+
+async function saveDiscLevel(){
+  const level = document.getElementById('discLevelSelect').value;
+  const empDecisionEl = document.querySelector('input[name="discEmpDecision"]:checked');
+  const fields = { id: discDetailCaseId, DisciplinaryLevel: level, EmploymentDecision: level===DISC_LEVELS[4] ? (empDecisionEl ? empDecisionEl.value : '') : '' };
+  const r = await apiPost('updateDisciplinaryCase', fields);
+  if(!r.ok){ alert(r.error || "Couldn't save."); return; }
+  await loadRemoteData();
+  renderView('mgmt-disciplinary-detail');
+}
+
+async function saveDiscApproval(){
+  const fields = {
+    id: discDetailCaseId,
+    ReviewedBy: document.getElementById('discReviewedBy').value.trim(),
+    ApprovedBy: document.getElementById('discApprovedBy').value.trim(),
+    ApprovalDate: document.getElementById('discApprovalDate').value,
+    ApprovalStatus: document.getElementById('discApprovalStatus').value,
+    stage: document.getElementById('discApprovalStatus').value === 'Approved' ? 'approved' : 'approval',
+  };
+  const r = await apiPost('updateDisciplinaryCase', fields);
+  if(!r.ok){ alert(r.error || "Couldn't save."); return; }
+  await loadRemoteData();
+  renderView('mgmt-disciplinary-detail');
+}
+
+async function saveDiscFinalAction(){
+  const fields = {
+    id: discDetailCaseId,
+    ActionTaken: document.getElementById('discActionTaken').value.trim(),
+    EffectiveDate: document.getElementById('discEffectiveDate').value,
+    FinalComments: document.getElementById('discFinalComments').value.trim(),
+    stage: 'final',
+  };
+  const r = await apiPost('updateDisciplinaryCase', fields);
+  if(!r.ok){ alert(r.error || "Couldn't save."); return; }
+  await loadRemoteData();
+  renderView('mgmt-disciplinary-detail');
+}
+
+async function saveDiscStatus(){
+  const status = document.getElementById('discStatusSelect').value;
+  const stageMap = {"Closed":"closed", "No Action":"noaction"};
+  const fields = { id: discDetailCaseId, Status: status, stage: stageMap[status] || '' };
+  const r = await apiPost('updateDisciplinaryCase', fields);
+  if(!r.ok){ alert(r.error || "Couldn't save."); return; }
+  await loadRemoteData();
+  renderView('mgmt-disciplinary-detail');
+}
+
 function employeePickerHtml(inputId, roster, extraAttrs){
   const dlId = inputId + 'List';
   const options = roster.slice().sort((a,b)=>a.name.localeCompare(b.name))
@@ -1816,6 +2099,7 @@ const TITLES = {
   requests:["My Requests","Leave, swaps, and other requests you've filed"],
   concern:["Report a Concern","Sent directly to management"],
   suggestion:["Suggestion Box","Share an idea — anonymously if you prefer"],
+  "my-disciplinary":["My Records","Disciplinary case records that name you"],
   notifications:["Notifications","Recent activity on your account"],
   "mgmt-home":["Management Overview","Company-wide snapshot — management team only"],
   "mgmt-employees":["All Employees","Full staff directory"],
@@ -1823,6 +2107,9 @@ const TITLES = {
   "mgmt-schedule":["Master Schedule","Every employee, every shift — full sheet"],
   "mgmt-attendance":["Attendance / Log Absence","Log an entry and it reflects on that employee's dashboard automatically"],
   "mgmt-performance":["Performance Reports","Evaluation report and top performing staff"],
+  "mgmt-disciplinary":["Disciplinary Reports","Case records, filters, and monthly summary"],
+  "mgmt-disciplinary-new":["New Disciplinary Case","Fill in every section that applies"],
+  "mgmt-disciplinary-detail":["Case Details","Full record, review, and timeline"],
   "mgmt-requests":["Manage Requests","Approve or decline pending requests"],
   "mgmt-concerns":["Concerns Log","All reported concerns"],
   "mgmt-suggestions":["Suggestions Log","All submitted suggestions"],
@@ -2310,6 +2597,23 @@ const BUILDERS = {
       </div>
     </div>`,
 
+  "my-disciplinary": ()=>`
+    <div class="card">
+      <h3><span class="ic">📁</span> My Records</h3>
+      <p class="muted" style="margin-bottom:12px;">Disciplinary case records that name you. Attached documents and internal management notes aren't shown here — only the case itself.</p>
+      ${MY_DISCIPLINARY_RECORDS.length ? MY_DISCIPLINARY_RECORDS.map(d=>`
+        <div class="feed-item" style="cursor:pointer;" onclick="openMyDisciplinaryCase('${d.ID}')">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <div style="font-weight:600;">${d.CaseNumber||''} — ${discParseViolations(d.ViolationTypes).map(v=>v==='Other'?d.ViolationOther:v).join(', ')}</div>
+              <div class="muted" style="font-size:12.5px; margin-top:2px;">${d.IncidentDate||''}${d.DisciplinaryLevel ? ' · '+d.DisciplinaryLevel : ''}</div>
+            </div>
+            ${discStatusPill(d.Status)}
+          </div>
+        </div>`).join('') : `<p class="muted">No disciplinary records on file.</p>`}
+    </div>
+    <div id="myDiscDetailModal"></div>`,
+
   notifications: ()=>{
     const activity = computeRecentActivity();
     try{ localStorage.setItem('sv_notif_count_'+CURRENT_EMPLOYEE.name, String(activity.length)); }catch(e){}
@@ -2526,6 +2830,313 @@ const BUILDERS = {
         <tr><th>Employee</th><th>Position</th><th>Period</th><th>Score</th><th>Rating</th><th>Total Records</th></tr>
         ${rows.map(r=>`<tr><td>${r.name}</td><td class="muted">${r.position}</td><td>${r.e ? r.e.Month+' '+r.e.Year : '—'}</td><td class="mono">${r.e ? r.e.AverageScore : '—'}</td><td>${r.e ? ratingStars(r.e.AverageScore)+' '+r.e.RatingLabel : '<span class="muted">Not yet evaluated</span>'}</td><td class="mono">${countByEmployee[r.name] || 0}</td></tr>`).join('') || `<tr><td colspan="6" class="muted">No evaluations found.</td></tr>`}
       </table>
+    </div>`;
+  },
+
+  "mgmt-disciplinary": ()=>{
+    const depts = Array.from(new Set(ALL_DISCIPLINARY_RECORDS.map(d=>d.Department).filter(Boolean))).sort();
+    const rows = discFilteredRecords();
+
+    const now = new Date();
+    if(!discSummaryPeriod) discSummaryPeriod = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const [sy, sm] = discSummaryPeriod.split('-').map(Number);
+    const inPeriod = ALL_DISCIPLINARY_RECORDS.filter(d=>{
+      if(!d.DateReported) return false;
+      const dt = new Date(d.DateReported);
+      return !isNaN(dt) && dt.getFullYear()===sy && (dt.getMonth()+1)===sm && d.Status !== 'Draft';
+    });
+    const byViolation = {};
+    inPeriod.forEach(d=> discParseViolations(d.ViolationTypes).forEach(v=>{ byViolation[v] = (byViolation[v]||0)+1; }));
+    const byLevel = {};
+    DISC_LEVELS.forEach(l=> byLevel[l] = 0);
+    inPeriod.forEach(d=>{ if(d.DisciplinaryLevel) byLevel[d.DisciplinaryLevel] = (byLevel[d.DisciplinaryLevel]||0)+1; });
+    const periodLabel = new Date(sy, sm-1, 1).toLocaleDateString('en-US', {month:'long', year:'numeric'});
+
+    return `
+    <div class="no-print" style="display:flex; justify-content:flex-end; margin-bottom:16px;">
+      <button onclick="renderView('mgmt-disciplinary-new')">+ New Case</button>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Filter Disciplinary Reports</h3>
+      <div class="grid grid-2">
+        <div>
+          <label>Employee</label>
+          ${employeePickerHtml('discFilterEmp', EMPLOYEE_ROSTER, `value="${discFilter.employee}" oninput="setDiscFilter('employee', this.value)" placeholder="All employees…"`)}
+        </div>
+        <div>
+          <label>Department</label>
+          <select onchange="setDiscFilter('department', this.value)">
+            <option ${discFilter.department==='All'?'selected':''}>All Departments</option>
+            ${depts.map(d=>`<option ${discFilter.department===d?'selected':''}>${d}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label>Violation</label>
+          <select onchange="setDiscFilter('violation', this.value)">
+            <option value="All" ${discFilter.violation==='All'?'selected':''}>All Types</option>
+            ${DISC_VIOLATION_TYPES.map(v=>`<option ${discFilter.violation===v?'selected':''}>${v}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label>Level</label>
+          <select onchange="setDiscFilter('level', this.value)">
+            <option value="All" ${discFilter.level==='All'?'selected':''}>All Levels</option>
+            ${DISC_LEVELS.map(l=>`<option ${discFilter.level===l?'selected':''}>${l}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label>Status</label>
+          <select onchange="setDiscFilter('status', this.value)">
+            <option value="All" ${discFilter.status==='All'?'selected':''}>All Statuses</option>
+            ${DISC_STATUSES.map(s=>`<option ${discFilter.status===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label>Date From</label>
+          <input type="date" value="${discFilter.dateFrom}" onchange="setDiscFilter('dateFrom', this.value)">
+        </div>
+        <div>
+          <label>Date To</label>
+          <input type="date" value="${discFilter.dateTo}" onchange="setDiscFilter('dateTo', this.value)">
+        </div>
+      </div>
+      <button class="btn ghost auto" style="margin-top:8px;" onclick="resetDiscFilter()">Reset Filters</button>
+    </div>
+
+    <div class="card table-scroll" style="margin-bottom:16px;">
+      <h3><span class="ic">📁</span> Disciplinary Cases</h3>
+      <table>
+        <tr><th>Case #</th><th>Employee</th><th>Date Reported</th><th>Violation</th><th>Level</th><th>Status</th><th></th></tr>
+        ${rows.map(d=>`<tr>
+          <td class="mono">${d.CaseNumber||''}</td>
+          <td>${d.EmployeeName}</td>
+          <td>${fmtDateTime(d.DateReported)}</td>
+          <td class="muted">${discParseViolations(d.ViolationTypes).join(', ')||''}</td>
+          <td>${d.DisciplinaryLevel||'<span class="muted">—</span>'}</td>
+          <td>${discStatusPill(d.Status)}</td>
+          <td><button class="btn ghost auto" style="padding:5px 10px;" onclick="openDisciplinaryCase('${d.ID}')">View Case</button></td>
+        </tr>`).join('') || `<tr><td colspan="7" class="muted">No matching cases.</td></tr>`}
+      </table>
+    </div>
+
+    <div class="card">
+      <h3><span class="ic">📊</span> Monthly Disciplinary Summary</h3>
+      <input type="month" value="${discSummaryPeriod}" onchange="setDiscSummaryPeriod(this.value)" style="max-width:220px; margin-bottom:12px;">
+      <p style="font-weight:600; margin-bottom:8px;">${periodLabel.toUpperCase()} DISCIPLINARY SUMMARY</p>
+      <table>
+        <tr><td>Total Cases</td><td class="mono" style="text-align:right;">${inPeriod.length}</td></tr>
+        ${Object.keys(byViolation).length ? Object.entries(byViolation).map(([v,c])=>`<tr><td class="muted">${v}</td><td class="mono" style="text-align:right;">${c}</td></tr>`).join('') : `<tr><td colspan="2" class="muted">No violations logged this period.</td></tr>`}
+      </table>
+      <table style="margin-top:12px;">
+        ${DISC_LEVELS.map(l=>`<tr><td class="muted">${l}</td><td class="mono" style="text-align:right;">${byLevel[l]||0}</td></tr>`).join('')}
+      </table>
+    </div>`;
+  },
+
+  "mgmt-disciplinary-new": ()=>{
+    const emp = discNewCaseEmployee ? EMPLOYEE_ROSTER.find(e=>e.name===discNewCaseEmployee) : null;
+    const empSchedRow = discNewCaseEmployee ? findMyScheduleRow(discNewCaseEmployee) : null;
+    const now = new Date();
+    const localDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    return `
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Case Information</h3>
+      <div class="grid grid-2">
+        <div><label>Case Number</label><input type="text" value="Assigned on save (DR-${new Date().getFullYear()}-###)" disabled></div>
+        <div><label>Date Reported</label><input type="date" id="discDateReported" value="${localDate}"></div>
+      </div>
+      <label>Reported By</label>
+      <input type="text" value="${CURRENT_USER.displayName}" disabled>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Employee Information</h3>
+      <label>Employee</label>
+      ${employeePickerHtml('discNewEmp', EMPLOYEE_ROSTER, `oninput="onDiscNewEmpChange(this.value)"`)}
+      <div class="grid grid-2" style="margin-top:8px;">
+        <div><label>Position</label><input type="text" value="${emp ? emp.position : ''}" disabled></div>
+        <div><label>Department</label><input type="text" value="${empSchedRow ? empSchedRow.department : ''}" disabled></div>
+      </div>
+      <label>Supervisor <span class="muted">(optional — not tracked automatically)</span></label>
+      <input type="text" id="discSupervisor" placeholder="e.g. Marites Albero">
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Incident Information</h3>
+      <div class="grid grid-2">
+        <div><label>Incident Date</label><input type="date" id="discIncidentDate" value="${localDate}"></div>
+        <div><label>Incident Time</label><input type="time" id="discIncidentTime"></div>
+      </div>
+      <label>Location</label>
+      <select id="discLocation" onchange="toggleDiscLocationOther()">
+        <option>Club 88</option><option>Saipan Vegas</option><option>Other</option>
+      </select>
+      <div id="discLocationOtherField" style="display:none;">
+        <label>Please Specify Location</label>
+        <input type="text" id="discLocationOther">
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Type of Violation</h3>
+      <p class="muted" style="margin-bottom:8px;">Select one or more that apply.</p>
+      ${DISC_VIOLATION_TYPES.map(v=>`<div class="checkbox-row"><input type="checkbox" id="discV_${v.replace(/[^a-zA-Z]/g,'')}" value="${v}" class="discViolationCb" onchange="${v==='Other'?'toggleDiscViolationOther()':''}"><label for="discV_${v.replace(/[^a-zA-Z]/g,'')}">${v}</label></div>`).join('')}
+      <div id="discViolationOtherField" style="display:none; margin-top:8px;">
+        <label>Please Specify</label>
+        <input type="text" id="discViolationOther">
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Description of Incident</h3>
+      <p class="muted" style="margin-bottom:8px;">Please provide a factual and objective description of what happened. Focus on the facts — avoid personal or judgmental comments.</p>
+      <textarea id="discDescription" rows="6" placeholder="What happened, in factual terms…"></textarea>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Policy / Rule Involved</h3>
+      <input type="text" id="discPolicy" placeholder="Which company policy, procedure, rule, or expectation applies">
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Supporting Information</h3>
+      <label>Witnesses <span class="muted">(comma-separated if more than one)</span></label>
+      <input type="text" id="discWitnesses" placeholder="e.g. Ethel Caballero, Marcial Ramos">
+      <label>Attachments</label>
+      <input type="file" id="discFileInput" onchange="handleDiscFileUpload(event)" accept=".pdf,.jpg,.jpeg,.png">
+      <p class="muted" style="font-size:12px; margin:4px 0 8px;">PDF or photo, up to 10MB each. Examples: attendance records, written reports, or other relevant documents.</p>
+      <div id="discAttachmentList">${renderDiscAttachmentList()}</div>
+    </div>
+
+    <p id="discFormErr" class="login-err" style="display:none;"></p>
+    <div style="display:flex; gap:8px;">
+      <button class="btn ghost auto" id="discDraftBtn" onclick="saveDisciplinaryCase('Draft')">Save Draft</button>
+      <button class="btn auto" id="discSubmitBtn" onclick="saveDisciplinaryCase('Under Review')">Submit Report</button>
+    </div>`;
+  },
+
+  "mgmt-disciplinary-detail": ()=>{
+    const d = ALL_DISCIPLINARY_RECORDS.find(x=>x.ID===discDetailCaseId);
+    if(!d) return `<div class="empty"><div class="ic">📁</div>Case not found.</div>`;
+    const timeline = discParseTimeline(d.Timeline);
+    const attachmentIds = (d.AttachmentFileIds||'').split(',').filter(Boolean);
+    const attachmentNames = (d.AttachmentNames||'').split(',').filter(Boolean);
+    const isLevel5 = d.DisciplinaryLevel === DISC_LEVELS[4];
+
+    return `
+    <div class="no-print" style="margin-bottom:16px;">
+      <button class="btn ghost auto" onclick="renderView('mgmt-disciplinary')">← Back to Disciplinary Reports</button>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Case Information</h3>
+      <table>
+        <tr><td class="muted">Case Number</td><td class="mono">${d.CaseNumber||''}</td></tr>
+        <tr><td class="muted">Date Reported</td><td>${fmtDateTime(d.DateReported)}</td></tr>
+        <tr><td class="muted">Reported By</td><td>${d.ReportedBy||''}</td></tr>
+        <tr><td class="muted">Current Status</td><td>${discStatusPill(d.Status)}</td></tr>
+      </table>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Employee Information</h3>
+      <table>
+        <tr><td class="muted">Employee</td><td>${d.EmployeeName}</td></tr>
+        <tr><td class="muted">Position</td><td>${d.Position||''}</td></tr>
+        <tr><td class="muted">Department</td><td>${d.Department||''}</td></tr>
+        <tr><td class="muted">Supervisor</td><td>${d.Supervisor||'—'}</td></tr>
+      </table>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Incident Information</h3>
+      <table>
+        <tr><td class="muted">Incident Date</td><td>${d.IncidentDate||''}</td></tr>
+        <tr><td class="muted">Incident Time</td><td>${d.IncidentTime||''}</td></tr>
+        <tr><td class="muted">Location</td><td>${d.Location==='Other' ? d.LocationOther : d.Location}</td></tr>
+        <tr><td class="muted">Violation Type</td><td>${discParseViolations(d.ViolationTypes).map(v=>v==='Other'?d.ViolationOther:v).join(', ')}</td></tr>
+        <tr><td class="muted" style="vertical-align:top;">Description</td><td style="white-space:pre-wrap;">${d.Description||''}</td></tr>
+        <tr><td class="muted">Policy / Rule</td><td>${d.PolicyInvolved||'—'}</td></tr>
+        <tr><td class="muted">Witnesses</td><td>${d.Witnesses||'—'}</td></tr>
+        <tr><td class="muted" style="vertical-align:top;">Attachments</td><td>${attachmentIds.length ? attachmentIds.map((id,i)=>`<a href="#" onclick="downloadDiscAttachment('${id}','${attachmentNames[i]||'file'}'); return false;">📎 ${attachmentNames[i]||'Attachment '+(i+1)}</a>`).join('<br>') : '<span class="muted">None</span>'}</td></tr>
+      </table>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Employee Response</h3>
+      <p class="muted" style="margin-bottom:8px;">${d.EmployeeResponse ? '' : 'No response recorded yet — the employee can add one from their own portal.'}</p>
+      ${d.EmployeeResponse ? `<p style="white-space:pre-wrap;">${d.EmployeeResponse}</p>` : ''}
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Management Review</h3>
+      <label>Management Findings</label>
+      <textarea id="discFindings" rows="3">${d.ManagementFindings||''}</textarea>
+      <label>Previous Related Cases</label>
+      <input type="text" id="discPrevCases" value="${d.PreviousRelatedCases||''}" placeholder="e.g. DR-2026-004 (verbal warning, June)">
+      <label>Recommended Action</label>
+      <input type="text" id="discRecommended" value="${d.RecommendedAction||''}">
+      <label>Management Comments</label>
+      <textarea id="discComments" rows="3">${d.ManagementComments||''}</textarea>
+      <button class="btn ghost auto" onclick="saveDiscReview()">Save Review</button>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Disciplinary Level</h3>
+      <p class="muted" style="margin-bottom:8px;">Management should review the circumstances, employee response, and company policy before selecting a level — it's never assigned automatically from case count.</p>
+      <select id="discLevelSelect">
+        <option value="" ${!d.DisciplinaryLevel?'selected':''}>— Not yet determined —</option>
+        ${DISC_LEVELS.map(l=>`<option ${d.DisciplinaryLevel===l?'selected':''}>${l}</option>`).join('')}
+      </select>
+      <div id="discEmploymentDecisionField" style="display:${isLevel5?'block':'none'}; margin-top:8px;">
+        <label>Employment Decision</label>
+        ${DISC_EMPLOYMENT_DECISIONS.map(o=>`<div class="checkbox-row"><input type="radio" name="discEmpDecision" id="discED_${o.replace(/[^a-zA-Z]/g,'')}" value="${o}" ${d.EmploymentDecision===o?'checked':''}><label for="discED_${o.replace(/[^a-zA-Z]/g,'')}">${o}</label></div>`).join('')}
+      </div>
+      <button class="btn ghost auto" style="margin-top:8px;" onclick="saveDiscLevel()">Save Level</button>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Approval</h3>
+      <div class="grid grid-2">
+        <div><label>Reviewed By</label><input type="text" id="discReviewedBy" value="${d.ReviewedBy||''}"></div>
+        <div><label>Approved By</label><input type="text" id="discApprovedBy" value="${d.ApprovedBy||''}"></div>
+      </div>
+      <div class="grid grid-2">
+        <div><label>Approval Date</label><input type="date" id="discApprovalDate" value="${d.ApprovalDate||''}"></div>
+        <div><label>Approval Status</label>
+          <select id="discApprovalStatus">
+            <option value="" ${!d.ApprovalStatus?'selected':''}>— Pending —</option>
+            <option ${d.ApprovalStatus==='Approved'?'selected':''}>Approved</option>
+            <option ${d.ApprovalStatus==='Declined'?'selected':''}>Declined</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn ghost auto" onclick="saveDiscApproval()">Save Approval</button>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Final Action</h3>
+      <div class="grid grid-2">
+        <div><label>Action Taken</label><input type="text" id="discActionTaken" value="${d.ActionTaken||''}"></div>
+        <div><label>Effective Date</label><input type="date" id="discEffectiveDate" value="${d.EffectiveDate||''}"></div>
+      </div>
+      <label>Additional Comments</label>
+      <textarea id="discFinalComments" rows="3">${d.FinalComments||''}</textarea>
+      <button class="btn ghost auto" onclick="saveDiscFinalAction()">Save Final Action</button>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Change Case Status</h3>
+      <select id="discStatusSelect">
+        ${DISC_STATUSES.filter(s=>s!=='Draft').map(s=>`<option ${d.Status===s?'selected':''}>${s}</option>`).join('')}
+      </select>
+      <button class="btn ghost auto" style="margin-top:8px;" onclick="saveDiscStatus()">Update Status</button>
+    </div>
+
+    <div class="card">
+      <h3>Case Timeline</h3>
+      ${timeline.length ? timeline.map(t=>`<div style="display:flex; gap:12px; padding:6px 0; border-bottom:0.5px solid var(--line);"><span class="mono muted" style="min-width:80px;">${t.date}</span><span>${t.event}</span></div>`).join('') : `<p class="muted">No history yet.</p>`}
     </div>`;
   },
 
