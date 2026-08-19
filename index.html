@@ -1659,22 +1659,24 @@ function openMyDisciplinaryCase(id){
       <h3>${d.CaseNumber||''}</h3>
       <table>
         <tr><td class="muted">Status</td><td>${discStatusPill(d.Status)}</td></tr>
-        <tr><td class="muted">Incident Date</td><td>${d.IncidentDate||''} ${d.IncidentTime||''}</td></tr>
+        <tr><td class="muted">Incident Date</td><td>${fmtDiscDate(d.IncidentDate)} ${fmtDiscTime(d.IncidentTime)}</td></tr>
         <tr><td class="muted">Location</td><td>${d.Location==='Other' ? d.LocationOther : d.Location||''}</td></tr>
         <tr><td class="muted">Violation Type</td><td>${discParseViolations(d.ViolationTypes).map(v=>v==='Other'?d.ViolationOther:v).join(', ')}</td></tr>
         <tr><td class="muted" style="vertical-align:top;">Description</td><td style="white-space:pre-wrap;">${d.Description||''}</td></tr>
         <tr><td class="muted">Policy / Rule</td><td>${d.PolicyInvolved||'—'}</td></tr>
         ${d.DisciplinaryLevel ? `<tr><td class="muted">Disciplinary Level</td><td>${d.DisciplinaryLevel}</td></tr>` : ''}
         ${d.ActionTaken ? `<tr><td class="muted">Action Taken</td><td>${d.ActionTaken}</td></tr>` : ''}
-        ${d.EffectiveDate ? `<tr><td class="muted">Effective Date</td><td>${d.EffectiveDate}</td></tr>` : ''}
+        ${d.EffectiveDate ? `<tr><td class="muted">Effective Date</td><td>${fmtDiscDate(d.EffectiveDate)}</td></tr>` : ''}
       </table>
       <div style="margin-top:16px;">
         <label>Your Response</label>
-        <p class="muted" style="font-size:12.5px; margin-bottom:8px;">Add your explanation or response to this case — it becomes part of the record.</p>
-        <textarea id="myDiscResponseText" rows="4" placeholder="Your explanation or response…">${d.EmployeeResponse||''}</textarea>
-        <p id="myDiscRespErr" class="login-err"></p>
-        <p id="myDiscRespOk" class="login-ok">Response saved.</p>
-        <button class="btn auto" id="myDiscRespBtn" onclick="submitEmployeeDiscResponse('${id}')">${d.EmployeeResponse ? 'Update Response' : 'Submit Response'}</button>
+        ${d.EmployeeResponse
+          ? `<p class="muted" style="font-size:12.5px; margin-bottom:8px;">You've already submitted a response — it's locked in as part of the record and can't be changed.</p>
+             <p style="white-space:pre-wrap; background:var(--panel-2); border-radius:8px; padding:10px 12px;">${d.EmployeeResponse}</p>`
+          : `<p class="muted" style="font-size:12.5px; margin-bottom:8px;">Add your explanation or response to this case — once submitted, it becomes a permanent part of the record and can't be edited.</p>
+             <textarea id="myDiscResponseText" rows="4" placeholder="Your explanation or response…"></textarea>
+             <p id="myDiscRespErr" class="login-err"></p>
+             <button class="btn auto" id="myDiscRespBtn" onclick="submitEmployeeDiscResponse('${id}')">Submit Response</button>`}
         <button class="btn ghost auto" onclick="document.getElementById('myDiscDetailModal').innerHTML=''">Close</button>
       </div>
     </div>`;
@@ -1684,16 +1686,14 @@ function openMyDisciplinaryCase(id){
 async function submitEmployeeDiscResponse(id){
   const text = document.getElementById('myDiscResponseText').value.trim();
   const err = document.getElementById('myDiscRespErr');
-  const ok = document.getElementById('myDiscRespOk');
-  err.style.display='none'; ok.style.display='none';
+  err.style.display='none';
   if(!text){ err.textContent = "Write a response first."; err.style.display='block'; return; }
   btnLoading('myDiscRespBtn', 'Saving...');
   const r = await apiPost('addEmployeeResponse', {id, employeeName: CURRENT_EMPLOYEE.name, response: text});
   if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnReset('myDiscRespBtn','Submit Response'); return; }
   const rec = MY_DISCIPLINARY_RECORDS.find(x=>x.ID===id);
   if(rec) rec.EmployeeResponse = text;
-  ok.style.display='block';
-  btnReset('myDiscRespBtn', 'Update Response');
+  openMyDisciplinaryCase(id); // re-render the modal — it now shows the locked, read-only response
 }
 
 function computeRecentActivity(){
@@ -2316,6 +2316,25 @@ function fmtDateTime(raw){
   const timePart = d.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'});
   return `${datePart} ${timePart}`;
 }
+/* Formats the plain "YYYY-MM-DD" value from a <input type="date">
+   into something readable — noon avoids any timezone rollover
+   pushing it to the wrong day. */
+function fmtDiscDate(raw){
+  if(!raw) return '—';
+  const d = new Date(raw + 'T12:00:00');
+  if(isNaN(d)) return raw;
+  return d.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+}
+/* Formats the plain "HH:MM" value from a <input type="time"> into
+   a 12-hour clock reading. */
+function fmtDiscTime(raw){
+  if(!raw) return '—';
+  const parts = raw.split(':').map(Number);
+  if(isNaN(parts[0])) return raw;
+  const d = new Date();
+  d.setHours(parts[0], parts[1]||0, 0, 0);
+  return d.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit', hour12:true});
+}
 function fmtLogDate(raw){
   if(!raw) return '—';
   const d = new Date(raw);
@@ -2719,7 +2738,7 @@ const BUILDERS = {
           <div style="display:flex; justify-content:space-between; align-items:center;">
             <div>
               <div style="font-weight:600;">${d.CaseNumber||''} — ${discParseViolations(d.ViolationTypes).map(v=>v==='Other'?d.ViolationOther:v).join(', ')}</div>
-              <div class="muted" style="font-size:12.5px; margin-top:2px;">${d.IncidentDate||''}${d.DisciplinaryLevel ? ' · '+d.DisciplinaryLevel : ''}</div>
+              <div class="muted" style="font-size:12.5px; margin-top:2px;">${fmtDiscDate(d.IncidentDate)}${d.DisciplinaryLevel ? ' · '+d.DisciplinaryLevel : ''}</div>
             </div>
             ${discStatusPill(d.Status)}
           </div>
@@ -3080,8 +3099,8 @@ const BUILDERS = {
     <div class="card" style="margin-bottom:16px;">
       <h3>Incident Information</h3>
       <table>
-        <tr><td class="muted">Incident Date</td><td>${d.IncidentDate||''}</td></tr>
-        <tr><td class="muted">Incident Time</td><td>${d.IncidentTime||''}</td></tr>
+        <tr><td class="muted">Incident Date</td><td>${fmtDiscDate(d.IncidentDate)}</td></tr>
+        <tr><td class="muted">Incident Time</td><td>${fmtDiscTime(d.IncidentTime)}</td></tr>
         <tr><td class="muted">Location</td><td>${d.Location==='Other' ? d.LocationOther : d.Location}</td></tr>
         <tr><td class="muted">Violation Type</td><td>${discParseViolations(d.ViolationTypes).map(v=>v==='Other'?d.ViolationOther:v).join(', ')}</td></tr>
         <tr><td class="muted" style="vertical-align:top;">Description</td><td style="white-space:pre-wrap;">${d.Description||''}</td></tr>
