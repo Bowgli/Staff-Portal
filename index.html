@@ -236,7 +236,16 @@
     .shift-morning{ background:#fdf0c4 !important; }
     .shift-afternoon{ background:#fbdcc0 !important; }
     .shift-night{ background:#c9ecd7 !important; }
+    /* document-style printouts (Case Details, Concern Report) need
+       a readable size on a portrait page — the schedule's tiny
+       8.5px above was tuned for a wide grid, not a document */
+    .print-doc table{ table-layout:auto !important; margin-bottom:10px !important; }
+    .print-doc th, .print-doc td{ font-size:11.5px !important; padding:6px 8px !important; line-height:1.4 !important; }
+    .print-doc h3{ font-size:15px !important; margin:16px 0 8px !important; }
+    .print-doc .card{ margin-bottom:4px !important; page-break-inside:avoid; }
+    .print-only{ display:block !important; }
   }
+  .print-only{ display:none; }
 </style>
 </head>
 <body>
@@ -539,6 +548,8 @@ let attendanceSearchQuery = '';
 let perfFilterMonth = 'All';
 let perfFilterYear = 'All';
 let perfSearchQuery = '';
+let employeesSearchQuery = '';
+let accountsSearchQuery = '';
 function setPerfFilter(type, val){
   if(type==='month') perfFilterMonth = val;
   else perfFilterYear = val;
@@ -551,6 +562,20 @@ function setPerfSearch(val){
   renderView('mgmt-performance');
   // renderView rebuilds the whole page, which would otherwise steal
   // focus away from the search box mid-typing — put it right back
+  const input = document.querySelector('#content input[placeholder^="🔍"]');
+  if(input){ input.focus(); if(cursorPos != null) input.setSelectionRange(cursorPos, cursorPos); }
+}
+function setEmployeesSearch(val){
+  employeesSearchQuery = val;
+  const cursorPos = document.activeElement && document.activeElement.selectionStart;
+  renderView('mgmt-employees');
+  const input = document.querySelector('#content input[placeholder^="🔍"]');
+  if(input){ input.focus(); if(cursorPos != null) input.setSelectionRange(cursorPos, cursorPos); }
+}
+function setAccountsSearch(val){
+  accountsSearchQuery = val;
+  const cursorPos = document.activeElement && document.activeElement.selectionStart;
+  renderView('mgmt-accounts');
   const input = document.querySelector('#content input[placeholder^="🔍"]');
   if(input){ input.focus(); if(cursorPos != null) input.setSelectionRange(cursorPos, cursorPos); }
 }
@@ -2541,6 +2566,21 @@ let viewStack = [];
 function safePushState(state){
   try{ history.pushState(state, '', location.href); } catch(e){ /* file:// origin restriction — ignore */ }
 }
+/* @page is print-only by spec, so this never affects normal screen
+   rendering — it just lets each "Print" button declare its own
+   page size/orientation/margin right before printing, since Master
+   Schedule needs landscape but Case/Concern reports need portrait. */
+function printWithPageSettings(size, orientation, margin){
+  let styleTag = document.getElementById('dynamicPrintPageStyle');
+  if(!styleTag){
+    styleTag = document.createElement('style');
+    styleTag.id = 'dynamicPrintPageStyle';
+    document.head.appendChild(styleTag);
+  }
+  styleTag.textContent = `@page{ size: ${size} ${orientation}; margin: ${margin}; }`;
+  window.print();
+}
+
 function safeHistoryGo(delta){
   try{ history.go(delta); } catch(e){ /* file:// origin restriction — ignore */ }
 }
@@ -2773,7 +2813,11 @@ const BUILDERS = {
     <div class="card clickable" style="margin-top:16px;" onclick="renderView('my-disciplinary')">
       <h3><span class="ic">📁</span> My Records</h3>
       ${MY_DISCIPLINARY_RECORDS.slice(0,3).map(d=>`<div class="feed-item" style="display:flex; justify-content:space-between; align-items:center;"><span>${d.CaseNumber||''} — ${discParseViolations(d.ViolationTypes).map(v=>v==='Other'?d.ViolationOther:v).join(', ')}</span>${discStatusPill(d.Status)}</div>`).join('')}
-    </div>` : ''}`;
+    </div>` : ''}
+    <div class="card clickable" style="margin-top:16px;" onclick="renderView('notifications')">
+      <h3><span class="ic">🔔</span> Recent Activity</h3>
+      ${(()=>{ const activity = computeRecentActivity(); return activity.length ? activity.slice(0,5).map(n=>`<div class="feed-item" style="display:flex; justify-content:space-between;"><span>${n.title}</span><span class="meta">${n.time}</span></div>`).join('') : `<p class="muted">Nothing new yet.</p>`; })()}
+    </div>`;
   },
 
   profile: ()=>`
@@ -3114,23 +3158,35 @@ const BUILDERS = {
   "mgmt-employees": ()=>{
     const discCountByEmployee = {};
     ALL_DISCIPLINARY_RECORDS.forEach(d=>{ if(d.Status !== 'Draft') discCountByEmployee[d.EmployeeName] = (discCountByEmployee[d.EmployeeName]||0) + 1; });
+    const q = employeesSearchQuery.toLowerCase();
+    const rows = EMPLOYEE_ROSTER.filter(e => !q || e.name.toLowerCase().includes(q) || e.position.toLowerCase().includes(q));
     return `
     <div class="card table-scroll">
       <h3><span class="ic">👥</span> Staff Directory</h3>
+      <input type="text" placeholder="🔍 Search by name or position…" value="${employeesSearchQuery}" oninput="setEmployeesSearch(this.value)" style="margin-bottom:12px;">
       <table>
         <tr><th>Name</th><th>Position</th><th>Status</th><th>Attendance</th><th>Disciplinary Records</th></tr>
-        ${EMPLOYEE_ROSTER.map(e=>`<tr><td>${e.name}</td><td>${e.position}</td><td>${statusPill(e.status)}</td><td class="mono">${e.attendance}</td><td>${discCountByEmployee[e.name] ? `<button class="btn ghost auto" style="padding:4px 10px;" onclick="viewEmployeeDisciplinaryHistory('${e.name.replace(/'/g,"\\'")}')">${discCountByEmployee[e.name]} record${discCountByEmployee[e.name]===1?'':'s'}</button>` : '<span class="muted">None</span>'}</td></tr>`).join('')}
+        ${rows.map(e=>`<tr><td>${e.name}</td><td>${e.position}</td><td>${statusPill(e.status)}</td><td class="mono">${e.attendance}</td><td>${discCountByEmployee[e.name] ? `<button class="btn ghost auto" style="padding:4px 10px;" onclick="viewEmployeeDisciplinaryHistory('${e.name.replace(/'/g,"\\'")}')">${discCountByEmployee[e.name]} record${discCountByEmployee[e.name]===1?'':'s'}</button>` : '<span class="muted">None</span>'}</td></tr>`).join('') || `<tr><td colspan="5" class="muted">No matches.</td></tr>`}
       </table>
     </div>`;
   },
 
-  "mgmt-accounts": ()=>`
+  "mgmt-accounts": ()=>{
+    const q = accountsSearchQuery.toLowerCase();
+    const rows = EMPLOYEE_ROSTER.filter(e=>{
+      if(!q) return true;
+      const acct = findAccountByEmployeeName(e.name);
+      const displayName = acct && acct.fullName ? acct.fullName : e.name;
+      return displayName.toLowerCase().includes(q) || e.position.toLowerCase().includes(q) || (acct && acct.username && acct.username.toLowerCase().includes(q));
+    });
+    return `
     <div class="banner note"><b>Note:</b> only management can create or reset an employee's login — there's no self-registration. Photos are also assigned by management, not uploaded by employees themselves.</div>
     <div class="card table-scroll">
       <h3><span class="ic">🔑</span> Account Status by Employee</h3>
+      <input type="text" placeholder="🔍 Search by name, position, or username…" value="${accountsSearchQuery}" oninput="setAccountsSearch(this.value)" style="margin-bottom:12px;">
       <table>
         <tr><th>Employee</th><th>Position</th><th>Username</th><th>Account Status</th><th></th><th>Photo</th></tr>
-        ${EMPLOYEE_ROSTER.map(e=>{
+        ${rows.map(e=>{
           const acct = findAccountByEmployeeName(e.name);
           return `<tr>
             <td>${acct && acct.fullName ? acct.fullName : e.name}</td>
@@ -3144,9 +3200,10 @@ const BUILDERS = {
               </label>
             </td>
           </tr>`;
-        }).join('')}
+        }).join('') || `<tr><td colspan="6" class="muted">No matches.</td></tr>`}
       </table>
-    </div>`,
+    </div>`;
+  },
 
   "mgmt-schedule": ()=>{
     const DEPTS = ["CLUB 88","SAIPAN VEGAS","SLOT TECHNICIAN","SECURITY"];
@@ -3161,7 +3218,7 @@ const BUILDERS = {
         <button class="btn ${isNext?'ghost':''} auto" style="padding:8px 14px;" onclick="setScheduleViewMode('current')">This Week</button>
         <button class="btn ${isNext?'':'ghost'} auto" style="padding:8px 14px;" onclick="setScheduleViewMode('next')">Next Week${NEXT_SCHEDULE_ROWS.length?'':' (empty)'}</button>
       </div>
-      <button class="btn ghost auto" style="padding:8px 14px;" onclick="window.print()">🖨️ Print Schedule</button>
+      <button class="btn ghost auto" style="padding:8px 14px;" onclick="printWithPageSettings('letter','landscape','0.4cm')">🖨️ Print Schedule</button>
     </div>
     ${isNext ? `<div class="banner note no-print" style="margin-bottom:16px;">
       <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
@@ -3437,10 +3494,12 @@ const BUILDERS = {
     const isLevel5 = d.DisciplinaryLevel === DISC_LEVELS[4];
 
     return `
-    <div class="no-print" style="margin-bottom:16px;">
+    <div class="no-print" style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <button class="btn ghost auto" onclick="renderView('mgmt-disciplinary')">← Back to Disciplinary Reports</button>
+      <button class="btn ghost auto" onclick="printWithPageSettings('letter','portrait','0.75in')">🖨️ Print Case</button>
     </div>
 
+    <div class="print-doc">
     <div class="card" style="margin-bottom:16px;">
       <h3 style="display:flex; justify-content:space-between; align-items:center;">
         <span>Case Information</span>
@@ -3662,8 +3721,9 @@ const BUILDERS = {
         </div>
       ` : `<p>${discStatusPill(d.Status)}</p>`}
     </div>
+    </div>
 
-    <div class="card">
+    <div class="card no-print">
       <h3>Case Timeline</h3>
       ${timeline.length ? timeline.map(t=>`<div style="display:flex; gap:12px; padding:6px 0; border-bottom:0.5px solid var(--line);"><span class="mono muted" style="min-width:80px;">${t.date}</span><span>${t.event}</span></div>`).join('') : `<p class="muted">No history yet.</p>`}
     </div>`;
@@ -3701,10 +3761,12 @@ const BUILDERS = {
     const c = MOCK.concernsLog.find(x=>x.id===discDetailConcernId);
     if(!c) return `<div class="empty"><div class="ic">⚠️</div>Concern not found.</div>`;
     return `
-    <div class="no-print" style="margin-bottom:16px;">
+    <div class="no-print" style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <button class="btn ghost auto" onclick="renderView('mgmt-concerns')">← Back to All Reported Concerns</button>
+      <button class="btn ghost auto" onclick="printWithPageSettings('letter','portrait','0.75in')">🖨️ Print Report</button>
     </div>
 
+    <div class="print-doc">
     <div class="card" style="margin-bottom:16px;">
       <h3>Report Details</h3>
       <table>
@@ -3720,19 +3782,28 @@ const BUILDERS = {
 
     <div class="card">
       <h3>Investigation</h3>
-      <p class="muted" style="margin-bottom:8px;">Use this space to note findings while looking into the report, and record what action was taken.</p>
-      <label>Investigation Notes</label>
-      <textarea id="concernInvNotes" rows="4" placeholder="Findings, interviews, evidence reviewed…">${c.investigationNotes||''}</textarea>
-      <label>Investigated By</label>
-      <input type="text" id="concernInvBy" value="${c.investigatedBy||''}" placeholder="e.g. Marites Albero">
-      <label>Action Taken</label>
-      <textarea id="concernActionTaken" rows="3" placeholder="What was done, if anything…">${c.actionTaken||''}</textarea>
-      <label>Status</label>
-      <select id="concernStatusSelect">
-        ${CONCERN_STATUSES.map(s=>`<option ${c.status===s?'selected':''}>${s}</option>`).join('')}
-      </select>
-      <p id="concernInvErr" class="login-err"></p>
-      <button class="btn auto" id="concernInvSaveBtn" style="margin-top:10px;" onclick="saveConcernInvestigation()">Save</button>
+      <p class="muted no-print" style="margin-bottom:8px;">Use this space to note findings while looking into the report, and record what action was taken.</p>
+      <div class="no-print">
+        <label>Investigation Notes</label>
+        <textarea id="concernInvNotes" rows="4" placeholder="Findings, interviews, evidence reviewed…">${c.investigationNotes||''}</textarea>
+        <label>Investigated By</label>
+        <input type="text" id="concernInvBy" value="${c.investigatedBy||''}" placeholder="e.g. Marites Albero">
+        <label>Action Taken</label>
+        <textarea id="concernActionTaken" rows="3" placeholder="What was done, if anything…">${c.actionTaken||''}</textarea>
+        <label>Status</label>
+        <select id="concernStatusSelect">
+          ${CONCERN_STATUSES.map(s=>`<option ${c.status===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+        <p id="concernInvErr" class="login-err"></p>
+        <button class="btn auto" id="concernInvSaveBtn" style="margin-top:10px;" onclick="saveConcernInvestigation()">Save</button>
+      </div>
+      <table class="print-only">
+        <tr><td class="muted" style="vertical-align:top;">Investigation Notes</td><td style="white-space:pre-wrap;">${c.investigationNotes||'—'}</td></tr>
+        <tr><td class="muted">Investigated By</td><td>${c.investigatedBy||'—'}</td></tr>
+        <tr><td class="muted" style="vertical-align:top;">Action Taken</td><td style="white-space:pre-wrap;">${c.actionTaken||'—'}</td></tr>
+        <tr><td class="muted">Status</td><td>${c.status||'Open'}</td></tr>
+      </table>
+    </div>
     </div>`;
   },
 
