@@ -2201,29 +2201,16 @@ async function downloadDiscAttachment(fileId, fileName){
   a.click();
 }
 
-/* Opens a Forms Library PDF for viewing/printing via Apps Script
-   (not a direct Drive link — Workspace sharing restrictions can
-   make direct links unreliable, forcing a login or a 403). The
-   window opens SYNCHRONOUSLY, before any await, so browsers don't
-   block it as an unrequested popup. */
+/* Downloads a Forms Library PDF — same simple, quick pattern as
+   downloadDiscAttachment. Once downloaded, open it from your
+   Downloads folder / PDF viewer and print from there. */
 async function openLibraryForm(fileId, fileName){
-  const win = window.open('', '_blank');
-  if(win) win.document.write('<p style="font-family:sans-serif; padding:24px; color:#555;">Loading form…</p>');
-
   const r = await apiGet('photo&id=' + fileId);
-  if(!r.ok){
-    if(win) win.close();
-    alert("Couldn't load that file.");
-    return;
-  }
-  if(!win){
-    alert("Your browser blocked the pop-up. Please allow pop-ups for this site, then try again.");
-    return;
-  }
-  const dataUrl = `data:${r.mime};base64,${r.base64}`;
-  win.document.open();
-  win.document.write(`<html><head><title>${(fileName||'Form').replace(/</g,'')}</title></head><body style="margin:0;"><iframe src="${dataUrl}" style="border:none; width:100%; height:100vh;" onload="try{this.contentWindow.focus(); this.contentWindow.print();}catch(e){}"></iframe></body></html>`);
-  win.document.close();
+  if(!r.ok){ alert("Couldn't load that file."); return; }
+  const a = document.createElement('a');
+  a.href = `data:${r.mime};base64,${r.base64}`;
+  a.download = fileName || 'form.pdf';
+  a.click();
 }
 
 async function uploadLibraryForm(){
@@ -3257,11 +3244,11 @@ const BUILDERS = {
 
     <div class="card table-scroll">
       <h3><span class="ic">🖨️</span> Forms Library</h3>
-      <p class="muted" style="margin-bottom:12px;">Click a form to open it — from there, use your browser's Print (Ctrl+P) to print it.</p>
+      <p class="muted" style="margin-bottom:12px;">Download a form, then open and print it from your device.</p>
       <table>
         <tr><th>Form Name</th><th>Category</th><th>Uploaded</th><th></th></tr>
         ${ALL_FORMS.map(f=>`<tr><td>${f.FormName}</td><td class="muted">${f.Category||'—'}</td><td>${fmtDateTime(f.DateUploaded)}</td>
-          <td><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="openLibraryForm('${f.FileId}','${(f.FileName||'').replace(/'/g,"\\'")}')">Open / Print</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteLibraryForm('${f.ID}', this)">Delete</button></td></tr>`).join('') || `<tr><td colspan="4" class="muted">No forms uploaded yet.</td></tr>`}
+          <td><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="openLibraryForm('${f.FileId}','${(f.FileName||'').replace(/'/g,"\\'")}')">Download</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteLibraryForm('${f.ID}', this)">Delete</button></td></tr>`).join('') || `<tr><td colspan="4" class="muted">No forms uploaded yet.</td></tr>`}
       </table>
     </div>`;
   },
