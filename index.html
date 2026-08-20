@@ -1828,6 +1828,7 @@ function setRole(role){
    ============================================================ */
 const DISC_VIOLATION_TYPES = ["Attendance / Tardiness","Absence","Undertime","Work Performance","Company Policy","Workplace Conduct","Customer Service","Safety","Insubordination","Phone / Mobile Device Usage","Other"];
 const DISC_CONCERN_TYPES = ["Abusive Behavior","Disrespectful Attitude","Threatening Behavior","Refusal to Follow Policy and Procedure","Creating Disturbance to Customer"];
+const DISC_CUSTOMER_CONCERN_TYPES = ["Abusive Behavior / Shouting at Staff","Disrespectful Attitude","Threatening Behavior","Intoxicated / Drunk Customer","Refusal to Follow House Rules","Creating Disturbance to other Guests"];
 const CONCERN_STATUSES = ["Open","Under Investigation","Resolved","No Action Needed"];
 function concernStatusPill(status){
   const map = { "Open":"warn", "Under Investigation":"warn", "Resolved":"ok", "No Action Needed":"ok" };
@@ -2847,12 +2848,20 @@ const BUILDERS = {
         <h3><span class="ic">⚠️</span> Report a Concern</h3>
         <p class="muted">This goes directly to management. Your name is attached unless you check anonymous below.</p>
         <label>What's the concern about?</label>
-        <select id="concernTopic" onchange="toggleConcernCoworkerFields()"><option>Workplace safety</option><option>Coworker conduct</option><option>Facilities</option><option>Other</option></select>
+        <select id="concernTopic" onchange="toggleConcernCoworkerFields()"><option>Workplace safety</option><option>Coworker conduct</option><option>Customer conduct</option><option>Facilities</option><option>Other</option></select>
         <div id="concernCoworkerFields" style="display:none;">
           <label>Coworker Name</label>
           ${employeePickerHtml('concernCoworkerName', EMPLOYEE_ROSTER.filter(e=>e.name!==CURRENT_EMPLOYEE.name))}
           <label>Type of Concern</label>
           ${DISC_CONCERN_TYPES.map(t=>`<div class="checkbox-row"><input type="checkbox" id="concernT_${t.replace(/[^a-zA-Z]/g,'')}" value="${t}" class="concernTypeCb"><label for="concernT_${t.replace(/[^a-zA-Z]/g,'')}">${t}</label></div>`).join('')}
+        </div>
+        <div id="concernCustomerFields" style="display:none;">
+          <label>Customer Name <span class="muted">(if known)</span></label>
+          <input type="text" id="concernCustomerName" placeholder="Leave blank if unknown">
+          <label>Type of Concern</label>
+          ${DISC_CUSTOMER_CONCERN_TYPES.map(t=>`<div class="checkbox-row"><input type="checkbox" id="concernCT_${t.replace(/[^a-zA-Z]/g,'')}" value="${t}" class="concernCustomerTypeCb"><label for="concernCT_${t.replace(/[^a-zA-Z]/g,'')}">${t}</label></div>`).join('')}
+        </div>
+        <div id="concernCCTVContainer" style="display:none;">
           <div class="checkbox-row"><input type="checkbox" id="concernCCTV" onchange="toggleConcernCCTVFields()"><label for="concernCCTV">Request CCTV Footage Review</label></div>
           <div id="concernCCTVFields" style="display:none;">
             <div class="grid grid-2">
@@ -3500,7 +3509,7 @@ const BUILDERS = {
       <h3><span class="ic">⚠️</span> All Reported Concerns</h3>
       <table>
         <tr><th>From</th><th>Topic</th><th>Date</th><th>Status</th><th></th></tr>
-        ${MOCK.concernsLog.map(c=>`<tr><td>${c.from}</td><td>${c.topic}${c.coworkerName ? `<br><span class="muted" style="font-size:11px;">Coworker: ${c.coworkerName}</span>` : ''}</td><td>${fmtDateTime(c.date)}</td><td>${concernStatusPill(c.status)}</td>
+        ${MOCK.concernsLog.map(c=>`<tr><td>${c.from}</td><td>${c.topic}${c.coworkerName ? `<br><span class="muted" style="font-size:11px;">${c.topic==='Customer conduct'?'Customer':'Coworker'}: ${c.coworkerName}</span>` : ''}</td><td>${fmtDateTime(c.date)}</td><td>${concernStatusPill(c.status)}</td>
           <td><button class="btn ghost auto" style="padding:5px 10px;" onclick="openConcernDetail('${c.id}')">View Report</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">No concerns reported yet.</td></tr>`}
       </table>
     </div>`,
@@ -3519,7 +3528,7 @@ const BUILDERS = {
         <tr><td class="muted">Reported By</td><td>${c.from}</td></tr>
         <tr><td class="muted">Date</td><td>${fmtDateTime(c.date)}</td></tr>
         <tr><td class="muted">Topic</td><td>${c.topic}</td></tr>
-        ${c.coworkerName ? `<tr><td class="muted">Coworker Name</td><td>${c.coworkerName}</td></tr>` : ''}
+        ${c.topic==='Customer conduct' ? `<tr><td class="muted">Customer Name</td><td>${c.coworkerName || '<span class="muted">Unknown</span>'}</td></tr>` : (c.coworkerName ? `<tr><td class="muted">Coworker Name</td><td>${c.coworkerName}</td></tr>` : '')}
         ${c.concernTypes ? `<tr><td class="muted">Type of Concern</td><td>${discParseViolations(c.concernTypes).join(', ')}</td></tr>` : ''}
         <tr><td class="muted" style="vertical-align:top;">Details</td><td style="white-space:pre-wrap;">${c.details||''}</td></tr>
         ${c.requestCCTV ? `<tr><td class="muted">CCTV Footage Requested</td><td>📹 ${fmtDiscDate(c.cctvDate)}${c.cctvTime ? ' '+fmtDiscTime(c.cctvTime) : ''}</td></tr>` : ''}
@@ -3635,8 +3644,12 @@ let editingRequestId = null;
 let editingConcernId = null;
 
 function toggleConcernCoworkerFields(){
-  const isCoworker = document.getElementById('concernTopic').value === 'Coworker conduct';
+  const topic = document.getElementById('concernTopic').value;
+  const isCoworker = topic === 'Coworker conduct';
+  const isCustomer = topic === 'Customer conduct';
   document.getElementById('concernCoworkerFields').style.display = isCoworker ? 'block' : 'none';
+  document.getElementById('concernCustomerFields').style.display = isCustomer ? 'block' : 'none';
+  document.getElementById('concernCCTVContainer').style.display = (isCoworker || isCustomer) ? 'block' : 'none';
 }
 function toggleConcernCCTVFields(){
   const wantsCCTV = document.getElementById('concernCCTV').checked;
@@ -3817,6 +3830,13 @@ async function submitMyConcern(){
     const types = Array.from(document.querySelectorAll('.concernTypeCb:checked')).map(cb=>cb.value);
     if(!types.length){ err.textContent="Select at least one Type of Concern."; err.style.display='block'; return; }
     ConcernTypes = JSON.stringify(types);
+  } else if(Topic === 'Customer conduct'){
+    CoworkerName = document.getElementById('concernCustomerName').value.trim(); // reuses the same field — "leave blank if unknown" is fine here
+    const types = Array.from(document.querySelectorAll('.concernCustomerTypeCb:checked')).map(cb=>cb.value);
+    if(!types.length){ err.textContent="Select at least one Type of Concern."; err.style.display='block'; return; }
+    ConcernTypes = JSON.stringify(types);
+  }
+  if(Topic === 'Coworker conduct' || Topic === 'Customer conduct'){
     RequestCCTV = document.getElementById('concernCCTV').checked;
     if(RequestCCTV){
       CCTVDate = document.getElementById('concernCCTVDate').value;
