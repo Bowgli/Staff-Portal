@@ -1386,9 +1386,14 @@ function showMgmtToast(icon, title, body, targetView){
   requestAnimationFrame(()=> el.classList.add('show'));
 }
 
-function startMgmtPolling(){
+async function startMgmtPolling(){
   if(mgmtPollInterval || !USE_REMOTE()) return;
-  mgmtAlertBaseline = getMgmtAlertCounts();
+  // Use the same server-fresh source the comparison loop below uses
+  // — capturing the baseline from local arrays instead could
+  // slightly disagree with the server (especially on a slow mobile
+  // connection where local data is still catching up), which was
+  // showing up as a false "new item" on the very next check.
+  try{ mgmtAlertBaseline = await apiGet('counts'); } catch(e){ mgmtAlertBaseline = getMgmtAlertCounts(); }
   mgmtPollInterval = setInterval(async ()=>{
     if(document.hidden) return; // skip while this tab isn't the active/visible one — avoids piling up requests across multiple open tabs
     let counts;
@@ -1441,6 +1446,7 @@ function nextScheduleSnapshot(ns){
 
 let empNextScheduleBaseline = '';
 let empDiscBaseline = '';
+let empAnnouncementsBaseline = 0;
 function myDisciplinarySnapshot(records){
   if(records) return JSON.stringify(records.map(d=>[d.ID, d.Status]));
   return JSON.stringify(MY_DISCIPLINARY_RECORDS.map(d=>[d.ID, d.Status]));
@@ -1450,37 +1456,54 @@ function startEmpPolling(){
   empRequestsBaseline = myRequestsSnapshot();
   empNextScheduleBaseline = nextScheduleSnapshot();
   empDiscBaseline = myDisciplinarySnapshot();
+  empAnnouncementsBaseline = ALL_ANNOUNCEMENTS.length;
   empPollInterval = setInterval(async ()=>{
     if(document.hidden) return; // skip while this tab isn't the active/visible one
-    const [requests, nextSchedule, myDisc] = await Promise.all([
+    const [requests, nextSchedule, myDisc, announcements] = await Promise.all([
       safeApiGet('requests', null),
       safeApiGet('nextSchedule', null),
-      safeApiGet('myDisciplinaryRecords&name=' + encodeURIComponent(CURRENT_EMPLOYEE.fullName), null)
+      safeApiGet('myDisciplinaryRecords&name=' + encodeURIComponent(CURRENT_EMPLOYEE.fullName), null),
+      safeApiGet('announcements', null)
     ]);
 
     let changed = false;
+    let requestStatusChanged = false, scheduleChanged = false, discChanged = false, newAnnouncements = 0;
 
     if(requests){
       const currentSnap = {};
       requests.forEach(r=>{ if(r.EmployeeName === CURRENT_EMPLOYEE.name) currentSnap[r.ID] = r.Status; });
       const ids = new Set([...Object.keys(currentSnap), ...Object.keys(empRequestsBaseline)]);
-      if([...ids].some(id => currentSnap[id] !== empRequestsBaseline[id])){ empRequestsBaseline = currentSnap; changed = true; }
+      if([...ids].some(id => currentSnap[id] !== empRequestsBaseline[id])){ empRequestsBaseline = currentSnap; changed = true; requestStatusChanged = true; }
     }
 
     if(nextSchedule){
       const snap = nextScheduleSnapshot(nextSchedule);
-      if(snap !== empNextScheduleBaseline){ empNextScheduleBaseline = snap; changed = true; }
+      if(snap !== empNextScheduleBaseline){ empNextScheduleBaseline = snap; changed = true; scheduleChanged = true; }
     }
 
     if(myDisc){
       const snap = myDisciplinarySnapshot(myDisc);
-      if(snap !== empDiscBaseline){ empDiscBaseline = snap; changed = true; }
+      if(snap !== empDiscBaseline){ empDiscBaseline = snap; changed = true; discChanged = true; }
+    }
+
+    if(announcements && announcements.length !== empAnnouncementsBaseline){
+      newAnnouncements = Math.max(0, announcements.length - empAnnouncementsBaseline);
+      empAnnouncementsBaseline = announcements.length;
+      changed = true;
     }
 
     if(!changed) return; // nothing actually changed — skip the full reload
 
     await loadRemoteData(); // picks up everything, including any Schedule change from an approved swap or a fresh publish
-    if(['home','requests','schedule','my-disciplinary'].includes(activeView)) renderView(activeView);
+
+    // Let them know something new arrived, wherever they currently are.
+    playAlertTone();
+    if(newAnnouncements > 0) showMgmtToast('📢', 'New Announcement', `${newAnnouncements} new announcement${newAnnouncements===1?'':'s'} posted — tap to view`, 'announcements');
+    if(scheduleChanged) showMgmtToast('📅', 'Schedule Updated', 'Your schedule has changed — tap to view', 'schedule');
+    if(requestStatusChanged) showMgmtToast('📝', 'Request Updated', 'One of your requests was updated — tap to view', 'requests');
+    if(discChanged) showMgmtToast('📁', 'Record Updated', 'One of your records was updated — tap to view', 'my-disciplinary');
+
+    if(['home','requests','schedule','my-disciplinary','announcements'].includes(activeView)) renderView(activeView);
   }, 45000); // check every 45 seconds
 }
 function stopEmpPolling(){
@@ -1816,6 +1839,7 @@ function setRole(role){
     document.getElementById('avatarInit').innerHTML = avatarHtml(CURRENT_EMPLOYEE);
     activeView = 'home';
     stopMgmtPolling();
+    initMgmtAudio(); // unlocks audio for the employee-side alert tone too — needs a real click, same as management
     startEmpPolling();
     document.getElementById('soundAlertToggle').style.display = 'none';
   } else {
