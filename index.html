@@ -1053,7 +1053,7 @@ async function doLoginWithCredentials(u, p){
     if(r.role === 'management'){
       CURRENT_USER = {role:'management', displayName:r.displayName, accessLevel: r.accessLevel || 'full', mgmtRole: r.mgmtRole || 'full'};
     } else {
-      CURRENT_USER = {role:'employee', employeeName:r.employeeName};
+      CURRENT_USER = {role:'employee', employeeName:r.employeeName, mgmtRole: r.mgmtRole || null, displayName: r.fullName};
       CURRENT_EMPLOYEE = {
         name: r.employeeName, fullName: r.fullName,
         initials: r.fullName.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(),
@@ -2383,10 +2383,30 @@ const MGMT_ROLE_PERMISSIONS = {
   "shift-manager": { allowedViews: ['mgmt-home','mgmt-schedule','mgmt-attendance','mgmt-performance','mgmt-forms','mgmt-requests','mgmt-disciplinary'] },
   "supervisor": { allowedViews: ['mgmt-home','mgmt-attendance','mgmt-forms'] },
 };
+/* Extra nav items layered onto a Shift Manager's / Supervisor's OWN
+   employee portal — their primary view is still their own Schedule,
+   Requests, etc.; these are added on top based on their role. */
+const MGMT_EXTRA_NAV_ITEMS = {
+  "shift-manager": [
+    {id:"mgmt-schedule", ic:"📅", label:"Master Schedule"},
+    {id:"mgmt-attendance", ic:"🕐", label:"Attendance / Log Absence"},
+    {id:"mgmt-performance", ic:"📊", label:"Performance Reports"},
+    {id:"mgmt-forms", ic:"🖨️", label:"Forms Library"},
+    {id:"mgmt-requests", ic:"📝", label:"Manage Requests"},
+    {id:"mgmt-disciplinary", ic:"📁", label:"Disciplinary Reports"},
+  ],
+  "supervisor": [
+    {id:"mgmt-attendance", ic:"🕐", label:"Attendance / Log Absence"},
+    {id:"mgmt-forms", ic:"🖨️", label:"Forms Library"},
+  ],
+};
 function currentMgmtRole(){
-  return (CURRENT_USER && CURRENT_USER.role === 'management') ? (CURRENT_USER.mgmtRole || 'full') : null;
+  if(CURRENT_USER && CURRENT_USER.role === 'management') return CURRENT_USER.mgmtRole || 'full';
+  if(CURRENT_USER && CURRENT_USER.role === 'employee' && CURRENT_USER.mgmtRole) return CURRENT_USER.mgmtRole; // hybrid Shift Manager / Supervisor
+  return null;
 }
 function isViewAllowedForRole(id){
+  if(id.indexOf('mgmt-') !== 0) return true; // never restrict the employee's own pages
   const role = currentMgmtRole();
   if(!role || role === 'full') return true;
   const perm = MGMT_ROLE_PERMISSIONS[role];
@@ -2433,6 +2453,22 @@ function renderNav(){
       </div>`;
     });
   });
+  // Hybrid Shift Manager / Supervisor: add their extra management
+  // tools as one more group at the bottom of their own employee nav.
+  if(currentRole === 'employee' && CURRENT_USER && CURRENT_USER.mgmtRole && MGMT_EXTRA_NAV_ITEMS[CURRENT_USER.mgmtRole]){
+    html += `<div class="nav-group-label">Management Tools</div>`;
+    MGMT_EXTRA_NAV_ITEMS[CURRENT_USER.mgmtRole].forEach(item=>{
+      let badge = null;
+      if(item.id === 'mgmt-requests'){
+        const pending = ALL_REQUESTS.filter(r=>r.Status==='pending').length;
+        badge = pending > 0 ? pending : null;
+      }
+      html += `<div class="nav-item ${item.id===activeView?'active':''}" onclick="renderView('${item.id}')">
+        <span class="ic">${item.ic}</span><span>${item.label}</span>
+        ${badge?`<span class="badge">${badge}</span>`:''}
+      </div>`;
+    });
+  }
   document.getElementById('navScroll').innerHTML = html;
 }
 
