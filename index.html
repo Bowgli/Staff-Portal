@@ -518,6 +518,7 @@ let ALL_EVALUATIONS = [];    // full evaluations list, for the Management view
 let MY_EVALUATIONS = [];     // the current employee's own evaluation history (received)
 let MY_GIVEN_EVALUATIONS = []; // evaluations the current employee has given to others
 let ALL_DISCIPLINARY_RECORDS = []; // full records, management-only
+let ALL_FORMS = []; // Forms Library entries
 let MY_DISCIPLINARY_RECORDS = []; // scoped to the current employee, excludes Drafts and internal-only fields
 let discFilter = { employee:'', department:'All', position:'All', violation:'All', level:'All', status:'All', dateFrom:'', dateTo:'' };
 let discSummaryPeriod = ''; // "YYYY-MM", defaults to current month on first view
@@ -1206,13 +1207,14 @@ async function loadRemoteData(){
   if(!USE_REMOTE()) return;
   try{
     const myName = (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.fullName) || '';
-    const [roster, schedule, nextSchedule, attendance, announcements, recognition, requests, accountsStatus, concerns, suggestions, evaluations, myConcernsRaw, mySuggestionsRaw, myGivenEvaluationsRaw, disciplinaryRecords, myDisciplinaryRaw] = await Promise.all([
+    const [roster, schedule, nextSchedule, attendance, announcements, recognition, requests, accountsStatus, concerns, suggestions, evaluations, myConcernsRaw, mySuggestionsRaw, myGivenEvaluationsRaw, disciplinaryRecords, myDisciplinaryRaw, formsLibrary] = await Promise.all([
       safeApiGet('roster', []), safeApiGet('schedule', {days:[],rows:[]}), safeApiGet('nextSchedule', {days:[],rows:[],published:false}), safeApiGet('attendance', []),
       safeApiGet('announcements', []), safeApiGet('recognition', []), safeApiGet('requests', []), safeApiGet('accountsStatus', []),
       safeApiGet('concerns', []), safeApiGet('suggestions', []), safeApiGet('evaluations', []),
       safeApiGet('myConcerns&name=' + encodeURIComponent(myName), []), safeApiGet('mySuggestions&name=' + encodeURIComponent(myName), []),
       safeApiGet('myGivenEvaluations&name=' + encodeURIComponent(myName), []),
-      safeApiGet('disciplinaryRecords', []), safeApiGet('myDisciplinaryRecords&name=' + encodeURIComponent(myName), [])
+      safeApiGet('disciplinaryRecords', []), safeApiGet('myDisciplinaryRecords&name=' + encodeURIComponent(myName), []),
+      safeApiGet('formsLibrary', [])
     ]);
     EMPLOYEE_ROSTER.length = 0;
     roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, position:r.Position, status:r.Status||"Active", attendance:"—"}));
@@ -1238,6 +1240,7 @@ async function loadRemoteData(){
     MY_GIVEN_EVALUATIONS = myGivenEvaluationsRaw.slice().reverse();
     ALL_DISCIPLINARY_RECORDS = disciplinaryRecords.slice().reverse();
     MY_DISCIPLINARY_RECORDS = myDisciplinaryRaw.slice().reverse();
+    ALL_FORMS = formsLibrary.slice().reverse();
     MOCK.requests = requests.filter(r => r.EmployeeName === (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.name))
       .map(r => ({type:r.Type, date:r.Date, status:r.Status, id:r.ID, details:r.Details, swapDay:r.SwapDay, theirDay:r.TheirDay, swapWithName:r.SwapWithName}));
     ALL_REQUESTS = requests.slice().reverse();
@@ -1590,6 +1593,7 @@ const NAV = {
       {id:"mgmt-attendance", ic:"🕐", label:"Attendance / Log Absence"},
       {id:"mgmt-performance", ic:"📊", label:"Performance Reports"},
       {id:"mgmt-disciplinary", ic:"📁", label:"Disciplinary Reports"},
+      {id:"mgmt-forms", ic:"🖨️", label:"Forms Library"},
     ]},
     {group:"Requests & Feedback", items:[
       {id:"mgmt-requests", ic:"📝", label:"Manage Requests"},
@@ -2180,6 +2184,62 @@ async function downloadDiscAttachment(fileId, fileName){
   a.click();
 }
 
+/* Opens a Forms Library file for viewing/printing. PDFs and images
+   open directly in a new tab (the browser's native viewer has its
+   own Print button / Ctrl+P works). Anything else (Word docs, etc.)
+   downloads instead, since browsers can't render those inline. */
+async function openLibraryForm(fileId, fileName){
+  const r = await apiGet('photo&id=' + fileId);
+  if(!r.ok){ alert("Couldn't load that file."); return; }
+  const dataUrl = `data:${r.mime};base64,${r.base64}`;
+  if(r.mime === 'application/pdf' || r.mime.indexOf('image/') === 0){
+    window.open(dataUrl, '_blank');
+  } else {
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = fileName || 'form';
+    a.click();
+  }
+}
+
+async function uploadLibraryForm(){
+  const FormName = document.getElementById('formName').value.trim();
+  const Category = document.getElementById('formCategory').value.trim();
+  const fileInput = document.getElementById('formFileInput');
+  const err = document.getElementById('formUploadErr');
+  err.style.display = 'none';
+  if(!FormName){ err.textContent = "Give the form a name."; err.style.display='block'; return; }
+  const file = fileInput.files[0];
+  if(!file){ err.textContent = "Choose a file to upload."; err.style.display='block'; return; }
+  if(file.size > 10*1024*1024){ err.textContent = "File must be under 10MB."; err.style.display='block'; return; }
+  if(!USE_REMOTE()){ err.textContent = "Connect the backend first — uploading needs the live Sheet connection."; err.style.display='block'; return; }
+
+  const reader = new FileReader();
+  reader.onload = async ()=>{
+    const base64 = reader.result.split(',')[1];
+    btnLoading('formUploadBtn', 'Uploading...');
+    const r = await apiPost('uploadFormLibraryFile', {base64, mimeType: file.type, fileName: file.name, FormName, Category, UploadedBy: CURRENT_USER.displayName});
+    if(!r.ok){ err.textContent = r.error || "Upload failed."; err.style.display='block'; btnReset('formUploadBtn','Upload Form'); return; }
+    await loadRemoteData();
+    document.getElementById('formName').value = '';
+    document.getElementById('formCategory').value = '';
+    fileInput.value = '';
+    renderView('mgmt-forms');
+  };
+  reader.readAsDataURL(file);
+}
+
+async function deleteLibraryForm(id, el){
+  await confirmAndDelete(el, "Delete this form? This can't be undone.", async ()=>{
+    if(USE_REMOTE()){
+      const r = await apiPost('deleteFormLibraryFile', {id});
+      if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
+    }
+    ALL_FORMS = ALL_FORMS.filter(f=>f.ID!==id);
+    renderView('mgmt-forms');
+  });
+}
+
 async function saveDiscReview(el){
   btnLoadingEl(el, 'Saving...');
   const fields = {
@@ -2363,6 +2423,7 @@ const TITLES = {
   "mgmt-attendance":["Attendance / Log Absence","Log an entry and it reflects on that employee's dashboard automatically"],
   "mgmt-performance":["Performance Reports","Evaluation report and top performing staff"],
   "mgmt-disciplinary":["Disciplinary Reports","Case records, filters, and monthly summary"],
+  "mgmt-forms":["Forms Library","Company forms and templates — open or print any of them"],
   "mgmt-disciplinary-new":["New Disciplinary Case","Fill in every section that applies"],
   "mgmt-disciplinary-detail":["Case Details","Full record, review, and timeline"],
   "mgmt-requests":["Manage Requests","Approve or decline pending requests"],
@@ -3148,6 +3209,34 @@ const BUILDERS = {
       <table>
         <tr><th>Employee</th><th>Position</th><th>Period</th><th>Score</th><th>Rating</th><th>Total Records</th></tr>
         ${rows.map(r=>`<tr><td>${r.name}</td><td class="muted">${r.position}</td><td>${r.e ? r.e.Month+' '+r.e.Year : '—'}</td><td class="mono">${r.e ? r.e.AverageScore : '—'}</td><td>${r.e ? ratingStars(r.e.AverageScore)+' '+r.e.RatingLabel : '<span class="muted">Not yet evaluated</span>'}</td><td class="mono">${countByEmployee[r.name] || 0}</td></tr>`).join('') || `<tr><td colspan="6" class="muted">No evaluations found.</td></tr>`}
+      </table>
+    </div>`;
+  },
+
+  "mgmt-forms": ()=>{
+    const categories = Array.from(new Set(ALL_FORMS.map(f=>f.Category).filter(Boolean))).sort();
+    return `
+    <div class="card" style="margin-bottom:16px; max-width:520px;">
+      <h3>Upload a Form</h3>
+      <label>Form Name</label>
+      <input type="text" id="formName" placeholder="e.g. Certificate of Employment Request">
+      <label>Category <span class="muted">(optional)</span></label>
+      <input type="text" id="formCategory" placeholder="e.g. HR, Incident Reports, Requests" list="formCategoryList">
+      <datalist id="formCategoryList">${categories.map(c=>`<option value="${c}">`).join('')}</datalist>
+      <label>File</label>
+      <input type="file" id="formFileInput" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+      <p class="muted" style="font-size:12px; margin:4px 0 8px;">PDF, Word, or image, up to 10MB.</p>
+      <p id="formUploadErr" class="login-err"></p>
+      <button class="btn" id="formUploadBtn" onclick="uploadLibraryForm()">Upload Form</button>
+    </div>
+
+    <div class="card table-scroll">
+      <h3><span class="ic">🖨️</span> Forms Library</h3>
+      <p class="muted" style="margin-bottom:12px;">Click a form to open it — from there, use your browser's Print (Ctrl+P) to print it.</p>
+      <table>
+        <tr><th>Form Name</th><th>Category</th><th>Uploaded</th><th></th></tr>
+        ${ALL_FORMS.map(f=>`<tr><td>${f.FormName}</td><td class="muted">${f.Category||'—'}</td><td>${fmtDateTime(f.DateUploaded)}</td>
+          <td><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="openLibraryForm('${f.FileId}','${(f.FileName||'').replace(/'/g,"\\'")}')">Open / Print</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteLibraryForm('${f.ID}', this)">Delete</button></td></tr>`).join('') || `<tr><td colspan="4" class="muted">No forms uploaded yet.</td></tr>`}
       </table>
     </div>`;
   },
