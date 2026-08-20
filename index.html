@@ -2184,13 +2184,30 @@ async function downloadDiscAttachment(fileId, fileName){
   a.click();
 }
 
-/* Opens a Forms Library PDF for viewing/printing — opens directly
-   in a new tab, where the browser's native PDF viewer has its own
-   Print button (or Ctrl+P works). */
+/* Opens a Forms Library PDF for viewing/printing. The window must
+   open SYNCHRONOUSLY, before any await — otherwise browsers treat
+   it as an unrequested popup and silently block it, which is why
+   "Open / Print" looked like it did nothing. */
 async function openLibraryForm(fileId, fileName){
+  const win = window.open('', '_blank');
+  if(win) win.document.write('<p style="font-family:sans-serif; padding:24px; color:#555;">Loading form…</p>');
+
   const r = await apiGet('photo&id=' + fileId);
-  if(!r.ok){ alert("Couldn't load that file."); return; }
-  window.open(`data:${r.mime};base64,${r.base64}`, '_blank');
+  if(!r.ok){
+    if(win) win.close();
+    alert("Couldn't load that file.");
+    return;
+  }
+  if(!win){
+    alert("Your browser blocked the pop-up. Please allow pop-ups for this site, then try again.");
+    return;
+  }
+  win.location.href = `data:${r.mime};base64,${r.base64}`;
+  // Best-effort: bring up the print dialog automatically once the
+  // PDF has had a moment to render. Browser support for this
+  // varies — if it doesn't trigger, the viewer's own Print button
+  // (or Ctrl+P) still works.
+  setTimeout(()=>{ try{ win.print(); } catch(e){} }, 1200);
 }
 
 async function uploadLibraryForm(){
