@@ -243,6 +243,10 @@
     .print-doc th, .print-doc td{ font-size:11.5px !important; padding:6px 8px !important; line-height:1.4 !important; }
     .print-doc h3{ font-size:15px !important; margin:16px 0 8px !important; }
     .print-doc .card{ margin-bottom:4px !important; page-break-inside:avoid; }
+    /* the light theme's default text color is near-white — fine on
+       screen, invisible on paper. Force every text element in a
+       printout to black, not just table cells and headings. */
+    .print-doc, .print-doc p, .print-doc span, .print-doc div{ color:#000 !important; }
     .print-only{ display:block !important; }
   }
   .print-only{ display:none; }
