@@ -1051,7 +1051,7 @@ async function doLoginWithCredentials(u, p){
     const r = await apiPost('login', {username:u, password:p});
     if(!r.ok) return {success:false, error: r.error || "Incorrect username or password."};
     if(r.role === 'management'){
-      CURRENT_USER = {role:'management', displayName:r.displayName, accessLevel: r.accessLevel || 'full'};
+      CURRENT_USER = {role:'management', displayName:r.displayName, accessLevel: r.accessLevel || 'full', mgmtRole: r.mgmtRole || 'full'};
     } else {
       CURRENT_USER = {role:'employee', employeeName:r.employeeName};
       CURRENT_EMPLOYEE = {
@@ -1947,7 +1947,7 @@ function disciplinaryCasesTableSection(rows, title){
           <td class="muted">${discParseViolations(d.ViolationTypes).join(', ')||''}</td>
           <td>${d.DisciplinaryLevel||'<span class="muted">—</span>'}</td>
           <td>${discStatusPill(d.Status)}</td>
-          <td><button class="btn ghost auto" style="padding:5px 10px;" onclick="openDisciplinaryCase('${d.ID}')">View Case</button></td>
+          <td>${isViewAllowedForRole('mgmt-disciplinary-detail') ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="openDisciplinaryCase('${d.ID}')">View Case</button>` : '<span class="muted">Not authorized</span>'}</td>
         </tr>`).join('') || `<tr><td colspan="7" class="muted">No matching cases.</td></tr>`}
       </table>
     </div>`;
@@ -2371,15 +2371,39 @@ function closeMobileSidebar(){
   document.getElementById('sidebarBackdrop').classList.remove('active');
 }
 
+/* Management role permissions. "full" (Administrator) sees
+   everything. Others use either:
+   - allowedViews: a whitelist — only these views are reachable,
+     everything else (including detail pages not in the sidebar,
+     like mgmt-disciplinary-detail) is blocked.
+   - hiddenViews: a blacklist — everything is reachable except these. */
+const MGMT_ROLE_PERMISSIONS = {
+  full: null,
+  limited: { hiddenViews: ['mgmt-accounts', 'mgmt-concerns'] },
+  "shift-manager": { allowedViews: ['mgmt-home','mgmt-schedule','mgmt-attendance','mgmt-performance','mgmt-forms','mgmt-requests','mgmt-disciplinary'] },
+  "supervisor": { allowedViews: ['mgmt-home','mgmt-attendance','mgmt-forms'] },
+};
+function currentMgmtRole(){
+  return (CURRENT_USER && CURRENT_USER.role === 'management') ? (CURRENT_USER.mgmtRole || 'full') : null;
+}
+function isViewAllowedForRole(id){
+  const role = currentMgmtRole();
+  if(!role || role === 'full') return true;
+  const perm = MGMT_ROLE_PERMISSIONS[role];
+  if(!perm) return true;
+  if(perm.allowedViews) return perm.allowedViews.includes(id);
+  if(perm.hiddenViews) return !perm.hiddenViews.includes(id);
+  return true;
+}
 function isLimitedAdmin(){
-  return CURRENT_USER && CURRENT_USER.role === 'management' && CURRENT_USER.accessLevel === 'limited';
+  return currentMgmtRole() === 'limited';
 }
 
 function renderNav(){
   const nav = NAV[currentRole];
   let html = "";
   nav.forEach(group=>{
-    const visibleItems = group.items.filter(item => !(item.restricted && isLimitedAdmin()));
+    const visibleItems = group.items.filter(item => isViewAllowedForRole(item.id));
     if(!visibleItems.length) return;
     html += `<div class="nav-group-label">${group.group}</div>`;
     visibleItems.forEach(item=>{
@@ -2461,11 +2485,9 @@ function safeHistoryGo(delta){
   try{ history.go(delta); } catch(e){ /* file:// origin restriction — ignore */ }
 }
 
-const RESTRICTED_VIEWS = ['mgmt-accounts', 'mgmt-concerns'];
-
 function renderView(id, fromHistory){
-  if(RESTRICTED_VIEWS.includes(id) && isLimitedAdmin()){
-    id = 'mgmt-home'; // not authorized — send them back to Home instead
+  if(!isViewAllowedForRole(id)){
+    id = 'mgmt-home'; // not authorized for this role — send them back to Home instead
   }
   activeView = id;
   renderNav();
