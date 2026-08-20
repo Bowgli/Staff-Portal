@@ -2184,22 +2184,13 @@ async function downloadDiscAttachment(fileId, fileName){
   a.click();
 }
 
-/* Opens a Forms Library file for viewing/printing. PDFs and images
-   open directly in a new tab (the browser's native viewer has its
-   own Print button / Ctrl+P works). Anything else (Word docs, etc.)
-   downloads instead, since browsers can't render those inline. */
+/* Opens a Forms Library PDF for viewing/printing — opens directly
+   in a new tab, where the browser's native PDF viewer has its own
+   Print button (or Ctrl+P works). */
 async function openLibraryForm(fileId, fileName){
   const r = await apiGet('photo&id=' + fileId);
   if(!r.ok){ alert("Couldn't load that file."); return; }
-  const dataUrl = `data:${r.mime};base64,${r.base64}`;
-  if(r.mime === 'application/pdf' || r.mime.indexOf('image/') === 0){
-    window.open(dataUrl, '_blank');
-  } else {
-    const a = document.createElement('a');
-    a.href = dataUrl;
-    a.download = fileName || 'form';
-    a.click();
-  }
+  window.open(`data:${r.mime};base64,${r.base64}`, '_blank');
 }
 
 async function uploadLibraryForm(){
@@ -2211,6 +2202,7 @@ async function uploadLibraryForm(){
   if(!FormName){ err.textContent = "Give the form a name."; err.style.display='block'; return; }
   const file = fileInput.files[0];
   if(!file){ err.textContent = "Choose a file to upload."; err.style.display='block'; return; }
+  if(file.type !== 'application/pdf'){ err.textContent = "Only PDF files are allowed."; err.style.display='block'; return; }
   if(file.size > 10*1024*1024){ err.textContent = "File must be under 10MB."; err.style.display='block'; return; }
   if(!USE_REMOTE()){ err.textContent = "Connect the backend first — uploading needs the live Sheet connection."; err.style.display='block'; return; }
 
@@ -3224,8 +3216,8 @@ const BUILDERS = {
       <input type="text" id="formCategory" placeholder="e.g. HR, Incident Reports, Requests" list="formCategoryList">
       <datalist id="formCategoryList">${categories.map(c=>`<option value="${c}">`).join('')}</datalist>
       <label>File</label>
-      <input type="file" id="formFileInput" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-      <p class="muted" style="font-size:12px; margin:4px 0 8px;">PDF, Word, or image, up to 10MB.</p>
+      <input type="file" id="formFileInput" accept=".pdf,application/pdf">
+      <p class="muted" style="font-size:12px; margin:4px 0 8px;">PDF only, up to 10MB.</p>
       <p id="formUploadErr" class="login-err"></p>
       <button class="btn" id="formUploadBtn" onclick="uploadLibraryForm()">Upload Form</button>
     </div>
