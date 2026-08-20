@@ -1474,6 +1474,7 @@ function nextScheduleSnapshot(ns){
 }
 
 let empNextScheduleBaseline = '';
+let empNextSchedulePublished = false; // tracks the published flag specifically, so we can tell a real "just published" moment apart from routine in-progress edits
 let empDiscBaseline = '';
 let empAnnouncementsBaseline = 0;
 function myDisciplinarySnapshot(records){
@@ -1484,6 +1485,7 @@ function startEmpPolling(){
   if(empPollInterval || !USE_REMOTE()) return;
   empRequestsBaseline = myRequestsSnapshot();
   empNextScheduleBaseline = nextScheduleSnapshot();
+  empNextSchedulePublished = NEXT_SCHEDULE_PUBLISHED;
   empDiscBaseline = myDisciplinarySnapshot();
   empAnnouncementsBaseline = ALL_ANNOUNCEMENTS.length;
   empPollInterval = setInterval(async ()=>{
@@ -1496,7 +1498,7 @@ function startEmpPolling(){
     ]);
 
     let changed = false;
-    let requestStatusChanged = false, scheduleChanged = false, discChanged = false, newAnnouncements = 0;
+    let requestStatusChanged = false, scheduleJustPublished = false, discChanged = false, newAnnouncements = 0;
 
     if(requests){
       const currentSnap = {};
@@ -1507,7 +1509,16 @@ function startEmpPolling(){
 
     if(nextSchedule){
       const snap = nextScheduleSnapshot(nextSchedule);
-      if(snap !== empNextScheduleBaseline){ empNextScheduleBaseline = snap; changed = true; scheduleChanged = true; }
+      if(snap !== empNextScheduleBaseline){
+        empNextScheduleBaseline = snap;
+        changed = true; // still silently refresh so their own view stays current
+        // only treat it as notify-worthy the moment it flips to
+        // published — routine edits while it's still being worked
+        // on (by a Shift Manager or anyone else) shouldn't ping
+        // every employee's screen each time a cell changes
+        if(nextSchedule.published && !empNextSchedulePublished) scheduleJustPublished = true;
+      }
+      empNextSchedulePublished = !!nextSchedule.published;
     }
 
     if(myDisc){
@@ -1526,9 +1537,10 @@ function startEmpPolling(){
     await loadRemoteData(); // picks up everything, including any Schedule change from an approved swap or a fresh publish
 
     // Let them know something new arrived, wherever they currently are.
-    playAlertTone();
+    const notifyWorthy = newAnnouncements > 0 || scheduleJustPublished || requestStatusChanged || discChanged;
+    if(notifyWorthy) playAlertTone();
     if(newAnnouncements > 0) showMgmtToast('📢', 'New Announcement', `${newAnnouncements} new announcement${newAnnouncements===1?'':'s'} posted — tap to view`, 'announcements');
-    if(scheduleChanged) showMgmtToast('📅', 'Schedule Updated', 'Your schedule has changed — tap to view', 'schedule');
+    if(scheduleJustPublished) showMgmtToast('📅', 'Schedule Published', 'Next week\'s schedule was just published — tap to view', 'schedule');
     if(requestStatusChanged) showMgmtToast('📝', 'Request Updated', 'One of your requests was updated — tap to view', 'requests');
     if(discChanged) showMgmtToast('📁', 'Record Updated', 'One of your records was updated — tap to view', 'my-disciplinary');
 
