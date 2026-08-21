@@ -1835,14 +1835,20 @@ async function submitEmployeeDiscResponse(id){
   err.style.display='none';
   if(!text){ err.textContent = "Write a response first."; err.style.display='block'; return; }
   btnLoading('myDiscRespBtn', 'Saving...');
-  const r = await apiPost('addEmployeeResponse', {id, employeeName: CURRENT_EMPLOYEE.name, response: text});
-  if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnReset('myDiscRespBtn','Submit Response'); return; }
-  const rec = MY_DISCIPLINARY_RECORDS.find(x=>x.ID===id);
-  if(rec) rec.EmployeeResponse = text;
-  const btn = document.getElementById('myDiscRespBtn');
-  if(btn){ btn.disabled = true; btn.innerHTML = 'Response Submitted'; }
-  await new Promise(res=>setTimeout(res, 900));
-  openMyDisciplinaryCase(id); // now shows the locked, read-only response
+  try{
+    const r = await apiPost('addEmployeeResponse', {id, employeeName: CURRENT_EMPLOYEE.name, response: text});
+    if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnReset('myDiscRespBtn','Submit Response'); return; }
+    const rec = MY_DISCIPLINARY_RECORDS.find(x=>x.ID===id);
+    if(rec) rec.EmployeeResponse = text;
+    const btn = document.getElementById('myDiscRespBtn');
+    if(btn){ btn.disabled = true; btn.innerHTML = 'Response Submitted'; }
+    await new Promise(res=>setTimeout(res, 900));
+    openMyDisciplinaryCase(id); // now shows the locked, read-only response
+  } catch(e){
+    err.textContent = e.message || "Couldn't save — please try again.";
+    err.style.display = 'block';
+    btnReset('myDiscRespBtn', 'Submit Response');
+  }
 }
 
 function computeRecentActivity(){
@@ -2316,12 +2322,18 @@ async function saveDisciplinaryCase(status){
 
   const btnId = status === 'Draft' ? 'discDraftBtn' : 'discSubmitBtn';
   btnLoading(btnId, status==='Draft' ? 'Saving...' : 'Submitting...');
-  const r = await apiPost('saveDisciplinaryCase', payload);
-  if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnReset(btnId, status==='Draft'?'Save Draft':'Submit Report'); return; }
-  await refreshDisciplinaryOnly();
-  discNewCaseEmployee = '';
-  discCaseAttachments = [];
-  renderView('mgmt-disciplinary');
+  try{
+    const r = await apiPost('saveDisciplinaryCase', payload);
+    if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnReset(btnId, status==='Draft'?'Save Draft':'Submit Report'); return; }
+    await refreshDisciplinaryOnly();
+    discNewCaseEmployee = '';
+    discCaseAttachments = [];
+    renderView('mgmt-disciplinary');
+  } catch(e){
+    err.textContent = e.message || "Couldn't save — please try again.";
+    err.style.display = 'block';
+    btnReset(btnId, status==='Draft'?'Save Draft':'Submit Report');
+  }
 }
 
 async function downloadDiscAttachment(fileId, fileName){
@@ -2362,13 +2374,19 @@ async function uploadLibraryForm(){
   reader.onload = async ()=>{
     const base64 = reader.result.split(',')[1];
     btnLoading('formUploadBtn', 'Uploading...');
-    const r = await apiPost('uploadFormLibraryFile', {base64, mimeType: file.type, fileName: file.name, FormName, Category, UploadedBy: CURRENT_USER.displayName});
-    if(!r.ok){ err.textContent = r.error || "Upload failed."; err.style.display='block'; btnReset('formUploadBtn','Upload Form'); return; }
-    await refreshFormsOnly();
-    document.getElementById('formName').value = '';
-    document.getElementById('formCategory').value = '';
-    fileInput.value = '';
-    renderView('mgmt-forms');
+    try{
+      const r = await apiPost('uploadFormLibraryFile', {base64, mimeType: file.type, fileName: file.name, FormName, Category, UploadedBy: CURRENT_USER.displayName});
+      if(!r.ok){ err.textContent = r.error || "Upload failed."; err.style.display='block'; btnReset('formUploadBtn','Upload Form'); return; }
+      await refreshFormsOnly();
+      document.getElementById('formName').value = '';
+      document.getElementById('formCategory').value = '';
+      fileInput.value = '';
+      renderView('mgmt-forms');
+    } catch(e){
+      err.textContent = e.message || "Upload failed — please try again.";
+      err.style.display = 'block';
+      btnReset('formUploadBtn', 'Upload Form');
+    }
   };
   reader.readAsDataURL(file);
 }
@@ -4502,13 +4520,18 @@ async function deleteRecognitionEntry(id, el){
 async function reviewSuggestion(id, el){
   btnLoadingEl(el, 'Marking...');
   const s = MOCK.suggestionsLog.find(s=>s.id===id);
-  if(USE_REMOTE()){
-    const r = await apiPost('updateSuggestionStatus', {id, status:"reviewed"});
-    if(!r.ok){ alert(r.error || "Couldn't update."); btnResetEl(el); return; }
-    if(s && s.status === 'new') mgmtAlertBaseline.suggestions = Math.max(0, mgmtAlertBaseline.suggestions - 1);
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPost('updateSuggestionStatus', {id, status:"reviewed"});
+      if(!r.ok){ alert(r.error || "Couldn't update."); btnResetEl(el); return; }
+      if(s && s.status === 'new') mgmtAlertBaseline.suggestions = Math.max(0, mgmtAlertBaseline.suggestions - 1);
+    }
+    if(s) s.status = "reviewed";
+    renderView('mgmt-suggestions');
+  } catch(e){
+    alert(e.message || "Couldn't update — please try again.");
+    btnResetEl(el);
   }
-  if(s) s.status = "reviewed";
-  renderView('mgmt-suggestions');
 }
 
 function openConcernDetail(id){
@@ -4530,14 +4553,20 @@ async function saveConcernInvestigation(){
   };
   const btn = document.getElementById('concernInvSaveBtn');
   btnLoadingEl(btn, 'Saving...');
-  if(USE_REMOTE()){
-    const r = await apiPost('updateConcernInvestigation', fields);
-    if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnResetEl(btn); return; }
-    if(c && c.status === 'Open' && status !== 'Open') mgmtAlertBaseline.concerns = Math.max(0, mgmtAlertBaseline.concerns - 1);
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPost('updateConcernInvestigation', fields);
+      if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnResetEl(btn); return; }
+      if(c && c.status === 'Open' && status !== 'Open') mgmtAlertBaseline.concerns = Math.max(0, mgmtAlertBaseline.concerns - 1);
+    }
+    if(c){ c.status = status; c.investigationNotes = fields.InvestigationNotes; c.investigatedBy = fields.InvestigatedBy; c.actionTaken = fields.ActionTaken; }
+    await btnSentEl(btn, 'Saved');
+    renderView('mgmt-concern-detail');
+  } catch(e){
+    err.textContent = e.message || "Couldn't save — please try again.";
+    err.style.display = 'block';
+    btnResetEl(btn);
   }
-  if(c){ c.status = status; c.investigationNotes = fields.InvestigationNotes; c.investigatedBy = fields.InvestigatedBy; c.actionTaken = fields.ActionTaken; }
-  await btnSentEl(btn, 'Saved');
-  renderView('mgmt-concern-detail');
 }
 
 const savingRequestIds = new Set();
