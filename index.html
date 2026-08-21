@@ -728,7 +728,7 @@ async function updateScheduleDept(name, department, sheetName){
   if(USE_REMOTE()){
     const r = await apiPost('updateScheduleDepartment', {name, department, sheetName});
     if(!r.ok){ alert(r.error || "Couldn't update."); return; }
-    await loadRemoteData();
+    await refreshScheduleOnly();
   } else {
     const rows = sheetName === 'NextSchedule' ? NEXT_SCHEDULE_ROWS : SCHEDULE_ROWS;
     const row = rows.find(x=>x.name===name);
@@ -750,7 +750,7 @@ async function updateNextWeekDates(){
   if(USE_REMOTE()){
     const r = await apiPostMinDelay('updateNextScheduleDates', {startDate});
     if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display = 'block'; btn.disabled=false; btn.textContent='Set Dates'; return; }
-    await loadRemoteData();
+    await refreshScheduleOnly();
   }
   renderView('mgmt-schedule');
 }
@@ -760,7 +760,7 @@ async function promoteNextWeek(){
   if(USE_REMOTE()){
     const r = await apiPost('promoteNextWeekSchedule', {});
     if(!r.ok){ alert(r.error || "Couldn't promote."); return; }
-    await loadRemoteData();
+    await refreshScheduleOnly();
   }
   scheduleViewMode = 'current';
   renderView('mgmt-schedule');
@@ -844,7 +844,7 @@ async function saveCellEdit(){
   if(USE_REMOTE()){
     const r = await apiPostMinDelay('updateScheduleCell', {name: cellModalTarget.name, dayIndex: cellModalTarget.dayIndex, value, sheetName: cellModalTarget.sheetName});
     if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display = 'block'; btn.disabled=false; btn.textContent='Save'; return; }
-    await loadRemoteData();
+    await refreshScheduleOnly();
   } else {
     const rows = cellModalTarget.sheetName === 'NextSchedule' ? NEXT_SCHEDULE_ROWS : SCHEDULE_ROWS;
     const row = rows.find(x=>x.name===cellModalTarget.name);
@@ -4411,7 +4411,7 @@ async function refreshScheduleOnly(){
   if(scheduleRefreshPromise) return scheduleRefreshPromise;
   scheduleRefreshPromise = (async ()=>{
     const [schedule, nextSchedule] = await Promise.all([
-      safeApiGet('schedule', null), safeApiGet('nextSchedule', null)
+      safeApiGet(bustCache_('schedule'), null), safeApiGet(bustCache_('nextSchedule'), null)
     ]);
     if(schedule){ SCHEDULE_DAYS = schedule.days || []; SCHEDULE_ROWS = schedule.rows || []; }
     if(nextSchedule){ NEXT_SCHEDULE_DAYS = nextSchedule.days || []; NEXT_SCHEDULE_ROWS = nextSchedule.rows || []; NEXT_SCHEDULE_PUBLISHED = !!nextSchedule.published; }
