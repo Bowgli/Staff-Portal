@@ -3510,7 +3510,9 @@ const BUILDERS = {
 
   "mgmt-forms": ()=>{
     const categories = Array.from(new Set(ALL_FORMS.map(f=>f.Category).filter(Boolean))).sort();
+    const canManageForms = currentMgmtRole() !== 'shift-manager' && currentMgmtRole() !== 'supervisor';
     return `
+    ${canManageForms ? `
     <div class="card" style="margin-bottom:16px; max-width:520px;">
       <h3>Upload a Form</h3>
       <label>Form Name</label>
@@ -3524,6 +3526,7 @@ const BUILDERS = {
       <p id="formUploadErr" class="login-err"></p>
       <button class="btn" id="formUploadBtn" onclick="uploadLibraryForm()">Upload Form</button>
     </div>
+    ` : ''}
 
     <div class="card table-scroll">
       <h3><span class="ic">🖨️</span> Forms Library</h3>
@@ -3531,7 +3534,7 @@ const BUILDERS = {
       <table>
         <tr><th>Form Name</th><th>Category</th><th>Uploaded</th><th></th></tr>
         ${ALL_FORMS.map(f=>`<tr><td>${f.FormName}</td><td class="muted">${f.Category||'—'}</td><td>${fmtDateTime(f.DateUploaded)}</td>
-          <td><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="openLibraryForm('${f.FileId}','${(f.FileName||'').replace(/'/g,"\\'")}')">Download</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteLibraryForm('${f.ID}', this)">Delete</button></td></tr>`).join('') || `<tr><td colspan="4" class="muted">No forms uploaded yet.</td></tr>`}
+          <td><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="openLibraryForm('${f.FileId}','${(f.FileName||'').replace(/'/g,"\\'")}')">Download</button>${canManageForms ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteLibraryForm('${f.ID}', this)">Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No forms uploaded yet.</td></tr>`}
       </table>
     </div>`;
   },
