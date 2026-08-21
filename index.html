@@ -1481,13 +1481,24 @@ function myDisciplinarySnapshot(records){
   if(records) return JSON.stringify(records.map(d=>[d.ID, d.Status]));
   return JSON.stringify(MY_DISCIPLINARY_RECORDS.map(d=>[d.ID, d.Status]));
 }
-function startEmpPolling(){
+let empPendingRequestsBaseline = 0;
+/* True for any hybrid employee account (Shift Manager, or any future
+   role) whose management permissions include Manage Requests — not
+   hardcoded to one role name, so it keeps working if more roles are
+   added later. */
+function hasMgmtRequestsAccess(){
+  return !!(CURRENT_USER && CURRENT_USER.mgmtRole && isViewAllowedForRole('mgmt-requests'));
+}
+async function startEmpPolling(){
   if(empPollInterval || !USE_REMOTE()) return;
   empRequestsBaseline = myRequestsSnapshot();
   empNextScheduleBaseline = nextScheduleSnapshot();
   empNextSchedulePublished = NEXT_SCHEDULE_PUBLISHED;
   empDiscBaseline = myDisciplinarySnapshot();
   empAnnouncementsBaseline = ALL_ANNOUNCEMENTS.length;
+  if(hasMgmtRequestsAccess()){
+    try{ const counts = await apiGet('counts'); empPendingRequestsBaseline = counts.requests || 0; } catch(e){}
+  }
   empPollInterval = setInterval(async ()=>{
     if(document.hidden) return; // skip while this tab isn't the active/visible one
     const [requests, nextSchedule, myDisc, announcements] = await Promise.all([
@@ -1498,7 +1509,7 @@ function startEmpPolling(){
     ]);
 
     let changed = false;
-    let requestStatusChanged = false, scheduleJustPublished = false, discChanged = false, newAnnouncements = 0;
+    let requestStatusChanged = false, scheduleJustPublished = false, discChanged = false, newAnnouncements = 0, newPendingRequests = 0;
 
     if(requests){
       const currentSnap = {};
@@ -1532,19 +1543,35 @@ function startEmpPolling(){
       changed = true;
     }
 
+    // Shift Manager (or any hybrid role with Manage Requests access):
+    // also watch for new PENDING requests company-wide, same as full
+    // Management gets — a cheap extra call, only made for roles that
+    // actually need it.
+    if(hasMgmtRequestsAccess()){
+      try{
+        const counts = await apiGet('counts');
+        if(counts.requests !== empPendingRequestsBaseline){
+          newPendingRequests = Math.max(0, counts.requests - empPendingRequestsBaseline);
+          empPendingRequestsBaseline = counts.requests;
+          changed = true;
+        }
+      } catch(e){}
+    }
+
     if(!changed) return; // nothing actually changed — skip the full reload
 
     await loadRemoteData(); // picks up everything, including any Schedule change from an approved swap or a fresh publish
 
     // Let them know something new arrived, wherever they currently are.
-    const notifyWorthy = newAnnouncements > 0 || scheduleJustPublished || requestStatusChanged || discChanged;
+    const notifyWorthy = newAnnouncements > 0 || scheduleJustPublished || requestStatusChanged || discChanged || newPendingRequests > 0;
     if(notifyWorthy) playAlertTone();
     if(newAnnouncements > 0) showMgmtToast('📢', 'New Announcement', `${newAnnouncements} new announcement${newAnnouncements===1?'':'s'} posted — tap to view`, 'announcements');
     if(scheduleJustPublished) showMgmtToast('📅', 'Schedule Published', 'Next week\'s schedule was just published — tap to view', 'schedule');
     if(requestStatusChanged) showMgmtToast('📝', 'Request Updated', 'One of your requests was updated — tap to view', 'requests');
     if(discChanged) showMgmtToast('📁', 'Record Updated', 'One of your records was updated — tap to view', 'my-disciplinary');
+    if(newPendingRequests > 0) showMgmtToast('📝', 'New Request', `${newPendingRequests} new pending request${newPendingRequests===1?'':'s'} — tap to view`, 'mgmt-requests');
 
-    if(['home','requests','schedule','my-disciplinary','announcements'].includes(activeView)) renderView(activeView);
+    if(['home','requests','schedule','my-disciplinary','announcements','mgmt-requests'].includes(activeView)) renderView(activeView);
   }, 45000); // check every 45 seconds
 }
 function stopEmpPolling(){
