@@ -557,6 +557,9 @@ let discSummaryPeriod = ''; // "YYYY-MM", defaults to current month on first vie
 let discSummaryMode = 'month'; // 'month' or 'year'
 let discSummaryYear = new Date().getFullYear();
 let discDetailCaseId = null; // which case mgmt-disciplinary-detail is showing
+let attendanceStatsMode = 'month'; // 'month' or 'year' — for Most Absences/Late/Undertime on the Attendance page
+let attendanceStatsPeriod = ''; // "YYYY-MM", defaults to current month on first view
+let attendanceStatsYear = new Date().getFullYear();
 let discCaseAttachments = []; // [{fileId, fileName}] staged during the New Case form, before save
 let discNewCaseEmployee = ''; // selected employee name in the New Case form, drives the auto-filled Position/Department
 let attendanceSearchQuery = '';
@@ -2082,6 +2085,18 @@ function setDiscSummaryYear(val){
   discSummaryYear = Number(val);
   renderView(activeView);
 }
+function setAttendanceStatsMode(val){
+  attendanceStatsMode = val;
+  renderView('mgmt-attendance');
+}
+function setAttendanceStatsPeriod(val){
+  attendanceStatsPeriod = val;
+  renderView('mgmt-attendance');
+}
+function setAttendanceStatsYear(val){
+  attendanceStatsYear = Number(val);
+  renderView('mgmt-attendance');
+}
 let discIncidentEditMode = false;
 let discCaseInfoEditMode = false;
 let discReviewEditMode = false;
@@ -2782,9 +2797,9 @@ function attendanceConcernsSection(){
   return `
     <div class="section-title">Attendance & Concerns</div>
     <div class="grid grid-3" style="margin-bottom:16px;">
-      ${topStatusChart('📊', 'Absent', 'Most Absences', 5, 'var(--red)', 'mgmt-attendance')}
-      ${topStatusChart('⏰', 'Late', 'Most Late', 5, 'var(--gold)', 'mgmt-attendance')}
-      ${topStatusChart('🕐', 'Undertime', 'Most Undertime', 5, 'var(--blue)', 'mgmt-attendance')}
+      ${topStatusChart(ATTENDANCE_LOG, '📊', 'Absent', 'Most Absences', 5, 'var(--red)', 'mgmt-attendance')}
+      ${topStatusChart(ATTENDANCE_LOG, '⏰', 'Late', 'Most Late', 5, 'var(--gold)', 'mgmt-attendance')}
+      ${topStatusChart(ATTENDANCE_LOG, '🕐', 'Undertime', 'Most Undertime', 5, 'var(--blue)', 'mgmt-attendance')}
     </div>
     <div class="grid grid-2" style="margin-bottom:16px;">
       ${renderRankedEvalCard('🌟', 'Outstanding Staff', topOutstanding, 'var(--teal)', undefined, 'mgmt-performance')}
@@ -2803,9 +2818,9 @@ function topPerformersChart(latestByEmployee){
     </div>`;
 }
 
-function topStatusChart(icon, status, title, limit, barColor, linkTo){
+function topStatusChart(log, icon, status, title, limit, barColor, linkTo){
   const counts = {};
-  ATTENDANCE_LOG.forEach(a=>{
+  log.forEach(a=>{
     if(a.status === status) counts[a.name] = (counts[a.name]||0) + 1;
   });
   const ranked = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,limit);
@@ -2823,11 +2838,39 @@ function topStatusChart(icon, status, title, limit, barColor, linkTo){
     </div>`;
 }
 function topAttendanceCharts(){
-  return `<div class="grid grid-3" style="margin-bottom:16px;">
-    ${topStatusChart('📊', 'Absent', 'Most Absences', 5, 'var(--red)')}
-    ${topStatusChart('⏰', 'Late', 'Most Late', 5, 'var(--gold)')}
-    ${topStatusChart('🕐', 'Undertime', 'Most Undertime', 5, 'var(--blue)')}
-  </div>`;
+  const now = new Date();
+  if(!attendanceStatsPeriod) attendanceStatsPeriod = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
+  const filteredLog = ATTENDANCE_LOG.filter(a=>{
+    if(!a.date) return false;
+    const dt = new Date(a.date);
+    if(isNaN(dt)) return false;
+    if(attendanceStatsMode === 'year') return dt.getFullYear() === attendanceStatsYear;
+    const [py, pm] = attendanceStatsPeriod.split('-').map(Number);
+    return dt.getFullYear() === py && (dt.getMonth()+1) === pm;
+  });
+
+  const years = Array.from(new Set(ATTENDANCE_LOG.map(a=>{ const dt = new Date(a.date); return isNaN(dt) ? null : dt.getFullYear(); }).filter(Boolean))).sort((a,b)=>b-a);
+  if(!years.includes(attendanceStatsYear)) years.unshift(attendanceStatsYear);
+
+  return `
+    <div class="card" style="margin-bottom:16px;">
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <select onchange="setAttendanceStatsMode(this.value)" style="width:auto;">
+          <option value="month" ${attendanceStatsMode==='month'?'selected':''}>By Month</option>
+          <option value="year" ${attendanceStatsMode==='year'?'selected':''}>By Year</option>
+        </select>
+        ${attendanceStatsMode==='year'
+          ? `<select onchange="setAttendanceStatsYear(this.value)" style="width:auto;">${years.map(y=>`<option ${attendanceStatsYear===y?'selected':''}>${y}</option>`).join('')}</select>`
+          : `<input type="month" value="${attendanceStatsPeriod}" onchange="setAttendanceStatsPeriod(this.value)" style="max-width:180px;">`
+        }
+      </div>
+    </div>
+    <div class="grid grid-3" style="margin-bottom:16px;">
+    ${topStatusChart(filteredLog, '📊', 'Absent', 'Most Absences', 5, 'var(--red)')}
+    ${topStatusChart(filteredLog, '⏰', 'Late', 'Most Late', 5, 'var(--gold)')}
+    ${topStatusChart(filteredLog, '🕐', 'Undertime', 'Most Undertime', 5, 'var(--blue)')}
+    </div>`;
 }
 
 function statusPill(status){
@@ -3208,8 +3251,7 @@ const BUILDERS = {
       <div class="card stat-card clickable" onclick="renderView('mgmt-attendance')"><div class="num">${ATTENDANCE_LOG.length}</div><div class="label">Attendance entries logged</div></div>
     </div>
     ${attendanceConcernsSection()}
-    ${disciplinaryCasesTableSection(ALL_DISCIPLINARY_RECORDS, 'Disciplinary Cases')}
-    <div style="margin-top:16px;">${disciplinarySummarySection()}</div>`,
+    ${disciplinaryCasesTableSection(ALL_DISCIPLINARY_RECORDS, 'Disciplinary Cases')}`,
 
   "mgmt-employees": ()=>{
     const discCountByEmployee = {};
@@ -3350,7 +3392,7 @@ const BUILDERS = {
         <button class="btn" id="logSubmitBtn" onclick="submitAttendanceLog()">Log Entry</button>
       </div>
       <div class="card table-scroll">
-        <h3>Current Log</h3>
+        <h3>Current Log <span class="muted" style="font-weight:400; font-size:13px;">— latest 10, search for more</span></h3>
         <input type="text" id="attendanceSearch" placeholder="Search employee name..." value="${attendanceSearchQuery}" oninput="filterAttendanceLog(this.value)" style="margin-bottom:12px;">
         <table>
           <tr><th>Employee</th><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th><th></th></tr>
@@ -4514,8 +4556,9 @@ async function deleteAnnouncementEntry(id, el){
 
 function renderAttendanceLogRows(){
   const q = attendanceSearchQuery.toLowerCase();
-  const filtered = ATTENDANCE_LOG.filter(a=>a.name.toLowerCase().includes(q))
+  let filtered = ATTENDANCE_LOG.filter(a=>a.name.toLowerCase().includes(q))
     .slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  if(!q) filtered = filtered.slice(0, 10); // keep the default view short — search shows everything that matches
   return filtered.map(a=>`<tr><td>${a.name}</td><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td><td><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteAttendanceEntry('${a.id}', this)">Delete</button></td></tr>`).join('')
     || `<tr><td colspan="6" class="muted">${attendanceSearchQuery ? 'No entries match that search.' : 'No entries logged yet.'}</td></tr>`;
 }
