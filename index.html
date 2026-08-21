@@ -2153,10 +2153,14 @@ async function saveDiscCaseInfo(){
   err.style.display = 'none';
   const fields = {
     id: discDetailCaseId,
-    DateReported: document.getElementById('discEditDateReported').value,
     ReportedBy: document.getElementById('discEditReportedBy').value.trim(),
     stage: 'caseinfo',
   };
+  if(currentMgmtRole() === 'full'){
+    const dateVal = document.getElementById('discEditDateReported').value;
+    const timeVal = document.getElementById('discEditTimeReported').value;
+    if(dateVal) fields.DateReported = `${dateVal}T${timeVal || '00:00'}:00`;
+  }
   if(!fields.ReportedBy){ err.textContent = "Reported By can't be empty."; err.style.display='block'; return; }
   const btn = document.getElementById('discSaveCaseInfoBtn');
   btnLoadingEl(btn, 'Saving...');
@@ -2282,7 +2286,6 @@ async function saveDisciplinaryCase(status){
   const location = document.getElementById('discLocation').value;
 
   const payload = {
-    DateReported: document.getElementById('discDateReported').value,
     ReportedBy: document.getElementById('discReportedBy').value.trim() || CURRENT_USER.displayName,
     EmployeeName: employeeName,
     Position: emp ? emp.position : '',
@@ -2986,7 +2989,13 @@ const BUILDERS = {
 
   attendance: ()=>{
     const myLog = ATTENDANCE_LOG.filter(a=>a.name===CURRENT_EMPLOYEE.name)
-      .slice().sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+      .map((a, idx) => Object.assign({}, a, {_idx: idx}))
+      .sort((a,b)=>{
+        const ak = (a.date||'') + ' ' + (a.time||'');
+        const bk = (b.date||'') + ' ' + (b.time||'');
+        if(ak !== bk) return bk.localeCompare(ak);
+        return b._idx - a._idx;
+      });
     const absentCount = myLog.filter(a=>a.status==="Absent").length;
     const lateCount = myLog.filter(a=>a.status==="Late").length;
     const undertimeCount = myLog.filter(a=>a.status==="Undertime").length;
@@ -3511,7 +3520,7 @@ const BUILDERS = {
       <h3>Case Information</h3>
       <div class="grid grid-2">
         <div><label>Case Number</label><input type="text" value="Assigned on save (DR-${new Date().getFullYear()}-###)" disabled></div>
-        <div><label>Date Reported</label><input type="date" id="discDateReported" value="${localDate}"></div>
+        <div><label>Date Reported</label><input type="text" value="Set automatically to now, on submit" disabled></div>
       </div>
       <label>Reported By</label>
       <input type="text" id="discReportedBy" value="${CURRENT_USER.displayName}" placeholder="Type your full name">
@@ -3605,7 +3614,17 @@ const BUILDERS = {
       </h3>
       ${discCaseInfoEditMode ? `
         <div class="grid grid-2">
-          <div><label>Date Reported</label><input type="date" id="discEditDateReported" value="${d.DateReported||''}"></div>
+          <div>
+            <label>Date Reported</label>
+            ${currentMgmtRole()==='full' ? `
+              <input type="date" id="discEditDateReported" value="${(d.DateReported||'').slice(0,10)}">
+              <label style="margin-top:6px;">Time Reported</label>
+              <input type="time" id="discEditTimeReported" value="${(d.DateReported||'').slice(11,16)}">
+            ` : `
+              <input type="text" value="${fmtDateTime(d.DateReported)}" disabled>
+              <p class="muted" style="font-size:11px; margin:4px 0 0;">Only an Administrator can change this — it protects the original reporting timestamp.</p>
+            `}
+          </div>
           <div><label>Reported By</label><input type="text" id="discEditReportedBy" value="${d.ReportedBy||''}"></div>
         </div>
         <p id="discEditCaseInfoErr" class="login-err"></p>
@@ -3616,7 +3635,7 @@ const BUILDERS = {
       ` : `
         <table>
           <tr><td class="muted">Case Number</td><td class="mono">${d.CaseNumber||''}</td></tr>
-          <tr><td class="muted">Date Reported</td><td>${fmtDiscDate(d.DateReported)}</td></tr>
+          <tr><td class="muted">Date Reported</td><td>${fmtDateTime(d.DateReported)}</td></tr>
           <tr><td class="muted">Reported By</td><td>${d.ReportedBy||''}</td></tr>
           <tr><td class="muted">Current Status</td><td>${discStatusPill(d.Status)}</td></tr>
         </table>
