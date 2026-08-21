@@ -1229,11 +1229,8 @@ async function refreshMyRequests(){
 async function refreshMyConcerns(){
   if(!USE_REMOTE()) return;
   const myName = (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.fullName) || '';
-  const [concerns, myConcernsRaw] = await Promise.all([
-    safeApiGet(bustCache_('concerns'), null), safeApiGet(bustCache_('myConcerns&name=' + encodeURIComponent(myName)), null)
-  ]);
-  if(concerns) MOCK.concernsLog = concerns.map(c => ({from:c.From, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID, coworkerName:c.CoworkerName, concernTypes:c.ConcernTypes, requestCCTV:c.RequestCCTV, cctvDate:c.CCTVDate, cctvTime:c.CCTVTime, investigationNotes:c.InvestigationNotes, investigatedBy:c.InvestigatedBy, actionTaken:c.ActionTaken})).reverse();
-  if(myConcernsRaw) MY_CONCERNS = myConcernsRaw.map(c => ({from:c.From, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID})).reverse();
+  const myConcernsRaw = await safeApiGet(bustCache_('myConcerns&name=' + encodeURIComponent(myName)), null);
+  if(myConcernsRaw) MY_CONCERNS = myConcernsRaw.map(c => ({from:c.From, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID, coworkerName:c.CoworkerName, concernTypes:c.ConcernTypes, requestCCTV:c.RequestCCTV, cctvDate:c.CCTVDate, cctvTime:c.CCTVTime})).reverse();
 }
 async function refreshMySuggestions(){
   if(!USE_REMOTE()) return;
@@ -2540,7 +2537,7 @@ function closeMobileSidebar(){
 const MGMT_ROLE_PERMISSIONS = {
   full: null,
   limited: { hiddenViews: ['mgmt-accounts', 'mgmt-concerns'] },
-  "shift-manager": { allowedViews: ['mgmt-home','mgmt-schedule','mgmt-attendance','mgmt-performance','mgmt-forms','mgmt-requests','mgmt-disciplinary','mgmt-disciplinary-new'] },
+  "shift-manager": { allowedViews: ['mgmt-home','mgmt-schedule','mgmt-attendance','mgmt-performance','mgmt-forms','mgmt-requests','mgmt-disciplinary','mgmt-disciplinary-new','mgmt-concerns','mgmt-concern-detail'] },
   "supervisor": { allowedViews: ['mgmt-home','mgmt-attendance','mgmt-forms'] },
 };
 /* Extra nav items layered onto a Shift Manager's / Supervisor's OWN
@@ -2554,6 +2551,7 @@ const MGMT_EXTRA_NAV_ITEMS = {
     {id:"mgmt-forms", ic:"🖨️", label:"Forms Library"},
     {id:"mgmt-requests", ic:"📝", label:"Manage Requests"},
     {id:"mgmt-disciplinary", ic:"📁", label:"Disciplinary Reports"},
+    {id:"mgmt-concerns", ic:"⚠️", label:"Concern Log"},
   ],
   "supervisor": [
     {id:"mgmt-attendance", ic:"🕐", label:"Attendance / Log Absence"},
@@ -2622,6 +2620,10 @@ function renderNav(){
       if(item.id === 'mgmt-requests'){
         const pending = ALL_REQUESTS.filter(r=>r.Status==='pending').length;
         badge = pending > 0 ? pending : null;
+      }
+      if(item.id === 'mgmt-concerns'){
+        const open = MOCK.concernsLog.filter(c=>c.status==='Open').length;
+        badge = open > 0 ? open : null;
       }
       html += `<div class="nav-item ${item.id===activeView?'active':''}" onclick="renderView('${item.id}')">
         <span class="ic">${item.ic}</span><span>${item.label}</span>
@@ -4292,8 +4294,30 @@ function startEditConcern(id){
   if(!c) return;
   document.getElementById('concernTopic').value = c.topic;
   document.getElementById('concernDetails').value = c.details || '';
+  toggleConcernCoworkerFields(); // setting .value above doesn't fire onchange, so trigger it manually to reveal the right sub-section
+
+  if(c.topic === 'Coworker conduct'){
+    document.getElementById('concernCoworkerName').value = c.coworkerName || '';
+  } else if(c.topic === 'Customer conduct'){
+    document.getElementById('concernCustomerName').value = c.coworkerName || '';
+  }
+
+  if(c.topic === 'Coworker conduct' || c.topic === 'Customer conduct'){
+    const types = discParseViolations(c.concernTypes);
+    const cbClass = c.topic === 'Coworker conduct' ? '.concernTypeCb' : '.concernCustomerTypeCb';
+    document.querySelectorAll(cbClass).forEach(cb=>{ cb.checked = types.includes(cb.value); });
+
+    if(c.requestCCTV){
+      document.getElementById('concernCCTV').checked = true;
+      toggleConcernCCTVFields();
+      document.getElementById('concernCCTVDate').value = c.cctvDate || '';
+      document.getElementById('concernCCTVTime').value = c.cctvTime || '';
+    }
+  }
+
   editingConcernId = id;
   document.getElementById('concernSubmitBtn').textContent = 'Update Concern';
+  document.getElementById('concernTopic').scrollIntoView({behavior:'smooth', block:'center'});
 }
 
 async function deleteMyConcern(id, el){
