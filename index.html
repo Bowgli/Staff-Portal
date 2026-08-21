@@ -195,7 +195,8 @@
   .shift-morning{background:rgba(255,206,60,0.16) !important; border-left:3px solid #FFCE3C;}
   .shift-afternoon{background:rgba(255,140,40,0.16) !important; border-left:3px solid #FF8C28;}
   .shift-night{background:rgba(70,200,120,0.16) !important; border-left:3px solid #46C878;}
-  td.shift-morning, td.shift-afternoon, td.shift-night{border-left-width:3px;}
+  .shift-membership{background:rgba(80,170,255,0.18) !important; border-left:3px solid #50AAFF;}
+  td.shift-morning, td.shift-afternoon, td.shift-night, td.shift-membership{border-left-width:3px;}
   .section-title{font-family:'Fraunces',serif; font-size:15px; font-weight:600; margin:0 0 12px;}
   .mgmt-toast{
     background:var(--panel); border:2px solid var(--gold); border-radius:16px; padding:26px 28px;
@@ -232,10 +233,20 @@
     .print-hide-col{ display:none !important; }
     td select{ -webkit-appearance:none; appearance:none; border:none !important; background:transparent !important; color:#000 !important; font-weight:600; padding:0 !important; font-size:8.5px !important; }
     .table-scroll{ overflow:visible !important; }
+    /* the light theme's ".muted" text is a faint gray — fine on
+       screen, too light to read once printed. Force it black. */
+    td .muted{ color:#000 !important; }
+    /* Time and Venue are the two things you actually need to read
+       at a glance on the printed schedule — make them bigger and
+       bolder; Position stays small since it's secondary info. */
+    td .cell-time{ font-size:10.5px !important; font-weight:700 !important; color:#000 !important; }
+    td .cell-venue{ font-size:9.5px !important; font-weight:700 !important; color:#000 !important; }
+    td .cell-pos{ font-size:7.5px !important; font-weight:400 !important; }
     /* keep the shift-type highlight colors visible on paper */
     .shift-morning{ background:#fdf0c4 !important; }
     .shift-afternoon{ background:#fbdcc0 !important; }
     .shift-night{ background:#c9ecd7 !important; }
+    .shift-membership{ background:#cfe8ff !important; }
     /* document-style printouts (Case Details, Concern Report) need
        a readable size on a portrait page — the schedule's tiny
        8.5px above was tuned for a wide grid, not a document */
@@ -632,7 +643,8 @@ function parseScheduleCell(raw){
    morning (yellow), afternoon/mid (orange), or night/graveyard
    (green). Anything outside those windows (e.g. an 11:30AM
    Membership shift) gets no highlight. */
-function shiftHighlightClass(timeStr){
+function shiftHighlightClass(timeStr, position){
+  if(position && position.trim().toLowerCase() === 'membership') return 'shift-membership';
   if(!timeStr) return '';
   const m = timeStr.match(/^(\d{1,2}):(\d{2})(AM|PM)/i);
   if(!m) return '';
@@ -865,7 +877,7 @@ function renderMyScheduleGrid(row, days){
       if(c.type==="off") return `<div class="daycard ${todayClass}"><div class="dname">${day}</div><div class="off">Day Off</div></div>`;
       if(c.type==="leave") return `<div class="daycard ${todayClass}"><div class="dname">${day}</div><div class="off">On Leave</div></div>`;
       if(c.type==="blocked" || c.type==="empty") return `<div class="daycard ${todayClass}"><div class="dname">${day}</div><div class="off">Not scheduled</div></div>`;
-      return `<div class="daycard ${shiftHighlightClass(c.time)} ${todayClass}">
+      return `<div class="daycard ${shiftHighlightClass(c.time, c.position)} ${todayClass}">
         <div class="dname">${day}</div>
         <div class="venue ${c.venue==='C88'?'club88':''}">${c.venueFull||''}</div>
         <div class="time">${c.time}</div>
@@ -3308,7 +3320,7 @@ const BUILDERS = {
             if(p.type==='off') inner = `<span class="muted">Off</span>`;
             else if(p.type==='leave') inner = `<span class="muted">Leave</span>`;
             else if(p.type==='blocked' || p.type==='empty') inner = `<span class="muted">—</span>`;
-            else { inner = `${p.time}<br><span class="muted">${p.position}${p.venue==='C88'?' · Club 88':''}</span>`; colorClass = shiftHighlightClass(p.time); }
+            else { inner = `<span class="cell-time">${p.time}</span><br><span class="cell-venue">${p.venueFull||''}</span><span class="cell-pos muted">${p.venueFull && p.position ? ' · ' : ''}${p.position}</span>`; colorClass = shiftHighlightClass(p.time, p.position); }
             return `<td class="${colorClass}" style="cursor:pointer;" onclick="openCellModal(${cellArg})">${inner}</td>`;
           }).join('')}
         </tr>`).join('') || `<tr><td colspan="10" class="muted">${isNext ? 'Nothing prepped yet — paste next week into the NextSchedule tab in your Sheet.' : 'No schedule loaded yet — paste it into the Schedule tab in your Sheet.'}</td></tr>`}
