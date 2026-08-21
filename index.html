@@ -2164,12 +2164,18 @@ async function saveDiscCaseInfo(){
   if(!fields.ReportedBy){ err.textContent = "Reported By can't be empty."; err.style.display='block'; return; }
   const btn = document.getElementById('discSaveCaseInfoBtn');
   btnLoadingEl(btn, 'Saving...');
-  const r = await apiPost('updateDisciplinaryCase', fields);
-  if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnResetEl(btn); return; }
-  await refreshDisciplinaryOnly();
-  await btnSentEl(btn, 'Saved');
-  discCaseInfoEditMode = false;
-  renderView('mgmt-disciplinary-detail');
+  try{
+    const r = await apiPost('updateDisciplinaryCase', fields);
+    if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnResetEl(btn); return; }
+    await refreshDisciplinaryOnly();
+    await btnSentEl(btn, 'Saved');
+    discCaseInfoEditMode = false;
+    renderView('mgmt-disciplinary-detail');
+  } catch(e){
+    err.textContent = e.message || "Couldn't save — please try again.";
+    err.style.display = 'block';
+    btnResetEl(btn);
+  }
 }
 
 function toggleDiscEditLocationOther(){
@@ -2203,12 +2209,18 @@ async function saveDiscIncidentEdit(){
   };
   const btn = document.getElementById('discSaveIncidentBtn');
   btnLoadingEl(btn, 'Saving...');
-  const r = await apiPost('updateDisciplinaryCase', fields);
-  if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnResetEl(btn); return; }
-  await refreshDisciplinaryOnly();
-  await btnSentEl(btn, 'Saved');
-  discIncidentEditMode = false;
-  renderView('mgmt-disciplinary-detail');
+  try{
+    const r = await apiPost('updateDisciplinaryCase', fields);
+    if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnResetEl(btn); return; }
+    await refreshDisciplinaryOnly();
+    await btnSentEl(btn, 'Saved');
+    discIncidentEditMode = false;
+    renderView('mgmt-disciplinary-detail');
+  } catch(e){
+    err.textContent = e.message || "Couldn't save — please try again.";
+    err.style.display = 'block';
+    btnResetEl(btn);
+  }
 }
 
 function onDiscNewEmpChange(val){
@@ -2385,12 +2397,17 @@ async function saveDiscReview(el){
     ManagementComments: document.getElementById('discComments').value.trim(),
     stage: 'review',
   };
-  const r = await apiPost('updateDisciplinaryCase', fields);
-  if(!r.ok){ alert(r.error || "Couldn't save the review — please try again."); btnResetEl(el); return; }
-  await refreshDisciplinaryOnly();
-  await btnSentEl(el, 'Saved');
-  discReviewEditMode = false;
-  renderView('mgmt-disciplinary-detail');
+  try{
+    const r = await apiPost('updateDisciplinaryCase', fields);
+    if(!r.ok){ alert(r.error || "Couldn't save the review — please try again."); btnResetEl(el); return; }
+    await refreshDisciplinaryOnly();
+    await btnSentEl(el, 'Saved');
+    discReviewEditMode = false;
+    renderView('mgmt-disciplinary-detail');
+  } catch(e){
+    alert(e.message || "Couldn't save the review — please try again.");
+    btnResetEl(el);
+  }
 }
 
 async function saveDiscLevel(el){
@@ -2398,12 +2415,17 @@ async function saveDiscLevel(el){
   const level = document.getElementById('discLevelSelect').value;
   const empDecisionEl = document.querySelector('input[name="discEmpDecision"]:checked');
   const fields = { id: discDetailCaseId, DisciplinaryLevel: level, EmploymentDecision: level===DISC_LEVELS[4] ? (empDecisionEl ? empDecisionEl.value : '') : '' };
-  const r = await apiPost('updateDisciplinaryCase', fields);
-  if(!r.ok){ alert(r.error || "Couldn't save the level — please try again."); btnResetEl(el); return; }
-  await refreshDisciplinaryOnly();
-  await btnSentEl(el, 'Saved');
-  discLevelEditMode = false;
-  renderView('mgmt-disciplinary-detail');
+  try{
+    const r = await apiPost('updateDisciplinaryCase', fields);
+    if(!r.ok){ alert(r.error || "Couldn't save the level — please try again."); btnResetEl(el); return; }
+    await refreshDisciplinaryOnly();
+    await btnSentEl(el, 'Saved');
+    discLevelEditMode = false;
+    renderView('mgmt-disciplinary-detail');
+  } catch(e){
+    alert(e.message || "Couldn't save the level — please try again.");
+    btnResetEl(el);
+  }
 }
 
 async function saveDiscApproval(el){
@@ -2416,12 +2438,17 @@ async function saveDiscApproval(el){
     ApprovalStatus: document.getElementById('discApprovalStatus').value,
     stage: document.getElementById('discApprovalStatus').value === 'Approved' ? 'approved' : 'approval',
   };
-  const r = await apiPost('updateDisciplinaryCase', fields);
-  if(!r.ok){ alert(r.error || "Couldn't save the approval — please try again."); btnResetEl(el); return; }
-  await refreshDisciplinaryOnly();
-  await btnSentEl(el, 'Saved');
-  discApprovalEditMode = false;
-  renderView('mgmt-disciplinary-detail');
+  try{
+    const r = await apiPost('updateDisciplinaryCase', fields);
+    if(!r.ok){ alert(r.error || "Couldn't save the approval — please try again."); btnResetEl(el); return; }
+    await refreshDisciplinaryOnly();
+    await btnSentEl(el, 'Saved');
+    discApprovalEditMode = false;
+    renderView('mgmt-disciplinary-detail');
+  } catch(e){
+    alert(e.message || "Couldn't save the approval — please try again.");
+    btnResetEl(el);
+  }
 }
 
 async function saveDiscFinalAction(el){
@@ -2433,12 +2460,17 @@ async function saveDiscFinalAction(el){
     FinalComments: document.getElementById('discFinalComments').value.trim(),
     stage: 'final',
   };
-  const r = await apiPost('updateDisciplinaryCase', fields);
-  if(!r.ok){ alert(r.error || "Couldn't save the final action — please try again."); btnResetEl(el); return; }
-  await refreshDisciplinaryOnly();
-  await btnSentEl(el, 'Saved');
-  discFinalActionEditMode = false;
-  renderView('mgmt-disciplinary-detail');
+  try{
+    const r = await apiPost('updateDisciplinaryCase', fields);
+    if(!r.ok){ alert(r.error || "Couldn't save the final action — please try again."); btnResetEl(el); return; }
+    await refreshDisciplinaryOnly();
+    await btnSentEl(el, 'Saved');
+    discFinalActionEditMode = false;
+    renderView('mgmt-disciplinary-detail');
+  } catch(e){
+    alert(e.message || "Couldn't save the final action — please try again.");
+    btnResetEl(el);
+  }
 }
 
 async function saveDiscStatus(el){
@@ -2446,12 +2478,17 @@ async function saveDiscStatus(el){
   const status = document.getElementById('discStatusSelect').value;
   const stageMap = {"Closed":"closed", "No Action":"noaction"};
   const fields = { id: discDetailCaseId, Status: status, stage: stageMap[status] || '' };
-  const r = await apiPost('updateDisciplinaryCase', fields);
-  if(!r.ok){ alert(r.error || "Couldn't update the status — please try again."); btnResetEl(el); return; }
-  await refreshDisciplinaryOnly();
-  await btnSentEl(el, 'Updated');
-  discStatusEditMode = false;
-  renderView('mgmt-disciplinary-detail');
+  try{
+    const r = await apiPost('updateDisciplinaryCase', fields);
+    if(!r.ok){ alert(r.error || "Couldn't update the status — please try again."); btnResetEl(el); return; }
+    await refreshDisciplinaryOnly();
+    await btnSentEl(el, 'Updated');
+    discStatusEditMode = false;
+    renderView('mgmt-disciplinary-detail');
+  } catch(e){
+    alert(e.message || "Couldn't update the status — please try again.");
+    btnResetEl(el);
+  }
 }
 
 function employeePickerHtml(inputId, roster, extraAttrs){
