@@ -1497,7 +1497,9 @@ async function startEmpPolling(){
   empDiscBaseline = myDisciplinarySnapshot();
   empAnnouncementsBaseline = ALL_ANNOUNCEMENTS.length;
   if(hasMgmtRequestsAccess()){
-    try{ const counts = await apiGet('counts'); empPendingRequestsBaseline = counts.requests || 0; } catch(e){}
+    // only count OTHER people's pending requests — her own
+    // submissions shouldn't ping her own "new request to review" alert
+    empPendingRequestsBaseline = ALL_REQUESTS.filter(r => r.Status === 'pending' && r.EmployeeName !== CURRENT_EMPLOYEE.name).length;
   }
   empPollInterval = setInterval(async ()=>{
     if(document.hidden) return; // skip while this tab isn't the active/visible one
@@ -1544,18 +1546,17 @@ async function startEmpPolling(){
     }
 
     // Shift Manager (or any hybrid role with Manage Requests access):
-    // also watch for new PENDING requests company-wide, same as full
-    // Management gets — a cheap extra call, only made for roles that
-    // actually need it.
-    if(hasMgmtRequestsAccess()){
-      try{
-        const counts = await apiGet('counts');
-        if(counts.requests !== empPendingRequestsBaseline){
-          newPendingRequests = Math.max(0, counts.requests - empPendingRequestsBaseline);
-          empPendingRequestsBaseline = counts.requests;
-          changed = true;
-        }
-      } catch(e){}
+    // also watch for new PENDING requests from OTHER employees —
+    // reuses the "requests" list already fetched above, so no extra
+    // call needed. Her own submissions don't count here; those are
+    // already covered separately by requestStatusChanged above.
+    if(hasMgmtRequestsAccess() && requests){
+      const pendingFromOthers = requests.filter(r => r.Status === 'pending' && r.EmployeeName !== CURRENT_EMPLOYEE.name).length;
+      if(pendingFromOthers !== empPendingRequestsBaseline){
+        newPendingRequests = Math.max(0, pendingFromOthers - empPendingRequestsBaseline);
+        empPendingRequestsBaseline = pendingFromOthers;
+        changed = true;
+      }
     }
 
     if(!changed) return; // nothing actually changed — skip the full reload
