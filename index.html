@@ -4260,13 +4260,14 @@ async function submitMyConcern(){
 
   if(editingConcernId){
     btnLoading('concernSubmitBtn', 'Updating...');
+    const From = anon ? "Anonymous" : CURRENT_EMPLOYEE.fullName;
     if(USE_REMOTE()){
-      const r = await apiPostMinDelay('editConcern', {id:editingConcernId, Topic, Details, CoworkerName, ConcernTypes, RequestCCTV, CCTVDate, CCTVTime});
+      const r = await apiPostMinDelay('editConcern', {id:editingConcernId, Topic, Details, From, Anonymous: anon, CoworkerName, ConcernTypes, RequestCCTV, CCTVDate, CCTVTime});
       if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('concernSubmitBtn','Update Concern'); return; }
       await refreshMyConcerns();
     } else {
       const c = MY_CONCERNS.find(x=>x.id===editingConcernId);
-      if(c){ c.topic = Topic; c.details = Details; }
+      if(c){ c.topic = Topic; c.details = Details; c.from = From; }
     }
     editingConcernId = null;
     await btnSent('concernSubmitBtn');
