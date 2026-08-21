@@ -4556,8 +4556,15 @@ async function deleteAnnouncementEntry(id, el){
 
 function renderAttendanceLogRows(){
   const q = attendanceSearchQuery.toLowerCase();
-  let filtered = ATTENDANCE_LOG.filter(a=>a.name.toLowerCase().includes(q))
-    .slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  let filtered = ATTENDANCE_LOG
+    .map((a, idx) => Object.assign({}, a, {_idx: idx})) // remember original position — newest entries are pushed to the end
+    .filter(a=>a.name.toLowerCase().includes(q))
+    .sort((a,b)=>{
+      const ak = (a.date||'') + ' ' + (a.time||'');
+      const bk = (b.date||'') + ' ' + (b.time||'');
+      if(ak !== bk) return bk.localeCompare(ak);
+      return b._idx - a._idx; // same date & time — whichever was logged more recently (added later) shows first
+    });
   if(!q) filtered = filtered.slice(0, 10); // keep the default view short — search shows everything that matches
   return filtered.map(a=>`<tr><td>${a.name}</td><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td><td><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteAttendanceEntry('${a.id}', this)">Delete</button></td></tr>`).join('')
     || `<tr><td colspan="6" class="muted">${attendanceSearchQuery ? 'No entries match that search.' : 'No entries logged yet.'}</td></tr>`;
