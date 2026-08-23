@@ -3509,16 +3509,20 @@ const BUILDERS = {
       </div>
       <div class="card table-scroll print-doc">
         <h3 class="no-print">Current Log <span class="muted" style="font-weight:400; font-size:13px;">— latest 10, search for more</span></h3>
-        <h3 class="print-only" style="display:none;">Attendance / Log Absence</h3>
-        <div class="no-print" style="display:flex; gap:8px; align-items:flex-start; margin-bottom:12px;">
-          <input type="text" id="attendanceSearch" placeholder="Search employee name..." value="${attendanceSearchQuery}" oninput="filterAttendanceLog(this.value)" style="flex:1; margin-bottom:0;">
-          <button class="btn ghost auto" style="white-space:nowrap;" onclick="printWithPageSettings('letter','portrait','0.75in')">🖨️ Print Log</button>
+        <h3 class="print-only" style="display:none;" id="attendancePrintTitle">Attendance / Log Absence</h3>
+        <div class="no-print" style="display:flex; gap:8px; align-items:flex-start; margin-bottom:12px; flex-wrap:wrap;">
+          <input type="text" id="attendanceSearch" placeholder="Search employee name..." value="${attendanceSearchQuery}" oninput="filterAttendanceLog(this.value)" style="flex:1; min-width:160px; margin-bottom:0;">
+          <select id="attendancePrintEmp" style="width:auto;">
+            <option value="">Print: All Employees</option>
+            ${EMPLOYEE_ROSTER.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(e=>`<option value="${e.name.replace(/"/g,'&quot;')}">Print: ${e.name}</option>`).join('')}
+          </select>
+          <button class="btn ghost auto" style="white-space:nowrap;" onclick="printAttendanceLog()">🖨️ Print Log</button>
         </div>
         <table class="no-print">
           <tr><th>Employee</th><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th><th>Logged By</th><th></th></tr>
           <tbody id="attendanceLogRows">${renderAttendanceLogRows()}</tbody>
         </table>
-        <table class="print-only" style="display:none;">
+        <table class="print-only" style="display:none;" id="attendancePrintTable">
           <tr><th>Employee</th><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th><th>Logged By</th></tr>
           ${renderAttendanceLogForPrint()}
         </table>
@@ -4767,11 +4771,28 @@ function renderAttendanceLogRows(){
 }
 /* Printed record shows every matching entry, not just the latest 10
    — the 10-item cap only exists to keep the live on-screen view
-   short, but a printout is meant to be a complete record. */
-function renderAttendanceLogForPrint(){
-  const filtered = sortedAttendanceLog();
+   short, but a printout is meant to be a complete record.
+   employeeFilter is independent of the on-screen search box, so
+   printing "for this employee" doesn't require first changing what
+   the live view shows. */
+function renderAttendanceLogForPrint(employeeFilter){
+  let filtered = ATTENDANCE_LOG
+    .map((a, idx) => Object.assign({}, a, {_idx: idx}))
+    .sort((a,b)=>{
+      const ak = (a.date||'') + ' ' + (a.time||'');
+      const bk = (b.date||'') + ' ' + (b.time||'');
+      if(ak !== bk) return bk.localeCompare(ak);
+      return b._idx - a._idx;
+    });
+  if(employeeFilter) filtered = filtered.filter(a => a.name === employeeFilter);
   return filtered.map(a=>`<tr><td>${a.name}</td><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td>${a.remarks||'—'}</td><td>${a.loggedBy||'—'}</td></tr>`).join('')
     || `<tr><td colspan="6">No entries logged yet.</td></tr>`;
+}
+function printAttendanceLog(){
+  const emp = document.getElementById('attendancePrintEmp').value;
+  document.getElementById('attendancePrintTitle').textContent = emp ? `Attendance / Log Absence — ${emp}` : 'Attendance / Log Absence — All Employees';
+  document.getElementById('attendancePrintTable').innerHTML = `<tr><th>Employee</th><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th><th>Logged By</th></tr>${renderAttendanceLogForPrint(emp)}`;
+  printWithPageSettings('letter','portrait','0.75in');
 }
 function filterAttendanceLog(val){
   attendanceSearchQuery = val;
