@@ -1227,6 +1227,13 @@ async function refreshMyRequests(){
     .filter(r => CURRENT_EMPLOYEE && r.EmployeeName === CURRENT_EMPLOYEE.name)
     .map(r => ({type:r.Type, date:r.Date, status:r.Status, id:r.ID, details:r.Details, swapDay:r.SwapDay, theirDay:r.TheirDay, swapWithName:r.SwapWithName}));
   MOCK.requests = MY_REQUESTS;
+  // Keep the polling baseline in sync too — otherwise a stale
+  // baseline (from login time, or before this refresh) makes the
+  // NEXT poll cycle think something changed even though it's just
+  // catching up to state that already existed, which is what was
+  // making an employee's own edit look like it triggered a
+  // notification about their own request.
+  empRequestsBaseline = myRequestsSnapshot();
 }
 async function refreshMyConcerns(){
   if(!USE_REMOTE()) return;
@@ -3205,7 +3212,12 @@ const BUILDERS = {
         <table>
           <tr><th>Type</th><th>Date</th><th>Status</th><th></th></tr>
           ${MOCK.requests.map(r=>`<tr><td>${r.type}${r.type==='Schedule Swap' && r.swapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.swapDay)}${r.theirDay && r.theirDay!==r.swapDay ? ' ↔ '+fmtDayLabel(r.theirDay) : ''} ↔ ${r.swapWithName}</span>` : ''}</td><td>${fmtDateTime(r.date)}</td><td>${statusPill(r.status)}</td>
-            <td>${r.status==='pending' ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditRequest('${r.id}')">Edit</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteMyRequest('${r.id}', this)">Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No requests yet.</td></tr>`}
+            <td>${(()=>{
+              const isNotice = r.type==='Absence / Call-Out Notice' || r.type==='Late / Tardiness Notice';
+              const canEdit = r.status==='pending' || (r.status==='needs-clarification' && isNotice);
+              const canDelete = r.status==='pending';
+              return `${canEdit ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditRequest('${r.id}')">Edit</button>` : ''}${canDelete ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteMyRequest('${r.id}', this)">Delete</button>` : ''}`;
+            })()}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No requests yet.</td></tr>`}
         </table>
       </div>
     </div>`,
@@ -4603,26 +4615,33 @@ async function setRequestStatus(id, status){
   renderView('mgmt-requests');
 
   if(USE_REMOTE()){
-    const r = await apiPost('updateRequestStatus', {id, status});
-    savingRequestIds.delete(id);
-    if(!r.ok){
-      if(req) req.Status = previousStatus; // revert since it didn't actually save
-      alert(r.error || "Couldn't update.");
-      renderView('mgmt-requests');
-      return;
-    }
-    // Adjust the alert baseline directly for THIS known change,
-    // instead of re-deriving it from a full reload — a reload here
-    // used to race with other concurrent status changes and could
-    // catch one of them mid-flight, misreporting it as a new
-    // incoming item to the next poll cycle.
-    if(previousStatus === 'pending' && status !== 'pending') mgmtAlertBaseline.requests = Math.max(0, mgmtAlertBaseline.requests - 1);
-    if(previousStatus !== 'pending' && status === 'pending') mgmtAlertBaseline.requests = mgmtAlertBaseline.requests + 1;
+    try{
+      const r = await apiPost('updateRequestStatus', {id, status});
+      savingRequestIds.delete(id);
+      if(!r.ok){
+        if(req) req.Status = previousStatus; // revert since it didn't actually save
+        alert(r.error || "Couldn't update.");
+        renderView('mgmt-requests');
+        return;
+      }
+      // Adjust the alert baseline directly for THIS known change,
+      // instead of re-deriving it from a full reload — a reload here
+      // used to race with other concurrent status changes and could
+      // catch one of them mid-flight, misreporting it as a new
+      // incoming item to the next poll cycle.
+      if(previousStatus === 'pending' && status !== 'pending') mgmtAlertBaseline.requests = Math.max(0, mgmtAlertBaseline.requests - 1);
+      if(previousStatus !== 'pending' && status === 'pending') mgmtAlertBaseline.requests = mgmtAlertBaseline.requests + 1;
 
-    if(req && req.Type === 'Schedule Swap'){
-      await refreshScheduleOnly(); // only a Schedule Swap actually touches the Schedule tab — refresh just that, not everything
+      if(req && req.Type === 'Schedule Swap'){
+        await refreshScheduleOnly(); // only a Schedule Swap actually touches the Schedule tab — refresh just that, not everything
+      }
+      renderView('mgmt-requests');
+    } catch(e){
+      savingRequestIds.delete(id);
+      if(req) req.Status = previousStatus; // revert — the request never actually reached the server
+      alert(e.message || "Couldn't update — please try again.");
+      renderView('mgmt-requests');
     }
-    renderView('mgmt-requests');
   } else {
     savingRequestIds.delete(id);
   }
