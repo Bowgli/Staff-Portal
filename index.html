@@ -1286,7 +1286,7 @@ async function loadRemoteData(){
     NEXT_SCHEDULE_DAYS = nextSchedule.days || [];
     NEXT_SCHEDULE_ROWS = nextSchedule.rows || [];
     NEXT_SCHEDULE_PUBLISHED = !!nextSchedule.published;
-    ATTENDANCE_LOG = attendance.map(a => ({name:a.EmployeeName, date:a.Day, time:a.Time, status:a.Status, remarks:a.Remarks, id:a.ID}));
+    ATTENDANCE_LOG = attendance.map(a => ({name:a.EmployeeName, date:a.Day, time:a.Time, status:a.Status, remarks:a.Remarks, id:a.ID, loggedBy:a.LoggedBy}));
     ALL_ANNOUNCEMENTS = announcements.slice().reverse();
     MOCK.announcements = ALL_ANNOUNCEMENTS.filter(a=>{
       if(!CURRENT_EMPLOYEE) return a.TargetType === 'All' || !a.TargetType;
@@ -1463,14 +1463,30 @@ async function startMgmtPolling(){
     if(newRequests > 0 || newConcerns > 0 || newSuggestions > 0 || newEvaluations > 0 || newDiscResponses > 0){
       if(soundAlertsEnabled()) playAlertTone();
       if(newRequests > 0){
-        const latestTypes = ALL_REQUESTS.filter(r=>r.Status==='pending').slice(0, newRequests).map(r=>r.Type);
-        const typeList = latestTypes.length ? latestTypes.join(', ') : '';
-        showMgmtToast('📝', 'New Request', `${newRequests} new: ${typeList || 'pending request'} — tap to view`, 'mgmt-requests');
+        const latest = ALL_REQUESTS.filter(r=>r.Status==='pending').slice(0, newRequests);
+        const detail = latest.length===1 ? `${latest[0].EmployeeName} — ${latest[0].Type}` : latest.map(r=>`${r.EmployeeName} (${r.Type})`).join(', ');
+        showMgmtToast('📝', newRequests===1?'New Request':`${newRequests} New Requests`, `${detail || 'A new request came in'} — tap to view`, 'mgmt-requests');
       }
-      if(newConcerns > 0) showMgmtToast('⚠️', 'New Concern', `${newConcerns} new open concern${newConcerns===1?'':'s'} — tap to view`, 'mgmt-concerns');
-      if(newSuggestions > 0) showMgmtToast('💡', 'New Suggestion', `${newSuggestions} new suggestion${newSuggestions===1?'':'s'} — tap to view`, 'mgmt-suggestions');
-      if(newEvaluations > 0) showMgmtToast('📋', 'New Evaluation', `${newEvaluations} new evaluation${newEvaluations===1?'':'s'} submitted — tap to view`, 'mgmt-performance');
-      if(newDiscResponses > 0) showMgmtToast('📁', 'New Employee Response', `${newDiscResponses} employee response${newDiscResponses===1?'':'s'} added to a case — tap to view`, 'mgmt-disciplinary');
+      if(newConcerns > 0){
+        const latest = MOCK.concernsLog.filter(c=>c.status==='Open').slice(0, newConcerns);
+        const detail = latest.length===1 ? `${latest[0].from} — ${latest[0].topic}` : latest.map(c=>c.topic).join(', ');
+        showMgmtToast('⚠️', newConcerns===1?'New Concern':`${newConcerns} New Concerns`, `${detail || 'A new concern was reported'} — tap to view`, 'mgmt-concerns');
+      }
+      if(newSuggestions > 0){
+        const latest = MOCK.suggestionsLog.filter(s=>s.status==='new').slice(0, newSuggestions);
+        const snippet = latest.length===1 ? (latest[0].idea||'').slice(0,60) : latest.map(s=>s.from).join(', ');
+        showMgmtToast('💡', newSuggestions===1?'New Suggestion':`${newSuggestions} New Suggestions`, `${snippet || 'A new idea was submitted'}${latest.length===1 && (latest[0].idea||'').length>60?'…':''} — tap to view`, 'mgmt-suggestions');
+      }
+      if(newEvaluations > 0){
+        const latest = ALL_EVALUATIONS.slice(0, newEvaluations);
+        const detail = latest.map(e=>e.EmployeeName).join(', ');
+        showMgmtToast('📋', newEvaluations===1?'New Evaluation':`${newEvaluations} New Evaluations`, `${detail || 'A new evaluation was submitted'} — tap to view`, 'mgmt-performance');
+      }
+      if(newDiscResponses > 0){
+        const latest = ALL_DISCIPLINARY_RECORDS.filter(d=>d.EmployeeResponse).slice(0, newDiscResponses);
+        const detail = latest.length===1 ? `${latest[0].EmployeeName} — ${latest[0].CaseNumber||'case'}` : latest.map(d=>d.EmployeeName).join(', ');
+        showMgmtToast('📁', newDiscResponses===1?'New Employee Response':`${newDiscResponses} New Employee Responses`, `${detail || 'A response was added to a case'} — tap to view`, 'mgmt-disciplinary');
+      }
     }
     renderNav();
     if(['mgmt-home','mgmt-requests','mgmt-concerns','mgmt-suggestions','mgmt-performance','mgmt-disciplinary'].includes(activeView)) renderView(activeView);
@@ -1533,12 +1549,20 @@ async function startEmpPolling(){
 
     let changed = false;
     let requestStatusChanged = false, scheduleJustPublished = false, discChanged = false, newAnnouncements = 0, newPendingRequests = 0;
+    let changedRequestDetail = '', newAnnouncementTitles = [], newPendingRequestNames = [];
 
     if(requests){
       const currentSnap = {};
       requests.forEach(r=>{ if(r.EmployeeName === CURRENT_EMPLOYEE.name) currentSnap[r.ID] = r.Status; });
       const ids = new Set([...Object.keys(currentSnap), ...Object.keys(empRequestsBaseline)]);
-      if([...ids].some(id => currentSnap[id] !== empRequestsBaseline[id])){ empRequestsBaseline = currentSnap; changed = true; requestStatusChanged = true; }
+      const changedIds = [...ids].filter(id => currentSnap[id] !== empRequestsBaseline[id]);
+      if(changedIds.length){
+        empRequestsBaseline = currentSnap;
+        changed = true;
+        requestStatusChanged = true;
+        const changedReq = requests.find(r=>r.ID===changedIds[0]);
+        if(changedReq) changedRequestDetail = `${changedReq.Type} — ${changedReq.Status}`;
+      }
     }
 
     if(nextSchedule){
@@ -1562,6 +1586,7 @@ async function startEmpPolling(){
 
     if(announcements && announcements.length !== empAnnouncementsBaseline){
       newAnnouncements = Math.max(0, announcements.length - empAnnouncementsBaseline);
+      newAnnouncementTitles = announcements.slice(0, newAnnouncements).map(a=>a.Title);
       empAnnouncementsBaseline = announcements.length;
       changed = true;
     }
@@ -1572,10 +1597,11 @@ async function startEmpPolling(){
     // call needed. Her own submissions don't count here; those are
     // already covered separately by requestStatusChanged above.
     if(hasMgmtRequestsAccess() && requests){
-      const pendingFromOthers = requests.filter(r => r.Status === 'pending' && r.EmployeeName !== CURRENT_EMPLOYEE.name).length;
-      if(pendingFromOthers !== empPendingRequestsBaseline){
-        newPendingRequests = Math.max(0, pendingFromOthers - empPendingRequestsBaseline);
-        empPendingRequestsBaseline = pendingFromOthers;
+      const othersPending = requests.filter(r => r.Status === 'pending' && r.EmployeeName !== CURRENT_EMPLOYEE.name);
+      if(othersPending.length !== empPendingRequestsBaseline){
+        newPendingRequests = Math.max(0, othersPending.length - empPendingRequestsBaseline);
+        newPendingRequestNames = othersPending.slice(0, newPendingRequests).map(r=>`${r.EmployeeName} (${r.Type})`);
+        empPendingRequestsBaseline = othersPending.length;
         changed = true;
       }
     }
@@ -1587,11 +1613,17 @@ async function startEmpPolling(){
     // Let them know something new arrived, wherever they currently are.
     const notifyWorthy = newAnnouncements > 0 || scheduleJustPublished || requestStatusChanged || discChanged || newPendingRequests > 0;
     if(notifyWorthy) playAlertTone();
-    if(newAnnouncements > 0) showMgmtToast('📢', 'New Announcement', `${newAnnouncements} new announcement${newAnnouncements===1?'':'s'} posted — tap to view`, 'announcements');
+    if(newAnnouncements > 0){
+      const title = newAnnouncementTitles.length===1 ? newAnnouncementTitles[0] : newAnnouncementTitles.join(', ');
+      showMgmtToast('📢', newAnnouncements===1?'New Announcement':`${newAnnouncements} New Announcements`, `${title || 'A new announcement was posted'} — tap to view`, 'announcements');
+    }
     if(scheduleJustPublished) showMgmtToast('📅', 'Schedule Published', 'Next week\'s schedule was just published — tap to view', 'schedule');
-    if(requestStatusChanged) showMgmtToast('📝', 'Request Updated', 'One of your requests was updated — tap to view', 'requests');
-    if(discChanged) showMgmtToast('📁', 'Record Updated', 'One of your records was updated — tap to view', 'my-disciplinary');
-    if(newPendingRequests > 0) showMgmtToast('📝', 'New Request', `${newPendingRequests} new pending request${newPendingRequests===1?'':'s'} — tap to view`, 'mgmt-requests');
+    if(requestStatusChanged) showMgmtToast('📝', 'Request Updated', `${changedRequestDetail || 'One of your requests was updated'} — tap to view`, 'requests');
+    if(discChanged) showMgmtToast('📁', 'Record Updated', 'A disciplinary case naming you was updated — tap to view', 'my-disciplinary');
+    if(newPendingRequests > 0){
+      const detail = newPendingRequestNames.length===1 ? newPendingRequestNames[0] : newPendingRequestNames.join(', ');
+      showMgmtToast('📝', newPendingRequests===1?'New Request':`${newPendingRequests} New Requests`, `${detail || 'A new request came in'} — tap to view`, 'mgmt-requests');
+    }
 
     if(['home','requests','schedule','my-disciplinary','announcements','mgmt-requests'].includes(activeView)) renderView(activeView);
   }, 45000); // check every 45 seconds
@@ -3479,7 +3511,7 @@ const BUILDERS = {
         <h3>Current Log <span class="muted" style="font-weight:400; font-size:13px;">— latest 10, search for more</span></h3>
         <input type="text" id="attendanceSearch" placeholder="Search employee name..." value="${attendanceSearchQuery}" oninput="filterAttendanceLog(this.value)" style="margin-bottom:12px;">
         <table>
-          <tr><th>Employee</th><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th><th></th></tr>
+          <tr><th>Employee</th><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th><th>Logged By</th><th></th></tr>
           <tbody id="attendanceLogRows">${renderAttendanceLogRows()}</tbody>
         </table>
       </div>
@@ -4718,8 +4750,8 @@ function renderAttendanceLogRows(){
       return b._idx - a._idx; // same date & time — whichever was logged more recently (added later) shows first
     });
   if(!q) filtered = filtered.slice(0, 10); // keep the default view short — search shows everything that matches
-  return filtered.map(a=>`<tr><td>${a.name}</td><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td><td><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteAttendanceEntry('${a.id}', this)">Delete</button></td></tr>`).join('')
-    || `<tr><td colspan="6" class="muted">${attendanceSearchQuery ? 'No entries match that search.' : 'No entries logged yet.'}</td></tr>`;
+  return filtered.map(a=>`<tr><td>${a.name}</td><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td><td class="muted">${a.loggedBy||'—'}</td><td><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteAttendanceEntry('${a.id}', this)">Delete</button></td></tr>`).join('')
+    || `<tr><td colspan="7" class="muted">${attendanceSearchQuery ? 'No entries match that search.' : 'No entries logged yet.'}</td></tr>`;
 }
 function filterAttendanceLog(val){
   attendanceSearchQuery = val;
@@ -4747,18 +4779,31 @@ async function submitAttendanceLog(){
   if(!name){ alert("Type a name and pick a real match from the suggestions."); return; }
   if(!date){ alert("Pick a date."); return; }
 
+  const loggedBy = CURRENT_USER.displayName || (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.fullName) || '';
   const btn = document.getElementById('logSubmitBtn');
   btn.disabled = true;
   btn.innerHTML = `<span class="btn-spinner"></span>Sending...`;
 
-  if(USE_REMOTE()){
-    await apiPostMinDelay('logAttendance', {employeeName:name, day:date, time, status, remarks});
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPostMinDelay('logAttendance', {employeeName:name, day:date, time, status, remarks, loggedBy});
+      if(!r.ok){
+        alert(r.error || "Couldn't save the entry — please try again.");
+        btn.disabled = false;
+        btn.innerHTML = 'Log Entry';
+        return;
+      }
+    }
+    ATTENDANCE_LOG = ATTENDANCE_LOG.filter(a => !(a.name===name && a.date===date));
+    ATTENDANCE_LOG.push({name, date, time, status, remarks, loggedBy});
+    btn.innerHTML = `✓ Sent`;
+    await new Promise(r=>setTimeout(r, 600));
+    renderView('mgmt-attendance');
+  } catch(e){
+    alert(e.message || "Couldn't save the entry — please try again.");
+    btn.disabled = false;
+    btn.innerHTML = 'Log Entry';
   }
-  ATTENDANCE_LOG = ATTENDANCE_LOG.filter(a => !(a.name===name && a.date===date));
-  ATTENDANCE_LOG.push({name, date, time, status, remarks});
-  btn.innerHTML = `✓ Sent`;
-  await new Promise(r=>setTimeout(r, 600));
-  renderView('mgmt-attendance');
 }
 
 /* ============================================================
