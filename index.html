@@ -2969,9 +2969,9 @@ function topAttendanceCharts(){
       </div>
     </div>
     <div class="grid grid-3" style="margin-bottom:16px;">
-    ${topStatusChart(filteredLog, '📊', 'Absent', 'Most Absences', 5, 'var(--red)')}
-    ${topStatusChart(filteredLog, '⏰', 'Late', 'Most Late', 5, 'var(--gold)')}
-    ${topStatusChart(filteredLog, '🕐', 'Undertime', 'Most Undertime', 5, 'var(--blue)')}
+    ${topStatusChart(filteredLog, '📊', 'Absent', '20 – Most Absences', 20, 'var(--red)')}
+    ${topStatusChart(filteredLog, '⏰', 'Late', '20 – Most Late', 20, 'var(--gold)')}
+    ${topStatusChart(filteredLog, '🕐', 'Undertime', '20 – Most Undertime', 20, 'var(--blue)')}
     </div>`;
 }
 
@@ -3492,7 +3492,7 @@ const BUILDERS = {
     const localTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
     return `
     <div class="grid grid-2" style="margin-bottom:16px;">
-      <div class="card">
+      <div class="card no-print">
         <h3><span class="ic">🕐</span> Log an Entry</h3>
         <p class="muted">This is the equivalent of adding a row to the Attendance tab in the Sheet — the employee sees it on their own dashboard right away.</p>
         <label>Employee</label>
@@ -3507,16 +3507,24 @@ const BUILDERS = {
         <textarea id="logRemarks" placeholder="Optional note..."></textarea>
         <button class="btn" id="logSubmitBtn" onclick="submitAttendanceLog()">Log Entry</button>
       </div>
-      <div class="card table-scroll">
-        <h3>Current Log <span class="muted" style="font-weight:400; font-size:13px;">— latest 10, search for more</span></h3>
-        <input type="text" id="attendanceSearch" placeholder="Search employee name..." value="${attendanceSearchQuery}" oninput="filterAttendanceLog(this.value)" style="margin-bottom:12px;">
-        <table>
+      <div class="card table-scroll print-doc">
+        <h3 class="no-print">Current Log <span class="muted" style="font-weight:400; font-size:13px;">— latest 10, search for more</span></h3>
+        <h3 class="print-only" style="display:none;">Attendance / Log Absence</h3>
+        <div class="no-print" style="display:flex; gap:8px; align-items:flex-start; margin-bottom:12px;">
+          <input type="text" id="attendanceSearch" placeholder="Search employee name..." value="${attendanceSearchQuery}" oninput="filterAttendanceLog(this.value)" style="flex:1; margin-bottom:0;">
+          <button class="btn ghost auto" style="white-space:nowrap;" onclick="printWithPageSettings('letter','portrait','0.75in')">🖨️ Print Log</button>
+        </div>
+        <table class="no-print">
           <tr><th>Employee</th><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th><th>Logged By</th><th></th></tr>
           <tbody id="attendanceLogRows">${renderAttendanceLogRows()}</tbody>
         </table>
+        <table class="print-only" style="display:none;">
+          <tr><th>Employee</th><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th><th>Logged By</th></tr>
+          ${renderAttendanceLogForPrint()}
+        </table>
       </div>
     </div>
-    ${topAttendanceCharts()}`;
+    <div class="no-print">${topAttendanceCharts()}</div>`;
   },
 
   "mgmt-performance": ()=>{
@@ -3682,7 +3690,7 @@ const BUILDERS = {
 
     <div class="card" style="margin-bottom:16px;">
       <h3>Policy / Rule Involved</h3>
-      <input type="text" id="discPolicy" placeholder="Which company policy, procedure, rule, or expectation applies">
+      <textarea id="discPolicy" rows="3" placeholder="Which company policy, procedure, rule, or expectation applies"></textarea>
     </div>
 
     <div class="card" style="margin-bottom:16px;">
@@ -3791,7 +3799,7 @@ const BUILDERS = {
         <label>Description of Incident</label>
         <textarea id="discEditDescription" rows="5">${d.Description||''}</textarea>
         <label>Policy / Rule Involved</label>
-        <input type="text" id="discEditPolicy" value="${d.PolicyInvolved||''}">
+        <textarea id="discEditPolicy" rows="3">${d.PolicyInvolved||''}</textarea>
         <label>Witnesses</label>
         <input type="text" id="discEditWitnesses" value="${d.Witnesses||''}">
         <p id="discEditIncidentErr" class="login-err"></p>
@@ -4738,9 +4746,9 @@ async function deleteAnnouncementEntry(id, el){
   });
 }
 
-function renderAttendanceLogRows(){
+function sortedAttendanceLog(){
   const q = attendanceSearchQuery.toLowerCase();
-  let filtered = ATTENDANCE_LOG
+  return ATTENDANCE_LOG
     .map((a, idx) => Object.assign({}, a, {_idx: idx})) // remember original position — newest entries are pushed to the end
     .filter(a=>a.name.toLowerCase().includes(q))
     .sort((a,b)=>{
@@ -4749,9 +4757,21 @@ function renderAttendanceLogRows(){
       if(ak !== bk) return bk.localeCompare(ak);
       return b._idx - a._idx; // same date & time — whichever was logged more recently (added later) shows first
     });
+}
+function renderAttendanceLogRows(){
+  let filtered = sortedAttendanceLog();
+  const q = attendanceSearchQuery.toLowerCase();
   if(!q) filtered = filtered.slice(0, 10); // keep the default view short — search shows everything that matches
   return filtered.map(a=>`<tr><td>${a.name}</td><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td><td class="muted">${a.loggedBy||'—'}</td><td><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteAttendanceEntry('${a.id}', this)">Delete</button></td></tr>`).join('')
     || `<tr><td colspan="7" class="muted">${attendanceSearchQuery ? 'No entries match that search.' : 'No entries logged yet.'}</td></tr>`;
+}
+/* Printed record shows every matching entry, not just the latest 10
+   — the 10-item cap only exists to keep the live on-screen view
+   short, but a printout is meant to be a complete record. */
+function renderAttendanceLogForPrint(){
+  const filtered = sortedAttendanceLog();
+  return filtered.map(a=>`<tr><td>${a.name}</td><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td>${a.remarks||'—'}</td><td>${a.loggedBy||'—'}</td></tr>`).join('')
+    || `<tr><td colspan="6">No entries logged yet.</td></tr>`;
 }
 function filterAttendanceLog(val){
   attendanceSearchQuery = val;
