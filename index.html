@@ -1225,7 +1225,7 @@ async function refreshMyRequests(){
   ALL_REQUESTS = requests;
   MY_REQUESTS = ALL_REQUESTS
     .filter(r => CURRENT_EMPLOYEE && r.EmployeeName === CURRENT_EMPLOYEE.name)
-    .map(r => ({type:r.Type, date:r.Date, status:r.Status, id:r.ID, details:r.Details, swapDay:r.SwapDay, theirDay:r.TheirDay, swapWithName:r.SwapWithName}));
+    .map(r => ({type:r.Type, date:r.Date, status:r.Status, id:r.ID, details:r.Details, swapDay:r.SwapDay, theirDay:r.TheirDay, swapWithName:r.SwapWithName, reasonForAbsence:r.ReasonForAbsence, minutesLate:r.MinutesLate, shiftSchedule:r.ShiftSchedule}));
   MOCK.requests = MY_REQUESTS;
   // Keep the polling baseline in sync too — otherwise a stale
   // baseline (from login time, or before this refresh) makes the
@@ -1305,7 +1305,7 @@ async function loadRemoteData(){
     MY_DISCIPLINARY_RECORDS = myDisciplinaryRaw.slice().reverse();
     ALL_FORMS = formsLibrary.slice().reverse();
     MOCK.requests = requests.filter(r => r.EmployeeName === (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.name))
-      .map(r => ({type:r.Type, date:r.Date, status:r.Status, id:r.ID, details:r.Details, swapDay:r.SwapDay, theirDay:r.TheirDay, swapWithName:r.SwapWithName}));
+      .map(r => ({type:r.Type, date:r.Date, status:r.Status, id:r.ID, details:r.Details, swapDay:r.SwapDay, theirDay:r.TheirDay, swapWithName:r.SwapWithName, reasonForAbsence:r.ReasonForAbsence, minutesLate:r.MinutesLate, shiftSchedule:r.ShiftSchedule}));
     ALL_REQUESTS = requests.slice().reverse();
     EMPLOYEE_ACCOUNTS.length = 0;
     accountsStatus.forEach(a => EMPLOYEE_ACCOUNTS.push({employeeName:a.employeeName, fullName:a.fullName, username:a.username, role:"employee"}));
@@ -3201,7 +3201,7 @@ const BUILDERS = {
           </div>
           <div id="swapPreview" class="banner note" style="margin-top:4px; margin-bottom:14px; display:none;"></div>
         </div>
-        <label id="reqDetailsLabel">Details</label>
+        <label>Details</label>
         <textarea id="reqDetails" placeholder="Describe your request..."></textarea>
         <button class="btn" id="reqSubmitBtn" onclick="submitMyRequest()">Submit Request</button>
         <p class="login-err" id="reqErr"></p>
@@ -3211,13 +3211,15 @@ const BUILDERS = {
         <h3>Your Request History</h3>
         <table>
           <tr><th>Type</th><th>Date</th><th>Status</th><th></th></tr>
-          ${MOCK.requests.map(r=>`<tr><td>${r.type}${r.type==='Schedule Swap' && r.swapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.swapDay)}${r.theirDay && r.theirDay!==r.swapDay ? ' ↔ '+fmtDayLabel(r.theirDay) : ''} ↔ ${r.swapWithName}</span>` : ''}</td><td>${fmtDateTime(r.date)}</td><td>${statusPill(r.status)}</td>
+          ${MOCK.requests.map(r=>{
+            const isNotice = r.type==='Absence / Call-Out Notice' || r.type==='Late / Tardiness Notice';
+            return `<tr><td>${r.type}${r.type==='Schedule Swap' && r.swapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.swapDay)}${r.theirDay && r.theirDay!==r.swapDay ? ' ↔ '+fmtDayLabel(r.theirDay) : ''} ↔ ${r.swapWithName}</span>` : ''}</td><td>${fmtDateTime(r.date)}</td><td>${statusPill(r.status)}</td>
             <td>${(()=>{
-              const isNotice = r.type==='Absence / Call-Out Notice' || r.type==='Late / Tardiness Notice';
               const canEdit = r.status==='pending' || (r.status==='needs-clarification' && isNotice);
               const canDelete = r.status==='pending';
               return `${canEdit ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditRequest('${r.id}')">Edit</button>` : ''}${canDelete ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteMyRequest('${r.id}', this)">Delete</button>` : ''}`;
-            })()}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No requests yet.</td></tr>`}
+            })()}</td></tr>`;
+          }).join('') || `<tr><td colspan="4" class="muted">No requests yet.</td></tr>`}
         </table>
       </div>
     </div>`,
@@ -4110,8 +4112,12 @@ function toggleSwapFields(){
   const isSwap = type === 'Schedule Swap';
   document.getElementById('swapFields').style.display = isSwap ? 'block' : 'none';
   if(isSwap) updateSwapPreview();
-  const isNotice = type === 'Absence / Call-Out Notice' || type === 'Late / Tardiness Notice';
-  document.getElementById('reqDetails').placeholder = isNotice ? 'Describe your notice...' : 'Describe your request...';
+
+  const placeholders = {
+    'Absence / Call-Out Notice': 'Reason for Absence / Shift Schedule',
+    'Late / Tardiness Notice': 'Describe Your Notice / Minutes Late / Shift Schedule',
+  };
+  document.getElementById('reqDetails').placeholder = placeholders[type] || 'Describe your request...';
 }
 
 function toggleDiffDay(){
