@@ -4552,7 +4552,7 @@ async function reviewSuggestion(id, el){
     if(USE_REMOTE()){
       const r = await apiPost('updateSuggestionStatus', {id, status:"reviewed"});
       if(!r.ok){ alert(r.error || "Couldn't update."); btnResetEl(el); return; }
-      if(s && s.status === 'new') mgmtAlertBaseline.suggestions = Math.max(0, mgmtAlertBaseline.suggestions - 1);
+      if(mgmtAlertBaseline && s && s.status === 'new') mgmtAlertBaseline.suggestions = Math.max(0, mgmtAlertBaseline.suggestions - 1);
     }
     if(s) s.status = "reviewed";
     renderView('mgmt-suggestions');
@@ -4585,7 +4585,7 @@ async function saveConcernInvestigation(){
     if(USE_REMOTE()){
       const r = await apiPost('updateConcernInvestigation', fields);
       if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnResetEl(btn); return; }
-      if(c && c.status === 'Open' && status !== 'Open') mgmtAlertBaseline.concerns = Math.max(0, mgmtAlertBaseline.concerns - 1);
+      if(mgmtAlertBaseline && c && c.status === 'Open' && status !== 'Open') mgmtAlertBaseline.concerns = Math.max(0, mgmtAlertBaseline.concerns - 1);
     }
     if(c){ c.status = status; c.investigationNotes = fields.InvestigationNotes; c.investigatedBy = fields.InvestigatedBy; c.actionTaken = fields.ActionTaken; }
     await btnSentEl(btn, 'Saved');
@@ -4638,8 +4638,10 @@ async function setRequestStatus(id, status){
       // used to race with other concurrent status changes and could
       // catch one of them mid-flight, misreporting it as a new
       // incoming item to the next poll cycle.
-      if(previousStatus === 'pending' && status !== 'pending') mgmtAlertBaseline.requests = Math.max(0, mgmtAlertBaseline.requests - 1);
-      if(previousStatus !== 'pending' && status === 'pending') mgmtAlertBaseline.requests = mgmtAlertBaseline.requests + 1;
+      if(mgmtAlertBaseline){
+        if(previousStatus === 'pending' && status !== 'pending') mgmtAlertBaseline.requests = Math.max(0, mgmtAlertBaseline.requests - 1);
+        if(previousStatus !== 'pending' && status === 'pending') mgmtAlertBaseline.requests = mgmtAlertBaseline.requests + 1;
+      }
 
       if(req && req.Type === 'Schedule Swap'){
         await refreshScheduleOnly(); // only a Schedule Swap actually touches the Schedule tab — refresh just that, not everything
