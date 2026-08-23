@@ -3109,8 +3109,8 @@ const BUILDERS = {
       <h3><span class="ic">🕐</span> Attendance Log</h3>
       <p class="muted" style="margin-bottom:12px;">Entries logged by management. Nothing shows here unless something was recorded for a specific date.</p>
       <table>
-        <tr><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th></tr>
-        ${myLog.map(w=>`<tr><td>${fmtLogDate(w.date)}</td><td class="mono">${fmtLogTime(w.time)}</td><td>${attendancePill(w.status)}</td><td class="muted">${w.remarks||'—'}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No entries logged yet.</td></tr>`}
+        <tr><th>Date</th><th>Time</th><th>Status</th></tr>
+        ${myLog.map(w=>`<tr><td>${fmtLogDate(w.date)}</td><td class="mono">${fmtLogTime(w.time)}</td><td>${attendancePill(w.status)}</td></tr>`).join('') || `<tr><td colspan="3" class="muted">No entries logged yet.</td></tr>`}
       </table>
     </div>`;
   },
