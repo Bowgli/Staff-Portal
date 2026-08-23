@@ -143,6 +143,8 @@
   .status-select.pending{background:var(--gold-soft); color:var(--gold); border-color:rgba(201,162,75,.4);}
   .status-select.approved{background:var(--teal-soft); color:var(--teal); border-color:rgba(79,167,124,.4);}
   .status-select.declined{background:var(--red-soft); color:var(--red); border-color:rgba(197,88,74,.4);}
+  .status-select.acknowledged{background:var(--blue-soft); color:var(--blue); border-color:rgba(91,143,199,.4);}
+  .status-select.needs-clarification{background:var(--red-soft); color:var(--red); border-color:rgba(197,88,74,.4);}
   .pill.info{background:var(--blue-soft); color:var(--blue);}
   .pill::before{content:''; width:6px; height:6px; border-radius:50%; background:currentColor;}
 
@@ -1958,7 +1960,7 @@ function setRole(role){
    Disciplinary Records
    ============================================================ */
 const DISC_VIOLATION_TYPES = ["Attendance / Tardiness","Absence","Undertime","Work Performance","Company Policy","Workplace Conduct","Customer Service","Safety","Insubordination","Phone / Mobile Device Usage","Other"];
-const DISC_CONCERN_TYPES = ["Abusive Behavior","Disrespectful Attitude","Threatening Behavior","Refusal to Follow Policy and Procedure","Creating Disturbance to Customer"];
+const DISC_CONCERN_TYPES = ["Abusive Behavior","Disrespectful Attitude","Threatening Behavior","Refusal to Follow Policy and Procedure","Creating Disturbance to Customer","Threatening or Intimidating Behavior","Verbal Altercation / Argument","Aggressive or Confrontational Behavior","Inappropriate Language or Comments","Disruptive Behavior","Failure to Follow Supervisor Instructions","Violation of Workplace Rules","Failure to Perform Assigned Duties","Attendance or Punctuality Concern","Uncooperative Behavior","Workplace Conflict","Inappropriate Interaction with Customer","Customer Complaint Regarding Employee","Other"];
 const DISC_CUSTOMER_CONCERN_TYPES = ["Abusive Behavior / Shouting at Staff","Disrespectful Attitude","Threatening Behavior","Intoxicated / Drunk Customer","Refusal to Follow House Rules","Creating Disturbance to other Guests"];
 const CONCERN_STATUSES = ["Open","Under Investigation","Resolved","No Action Needed"];
 function concernStatusPill(status){
@@ -2556,7 +2558,7 @@ const MGMT_ROLE_PERMISSIONS = {
   full: null,
   limited: { hiddenViews: ['mgmt-accounts', 'mgmt-concerns'] },
   "shift-manager": { allowedViews: ['mgmt-home','mgmt-schedule','mgmt-attendance','mgmt-performance','mgmt-forms','mgmt-requests','mgmt-disciplinary','mgmt-disciplinary-new','mgmt-concerns','mgmt-concern-detail'] },
-  "supervisor": { allowedViews: ['mgmt-home','mgmt-attendance','mgmt-forms'] },
+  "supervisor": { allowedViews: ['mgmt-home','mgmt-attendance','mgmt-forms','mgmt-requests'] },
 };
 /* Extra nav items layered onto a Shift Manager's / Supervisor's OWN
    employee portal — their primary view is still their own Schedule,
@@ -2574,6 +2576,7 @@ const MGMT_EXTRA_NAV_ITEMS = {
   "supervisor": [
     {id:"mgmt-attendance", ic:"🕐", label:"Attendance / Log Absence"},
     {id:"mgmt-forms", ic:"🖨️", label:"Forms Library"},
+    {id:"mgmt-requests", ic:"📝", label:"Manage Requests"},
   ],
 };
 function currentMgmtRole(){
@@ -2934,8 +2937,9 @@ function topAttendanceCharts(){
 }
 
 function statusPill(status){
-  const map = {"approved":"ok","done":"ok","Active":"ok","pending":"warn","open":"bad","resolved":"ok","On Leave":"bad","declined":"bad"};
-  return `<span class="pill ${map[status]||'ok'}">${status}</span>`;
+  const map = {"approved":"ok","done":"ok","Active":"ok","pending":"warn","open":"bad","resolved":"ok","On Leave":"bad","declined":"bad","acknowledged":"ok","needs-clarification":"warn"};
+  const labels = {"acknowledged":"Acknowledged","needs-clarification":"Needs Clarification"};
+  return `<span class="pill ${map[status]||'ok'}">${labels[status]||status}</span>`;
 }
 
 const BUILDERS = {
@@ -3177,7 +3181,7 @@ const BUILDERS = {
       <div class="card">
         <h3><span class="ic">📝</span> File a Request</h3>
         <label>Request type</label>
-        <select id="reqType" onchange="toggleSwapFields()"><option>Leave Request</option><option>Schedule Swap</option><option>Uniform Replacement</option><option>Certificate of Employment (COE)</option><option>Other</option></select>
+        <select id="reqType" onchange="toggleSwapFields()"><option>Leave Request</option><option>Schedule Swap</option><option>Uniform Replacement</option><option>Certificate of Employment (COE)</option><option>Absence / Call-Out Notice</option><option>Late / Tardiness Notice</option><option>Other</option></select>
         <div id="swapFields" style="display:none;">
           <label>Your day to give up</label>
           <select id="reqSwapDay" onchange="syncTheirDayDefault(); updateSwapPreview()">${SCHEDULE_DAYS.map(d=>`<option value="${d}">${fmtDayLabel(d)}</option>`).join('')}</select>
@@ -3190,7 +3194,7 @@ const BUILDERS = {
           </div>
           <div id="swapPreview" class="banner note" style="margin-top:4px; margin-bottom:14px; display:none;"></div>
         </div>
-        <label>Details</label>
+        <label id="reqDetailsLabel">Details</label>
         <textarea id="reqDetails" placeholder="Describe your request..."></textarea>
         <button class="btn" id="reqSubmitBtn" onclick="submitMyRequest()">Submit Request</button>
         <p class="login-err" id="reqErr"></p>
@@ -3919,6 +3923,8 @@ const BUILDERS = {
               <option value="pending" ${r.Status==='pending'?'selected':''}>Pending</option>
               <option value="approved" ${r.Status==='approved'?'selected':''}>Approved</option>
               <option value="declined" ${r.Status==='declined'?'selected':''}>Declined</option>
+              <option value="acknowledged" ${r.Status==='acknowledged'?'selected':''}>Acknowledged</option>
+              <option value="needs-clarification" ${r.Status==='needs-clarification'?'selected':''}>Needs Clarification</option>
             </select>`}
           </td></tr>`).join('') || `<tr><td colspan="5" class="muted">No requests yet.</td></tr>`}
       </table>
@@ -4088,9 +4094,12 @@ function toggleConcernCCTVFields(){
 }
 
 function toggleSwapFields(){
-  const isSwap = document.getElementById('reqType').value === 'Schedule Swap';
+  const type = document.getElementById('reqType').value;
+  const isSwap = type === 'Schedule Swap';
   document.getElementById('swapFields').style.display = isSwap ? 'block' : 'none';
   if(isSwap) updateSwapPreview();
+  const isNotice = type === 'Absence / Call-Out Notice' || type === 'Late / Tardiness Notice';
+  document.getElementById('reqDetails').placeholder = isNotice ? 'Describe your notice...' : 'Describe your request...';
 }
 
 function toggleDiffDay(){
