@@ -3929,7 +3929,7 @@ const BUILDERS = {
       <h3><span class="ic">📝</span> All Requests</h3>
       <p class="muted" style="margin-bottom:12px;">Status can be changed anytime — handy for an accidental click or if the staff member changes their mind on a swap.</p>
       <table>
-        <tr><th>Employee</th><th>Type</th><th>Details</th><th>Date</th><th>Status</th></tr>
+        <tr><th>Employee</th><th>Type</th><th>Details</th><th>Date</th><th>Status</th><th>Action By</th></tr>
         ${ALL_REQUESTS.map(r=>`<tr><td>${r.EmployeeName}</td><td>${r.Type}${r.Type==='Schedule Swap' && r.SwapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.SwapDay)}${r.TheirDay && r.TheirDay!==r.SwapDay ? ' ↔ '+fmtDayLabel(r.TheirDay) : ''} ↔ ${r.SwapWithName}</span>` : ''}</td><td class="muted">${r.Details||''}</td><td>${fmtDateTime(r.Date)}</td>
           <td>
             ${savingRequestIds.has(r.ID) ? `<span class="btn-spinner"></span><span class="muted" style="font-size:12px;">Saving...</span>` : `
@@ -3940,7 +3940,8 @@ const BUILDERS = {
               <option value="acknowledged" ${r.Status==='acknowledged'?'selected':''}>Acknowledged</option>
               <option value="needs-clarification" ${r.Status==='needs-clarification'?'selected':''}>Needs Clarification</option>
             </select>`}
-          </td></tr>`).join('') || `<tr><td colspan="5" class="muted">No requests yet.</td></tr>`}
+          </td>
+          <td class="muted">${r.Status !== 'pending' && r.ActionBy ? r.ActionBy : '—'}</td></tr>`).join('') || `<tr><td colspan="6" class="muted">No requests yet.</td></tr>`}
       </table>
     </div>`,
 
@@ -4616,16 +4617,18 @@ async function refreshScheduleOnly(){
 async function setRequestStatus(id, status){
   const req = ALL_REQUESTS.find(r=>r.ID===id);
   const previousStatus = req ? req.Status : null;
-  if(req) req.Status = status; // optimistic — this IS the correct value once the write below succeeds, no need to re-fetch it
+  const previousActionBy = req ? req.ActionBy : null;
+  const actionBy = CURRENT_USER.displayName || (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.fullName) || '';
+  if(req){ req.Status = status; req.ActionBy = actionBy; } // optimistic — this IS the correct value once the write below succeeds, no need to re-fetch it
   savingRequestIds.add(id);
   renderView('mgmt-requests');
 
   if(USE_REMOTE()){
     try{
-      const r = await apiPost('updateRequestStatus', {id, status});
+      const r = await apiPost('updateRequestStatus', {id, status, actionBy});
       savingRequestIds.delete(id);
       if(!r.ok){
-        if(req) req.Status = previousStatus; // revert since it didn't actually save
+        if(req){ req.Status = previousStatus; req.ActionBy = previousActionBy; } // revert since it didn't actually save
         alert(r.error || "Couldn't update.");
         renderView('mgmt-requests');
         return;
@@ -4644,7 +4647,7 @@ async function setRequestStatus(id, status){
       renderView('mgmt-requests');
     } catch(e){
       savingRequestIds.delete(id);
-      if(req) req.Status = previousStatus; // revert — the request never actually reached the server
+      if(req){ req.Status = previousStatus; req.ActionBy = previousActionBy; } // revert — the request never actually reached the server
       alert(e.message || "Couldn't update — please try again.");
       renderView('mgmt-requests');
     }
