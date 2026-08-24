@@ -279,6 +279,13 @@
        printout to black, not just table cells and headings. */
     .print-doc, .print-doc p, .print-doc span, .print-doc div{ color:#000 !important; }
     .print-only{ display:block !important; }
+    /* table-related elements need their proper table display value,
+       not block — a <td>/<th> forced to display:block breaks out of
+       the row's column layout entirely, which is what was causing
+       the Status column to misalign with a stray gap before Action By */
+    table.print-only{ display:table !important; }
+    tr.print-only{ display:table-row !important; }
+    th.print-only, td.print-only{ display:table-cell !important; }
   }
   .print-only{ display:none; }
 </style>
