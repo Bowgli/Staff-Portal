@@ -71,7 +71,8 @@
     }
     .sidebar.mobile-open{transform:translateX(0);}
     .content{padding:20px 16px 60px;}
-    .topbar{padding:0 16px; gap:10px;}
+    .topbar{padding:10px 16px; gap:10px; height:auto; min-height:66px;}
+    .topbar h2{font-size:16px; white-space:normal; word-break:break-word; line-height:1.25;}
     .who-name, .who-role{display:none;}
     .grid-4, .grid-3, .grid-2{grid-template-columns:1fr;}
     .grid-7{grid-template-columns:repeat(2,1fr);}
@@ -359,7 +360,7 @@
     <div class="topbar">
       <div style="display:flex; align-items:center; gap:12px;">
         <button class="hamburger-btn" onclick="toggleMobileSidebar()" aria-label="Menu">☰</button>
-        <div>
+        <div style="min-width:0; flex:1;">
           <h2 id="viewTitle">Home</h2>
           <p class="sub" id="viewSub">Welcome back</p>
         </div>
@@ -399,6 +400,31 @@
     <div class="modal-btns">
       <button class="btn ghost" onclick="closeAcctModal()">Cancel</button>
       <button class="btn" onclick="confirmAcctModal()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="addEmpModal">
+  <div class="modal-box">
+    <h3>Add Employee</h3>
+    <p class="muted">Adds a new row to the Staff Directory — assign them a login separately from Manage Accounts.</p>
+    <label>Full Name</label>
+    <input type="text" id="addEmpName" placeholder="e.g. Juan Dela Cruz">
+    <label>Position</label>
+    <input type="text" id="addEmpPosition" placeholder="e.g. Cashier">
+    <label>Status</label>
+    <select id="addEmpStatus">
+      <option>Active</option>
+      <option>Under Probation</option>
+      <option>Inactive</option>
+      <option>On Leave</option>
+    </select>
+    <label>Date Hired <span class="muted">(optional)</span></label>
+    <input type="date" id="addEmpDateHired">
+    <p class="login-err" id="addEmpErr"></p>
+    <div class="modal-btns">
+      <button class="btn ghost" onclick="closeAddEmpModal()">Cancel</button>
+      <button class="btn" id="addEmpSaveBtn" onclick="confirmAddEmpModal()">Add Employee</button>
     </div>
   </div>
 </div>
@@ -569,6 +595,7 @@ let perfFilterMonth = 'All';
 let perfFilterYear = 'All';
 let perfSearchQuery = '';
 let employeesSearchQuery = '';
+let reqFilter = { employee:'', type:'All', status:'All', dateFrom:'', dateTo:'' };
 let accountsSearchQuery = '';
 function setPerfFilter(type, val){
   if(type==='month') perfFilterMonth = val;
@@ -591,6 +618,21 @@ function setEmployeesSearch(val){
   renderView('mgmt-employees');
   const input = document.querySelector('#content input[placeholder^="🔍"]');
   if(input){ input.focus(); if(cursorPos != null) input.setSelectionRange(cursorPos, cursorPos); }
+}
+function setReqFilter(field, val){
+  reqFilter[field] = val;
+  if(field === 'employee'){
+    const cursorPos = document.activeElement && document.activeElement.selectionStart;
+    renderView('mgmt-requests');
+    const input = document.querySelector('#content input[placeholder="Search employee name..."]');
+    if(input){ input.focus(); if(cursorPos != null) input.setSelectionRange(cursorPos, cursorPos); }
+  } else {
+    renderView('mgmt-requests');
+  }
+}
+function resetReqFilter(){
+  reqFilter = { employee:'', type:'All', status:'All', dateFrom:'', dateTo:'' };
+  renderView('mgmt-requests');
 }
 function setAccountsSearch(val){
   accountsSearchQuery = val;
@@ -1280,7 +1322,7 @@ async function loadRemoteData(){
       safeApiGet('formsLibrary', [])
     ]);
     EMPLOYEE_ROSTER.length = 0;
-    roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, position:r.Position, status:r.Status||"Active", attendance:"—"}));
+    roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, position:r.Position, status:r.Status||"Active", attendance:"—", dateHired:r.DateHired||''}));
     SCHEDULE_DAYS = schedule.days || [];
     SCHEDULE_ROWS = schedule.rows || [];
     NEXT_SCHEDULE_DAYS = nextSchedule.days || [];
@@ -1679,6 +1721,104 @@ function openResetModal(employeeName){
   document.getElementById('acctModal').classList.add('active');
 }
 function closeAcctModal(){ document.getElementById('acctModal').classList.remove('active'); acctModalTarget=null; }
+
+function openAddEmpModal(){
+  document.getElementById('addEmpName').value = '';
+  document.getElementById('addEmpPosition').value = '';
+  document.getElementById('addEmpStatus').value = 'Active';
+  document.getElementById('addEmpDateHired').value = '';
+  document.getElementById('addEmpErr').style.display = 'none';
+  document.getElementById('addEmpModal').classList.add('active');
+}
+function closeAddEmpModal(){ document.getElementById('addEmpModal').classList.remove('active'); }
+async function confirmAddEmpModal(){
+  const name = document.getElementById('addEmpName').value.trim();
+  const position = document.getElementById('addEmpPosition').value.trim();
+  const status = document.getElementById('addEmpStatus').value;
+  const dateHired = document.getElementById('addEmpDateHired').value;
+  const err = document.getElementById('addEmpErr');
+  err.style.display = 'none';
+  if(!name){ err.textContent = "Name is required."; err.style.display='block'; return; }
+  const btn = document.getElementById('addEmpSaveBtn');
+  btnLoadingEl(btn, 'Adding...');
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPost('addEmployee', {name, position, status, dateHired});
+      if(!r.ok){ err.textContent = r.error || "Couldn't add employee."; err.style.display='block'; btnResetEl(btn); return; }
+    }
+    EMPLOYEE_ROSTER.push({name, position, status, attendance:'—', dateHired});
+    await btnSentEl(btn, 'Added');
+    closeAddEmpModal();
+    renderView('mgmt-employees');
+  } catch(e){
+    err.textContent = e.message || "Couldn't add employee — please try again.";
+    err.style.display = 'block';
+    btnResetEl(btn);
+  }
+}
+
+async function updateEmployeeStatus(name, status, el){
+  const emp = EMPLOYEE_ROSTER.find(e=>e.name===name);
+  const previousStatus = emp ? emp.status : null;
+  if(emp) emp.status = status;
+  el.disabled = true;
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPost('updateEmployee', {name, status});
+      if(!r.ok){
+        if(emp) emp.status = previousStatus;
+        alert(r.error || "Couldn't update status.");
+        renderView('mgmt-employees');
+        return;
+      }
+    }
+    el.disabled = false;
+  } catch(e){
+    if(emp) emp.status = previousStatus;
+    alert(e.message || "Couldn't update status — please try again.");
+    renderView('mgmt-employees');
+  }
+}
+
+async function updateEmployeeDateHired(name, dateHired, el){
+  const emp = EMPLOYEE_ROSTER.find(e=>e.name===name);
+  const previous = emp ? emp.dateHired : null;
+  if(emp) emp.dateHired = dateHired;
+  el.disabled = true;
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPost('updateEmployee', {name, dateHired});
+      if(!r.ok){
+        if(emp) emp.dateHired = previous;
+        alert(r.error || "Couldn't update Date Hired.");
+        renderView('mgmt-accounts');
+        return;
+      }
+    }
+    el.disabled = false;
+  } catch(e){
+    if(emp) emp.dateHired = previous;
+    alert(e.message || "Couldn't update Date Hired — please try again.");
+    renderView('mgmt-accounts');
+  }
+}
+
+async function deleteEmployeeConfirm(name, el){
+  await confirmAndDelete(el, `Remove ${name} from the Staff Directory? This also removes their login account, if any. Their existing Schedule/Attendance/Request history stays as-is. This can't be undone.`, async ()=>{
+    try{
+      if(USE_REMOTE()){
+        const r = await apiPost('deleteEmployee', {name});
+        if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
+      }
+      const idx = EMPLOYEE_ROSTER.findIndex(e=>e.name===name);
+      if(idx > -1) EMPLOYEE_ROSTER.splice(idx, 1);
+      renderView('mgmt-employees');
+    } catch(e){
+      alert(e.message || "Couldn't delete — please try again.");
+    }
+  });
+}
+
 async function confirmAcctModal(){
   const acct = findAccountByEmployeeName(acctModalTarget);
   const pass = document.getElementById('acctModalPass').value;
@@ -2976,7 +3116,7 @@ function topAttendanceCharts(){
 }
 
 function statusPill(status){
-  const map = {"approved":"ok","done":"ok","Active":"ok","pending":"warn","open":"bad","resolved":"ok","On Leave":"bad","declined":"bad","acknowledged":"ok","needs-clarification":"warn"};
+  const map = {"approved":"ok","done":"ok","Active":"ok","pending":"warn","open":"bad","resolved":"ok","On Leave":"bad","declined":"bad","acknowledged":"ok","needs-clarification":"warn","Inactive":"bad","Under Probation":"warn"};
   const labels = {"acknowledged":"Acknowledged","needs-clarification":"Needs Clarification"};
   return `<span class="pill ${map[status]||'ok'}">${labels[status]||status}</span>`;
 }
@@ -3375,12 +3515,22 @@ const BUILDERS = {
     const q = employeesSearchQuery.toLowerCase();
     const rows = EMPLOYEE_ROSTER.filter(e => !q || e.name.toLowerCase().includes(q) || e.position.toLowerCase().includes(q));
     return `
+    <div class="no-print" style="display:flex; justify-content:flex-end; margin-bottom:16px;">
+      <button onclick="openAddEmpModal()">+ Add Employee</button>
+    </div>
     <div class="card table-scroll">
       <h3><span class="ic">👥</span> Staff Directory</h3>
       <input type="text" placeholder="🔍 Search by name or position…" value="${employeesSearchQuery}" oninput="setEmployeesSearch(this.value)" style="margin-bottom:12px;">
       <table>
-        <tr><th>Name</th><th>Position</th><th>Status</th><th>Attendance</th><th>Disciplinary Records</th></tr>
-        ${rows.map(e=>`<tr><td>${e.name}</td><td>${e.position}</td><td>${statusPill(e.status)}</td><td class="mono">${e.attendance}</td><td>${discCountByEmployee[e.name] ? `<button class="btn ghost auto" style="padding:4px 10px;" onclick="viewEmployeeDisciplinaryHistory('${e.name.replace(/'/g,"\\'")}')">${discCountByEmployee[e.name]} record${discCountByEmployee[e.name]===1?'':'s'}</button>` : '<span class="muted">None</span>'}</td></tr>`).join('') || `<tr><td colspan="5" class="muted">No matches.</td></tr>`}
+        <tr><th>Name</th><th>Position</th><th>Status</th><th>Attendance</th><th>Disciplinary Records</th><th></th></tr>
+        ${rows.map(e=>`<tr><td>${e.name}</td><td>${e.position}</td><td>
+            <select class="status-select" onchange="updateEmployeeStatus('${e.name.replace(/'/g,"\\'")}', this.value, this)">
+              <option ${e.status==='Active'?'selected':''}>Active</option>
+              <option ${e.status==='Under Probation'?'selected':''}>Under Probation</option>
+              <option ${e.status==='Inactive'?'selected':''}>Inactive</option>
+              <option ${e.status==='On Leave'?'selected':''}>On Leave</option>
+            </select>
+          </td><td class="mono">${e.attendance}</td><td>${discCountByEmployee[e.name] ? `<button class="btn ghost auto" style="padding:4px 10px;" onclick="viewEmployeeDisciplinaryHistory('${e.name.replace(/'/g,"\\'")}')">${discCountByEmployee[e.name]} record${discCountByEmployee[e.name]===1?'':'s'}</button>` : '<span class="muted">None</span>'}</td><td><button class="btn ghost auto" style="padding:4px 10px;" onclick="deleteEmployeeConfirm('${e.name.replace(/'/g,"\\'")}', this)">Delete</button></td></tr>`).join('') || `<tr><td colspan="6" class="muted">No matches.</td></tr>`}
       </table>
     </div>`;
   },
@@ -3399,12 +3549,13 @@ const BUILDERS = {
       <h3><span class="ic">🔑</span> Account Status by Employee</h3>
       <input type="text" placeholder="🔍 Search by name, position, or username…" value="${accountsSearchQuery}" oninput="setAccountsSearch(this.value)" style="margin-bottom:12px;">
       <table>
-        <tr><th>Employee</th><th>Position</th><th>Username</th><th>Account Status</th><th></th><th>Photo</th></tr>
+        <tr><th>Employee</th><th>Position</th><th>Date Hired</th><th>Username</th><th>Account Status</th><th></th><th>Photo</th></tr>
         ${rows.map(e=>{
           const acct = findAccountByEmployeeName(e.name);
           return `<tr>
             <td>${acct && acct.fullName ? acct.fullName : e.name}</td>
             <td class="muted">${e.position}</td>
+            <td><input type="date" value="${e.dateHired||''}" style="margin-bottom:0; padding:6px 8px; font-size:13px;" onchange="updateEmployeeDateHired('${e.name.replace(/'/g,"\\'")}', this.value, this)"></td>
             <td class="mono">${acct ? acct.username : '—'}</td>
             <td>${acct ? `<span class="pill ok">Registered</span>` : `<span class="pill warn">Not registered</span>`}</td>
             <td><button class="btn ghost auto" style="padding:5px 10px;" onclick="openResetModal('${e.name}')">${acct ? 'Reset Password' : 'Assign Account'}</button></td>
@@ -3414,7 +3565,7 @@ const BUILDERS = {
               </label>
             </td>
           </tr>`;
-        }).join('') || `<tr><td colspan="6" class="muted">No matches.</td></tr>`}
+        }).join('') || `<tr><td colspan="7" class="muted">No matches.</td></tr>`}
       </table>
     </div>`;
   },
@@ -3968,13 +4119,60 @@ const BUILDERS = {
     </div>`;
   },
 
-  "mgmt-requests": ()=>`
+  "mgmt-requests": ()=>{
+    const types = Array.from(new Set(ALL_REQUESTS.map(r=>r.Type))).sort();
+    const filtered = ALL_REQUESTS.filter(r=>{
+      if(reqFilter.employee && !r.EmployeeName.toLowerCase().includes(reqFilter.employee.toLowerCase())) return false;
+      if(reqFilter.type !== 'All' && r.Type !== reqFilter.type) return false;
+      if(reqFilter.status !== 'All' && r.Status !== reqFilter.status) return false;
+      if(reqFilter.dateFrom){ const dt = new Date(r.Date); if(isNaN(dt) || dt < new Date(reqFilter.dateFrom)) return false; }
+      if(reqFilter.dateTo){ const dt = new Date(r.Date); if(isNaN(dt) || dt > new Date(reqFilter.dateTo + 'T23:59:59')) return false; }
+      return true;
+    });
+    return `
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Filter Requests</h3>
+      <div class="grid grid-2">
+        <div>
+          <label>Employee</label>
+          <input type="text" placeholder="Search employee name..." value="${reqFilter.employee}" oninput="setReqFilter('employee', this.value)">
+        </div>
+        <div>
+          <label>Request Type</label>
+          <select onchange="setReqFilter('type', this.value)">
+            <option value="All" ${reqFilter.type==='All'?'selected':''}>All Types</option>
+            ${types.map(t=>`<option ${reqFilter.type===t?'selected':''}>${t}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label>Status</label>
+          <select onchange="setReqFilter('status', this.value)">
+            <option value="All" ${reqFilter.status==='All'?'selected':''}>All Statuses</option>
+            <option value="pending" ${reqFilter.status==='pending'?'selected':''}>Pending</option>
+            <option value="approved" ${reqFilter.status==='approved'?'selected':''}>Approved</option>
+            <option value="declined" ${reqFilter.status==='declined'?'selected':''}>Declined</option>
+            <option value="acknowledged" ${reqFilter.status==='acknowledged'?'selected':''}>Acknowledged</option>
+            <option value="needs-clarification" ${reqFilter.status==='needs-clarification'?'selected':''}>Needs Clarification</option>
+          </select>
+        </div>
+        <div></div>
+        <div>
+          <label>Date From</label>
+          <input type="date" value="${reqFilter.dateFrom}" onchange="setReqFilter('dateFrom', this.value)">
+        </div>
+        <div>
+          <label>Date To</label>
+          <input type="date" value="${reqFilter.dateTo}" onchange="setReqFilter('dateTo', this.value)">
+        </div>
+      </div>
+      <button class="btn ghost auto" style="margin-top:8px;" onclick="resetReqFilter()">Reset Filters</button>
+    </div>
     <div class="card">
       <h3><span class="ic">📝</span> All Requests</h3>
       <p class="muted" style="margin-bottom:12px;">Status can be changed anytime — handy for an accidental click or if the staff member changes their mind on a swap.</p>
       <table>
         <tr><th>Employee</th><th>Type</th><th>Details</th><th>Date</th><th>Status</th><th>Action By</th></tr>
-        ${ALL_REQUESTS.map(r=>`<tr><td>${r.EmployeeName}</td><td>${r.Type}${r.Type==='Schedule Swap' && r.SwapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.SwapDay)}${r.TheirDay && r.TheirDay!==r.SwapDay ? ' ↔ '+fmtDayLabel(r.TheirDay) : ''} ↔ ${r.SwapWithName}</span>` : ''}</td><td class="muted">${r.Details||''}</td><td>${fmtDateTime(r.Date)}</td>
+        ${filtered.map(r=>`<tr><td>${r.EmployeeName}</td><td>${r.Type}${r.Type==='Schedule Swap' && r.SwapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.SwapDay)}${r.TheirDay && r.TheirDay!==r.SwapDay ? ' ↔ '+fmtDayLabel(r.TheirDay) : ''} ↔ ${r.SwapWithName}</span>` : ''}</td><td class="muted">${r.Details||''}</td><td>${fmtDateTime(r.Date)}</td>
           <td>
             ${savingRequestIds.has(r.ID) ? `<span class="btn-spinner"></span><span class="muted" style="font-size:12px;">Saving...</span>` : `
             <select class="status-select ${r.Status}" onchange="this.className='status-select '+this.value; setRequestStatus('${r.ID}', this.value)">
@@ -3985,9 +4183,10 @@ const BUILDERS = {
               <option value="needs-clarification" ${r.Status==='needs-clarification'?'selected':''}>Needs Clarification</option>
             </select>`}
           </td>
-          <td class="muted">${r.Status !== 'pending' && r.ActionBy ? r.ActionBy : '—'}</td></tr>`).join('') || `<tr><td colspan="6" class="muted">No requests yet.</td></tr>`}
+          <td class="muted">${r.Status !== 'pending' && r.ActionBy ? r.ActionBy : '—'}</td></tr>`).join('') || `<tr><td colspan="6" class="muted">No matching requests.</td></tr>`}
       </table>
-    </div>`,
+    </div>`;
+  },
 
   "mgmt-concerns": ()=>`
     <div class="card">
