@@ -264,9 +264,16 @@
        a readable size on a portrait page — the schedule's tiny
        8.5px above was tuned for a wide grid, not a document */
     .print-doc table{ table-layout:auto !important; margin-bottom:10px !important; }
-    .print-doc th, .print-doc td{ font-size:11.5px !important; padding:6px 8px !important; line-height:1.4 !important; }
+    .print-doc th, .print-doc td{ font-size:11.5px !important; padding:6px 8px !important; line-height:1.4 !important; word-break:normal !important; overflow-wrap:break-word !important; white-space:normal !important; }
     .print-doc h3{ font-size:15px !important; margin:16px 0 8px !important; }
     .print-doc .card{ margin-bottom:4px !important; page-break-inside:avoid; }
+    /* every label cell across these tables consistently uses
+       class="muted" — giving it a fixed proportion here keeps every
+       report's label column the same readable width instead of the
+       browser guessing per-table (which was squeezing labels like
+       "Recommended Action" into a sliver narrow enough to force
+       letter-by-letter breaks) */
+    .print-doc td.muted:first-child{ width:34% !important; }
     /* the light theme's default text color is near-white — fine on
        screen, invisible on paper. Force every text element in a
        printout to black, not just table cells and headings. */
@@ -4138,12 +4145,6 @@ const BUILDERS = {
       if(reqFilter.dateTo){ const dt = new Date(r.Date); if(isNaN(dt) || dt > new Date(reqFilter.dateTo + 'T23:59:59')) return false; }
       return true;
     });
-    const filterBits = [];
-    if(reqFilter.employee) filterBits.push(`Employee: ${reqFilter.employee}`);
-    if(reqFilter.type !== 'All') filterBits.push(`Type: ${reqFilter.type}`);
-    if(reqFilter.status !== 'All') filterBits.push(`Status: ${STATUS_LABELS[reqFilter.status] || reqFilter.status}`);
-    if(reqFilter.dateFrom) filterBits.push(`From: ${fmtDiscDate(reqFilter.dateFrom)}`);
-    if(reqFilter.dateTo) filterBits.push(`To: ${fmtDiscDate(reqFilter.dateTo)}`);
     return `
     <div class="card no-print" style="margin-bottom:16px;">
       <h3>Filter Requests</h3>
@@ -4187,7 +4188,7 @@ const BUILDERS = {
         <h3 style="margin:0;"><span class="ic">📝</span> All Requests</h3>
         <button class="btn ghost auto" onclick="printRequestsLog()">🖨️ Print</button>
       </div>
-      <h3 class="print-only" style="display:none;">Requests${filterBits.length ? ` — ${filterBits.join(', ')}` : ''}</h3>
+      <h3 class="print-only" style="display:none;">All Requests</h3>
       <p class="muted no-print" style="margin-bottom:12px;">Status can be changed anytime — handy for an accidental click or if the staff member changes their mind on a swap.</p>
       <table>
         <tr><th>Employee</th><th>Type</th><th>Details</th><th>Date</th><th class="no-print">Status</th><th class="print-only" style="display:none;">Status</th><th>Action By</th></tr>
