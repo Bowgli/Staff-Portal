@@ -457,6 +457,30 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="addSchedEmpModal">
+  <div class="modal-box">
+    <h3>Add Employee to Schedule</h3>
+    <p class="muted">Adds them as a new row to this week's schedule so you can assign their shifts. They must already exist under All Employees.</p>
+    <label>Employee</label>
+    <input type="text" id="addSchedEmpName" list="addSchedEmpNameList" placeholder="Type a name to search…" autocomplete="off" onchange="prefillScheduleRole()">
+    <datalist id="addSchedEmpNameList"></datalist>
+    <label>Department</label>
+    <select id="addSchedEmpDept">
+      <option>CLUB 88</option>
+      <option>SAIPAN VEGAS</option>
+      <option>SLOT TECHNICIAN</option>
+      <option>SECURITY</option>
+    </select>
+    <label>Role / Position</label>
+    <input type="text" id="addSchedEmpRole" placeholder="e.g. Slot Technician">
+    <p class="login-err" id="addSchedEmpErr" style="display:none;"></p>
+    <div class="modal-btns">
+      <button class="btn ghost" onclick="closeAddSchedEmpModal()">Cancel</button>
+      <button class="btn" id="addSchedEmpBtn" onclick="confirmAddSchedEmp()">Add to Schedule</button>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ============================================================
    DATA LAYER — mock data shaped like what will come from Google
@@ -1780,6 +1804,57 @@ async function confirmAddEmpModal(){
     renderView('mgmt-employees');
   } catch(e){
     err.textContent = e.message || "Couldn't add employee — please try again.";
+    err.style.display = 'block';
+    btnResetEl(btn);
+  }
+}
+
+function openAddSchedEmpModal(){
+  const dl = document.getElementById('addSchedEmpNameList');
+  dl.innerHTML = EMPLOYEE_ROSTER.slice().sort((a,b)=>a.name.localeCompare(b.name))
+    .map(e=>`<option value="${e.name} — ${e.position}">`).join('');
+  document.getElementById('addSchedEmpName').value = '';
+  document.getElementById('addSchedEmpDept').value = 'CLUB 88';
+  document.getElementById('addSchedEmpRole').value = '';
+  document.getElementById('addSchedEmpErr').style.display = 'none';
+  document.getElementById('addSchedEmpModal').classList.add('active');
+}
+function closeAddSchedEmpModal(){ document.getElementById('addSchedEmpModal').classList.remove('active'); }
+
+function prefillScheduleRole(){
+  const raw = document.getElementById('addSchedEmpName').value;
+  const parts = raw.split(' — ');
+  if(parts.length > 1) document.getElementById('addSchedEmpRole').value = parts[1].trim();
+}
+
+async function confirmAddSchedEmp(){
+  const name = readEmployeePicker('addSchedEmpName');
+  const department = document.getElementById('addSchedEmpDept').value;
+  const role = document.getElementById('addSchedEmpRole').value.trim();
+  const err = document.getElementById('addSchedEmpErr');
+  err.style.display = 'none';
+  if(!name){ err.textContent = "Type a name and pick a real match from the suggestions."; err.style.display='block'; return; }
+
+  const sheetName = scheduleViewMode === 'next' ? 'NextSchedule' : 'Schedule';
+  const rows = scheduleViewMode === 'next' ? NEXT_SCHEDULE_ROWS : SCHEDULE_ROWS;
+  if(rows.some(r=>r.name === name)){ err.textContent = name + " is already on this schedule."; err.style.display='block'; return; }
+
+  const btn = document.getElementById('addSchedEmpBtn');
+  btnLoadingEl(btn, 'Adding...');
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPost('addScheduleRow', {name, department, role, sheetName});
+      if(!r.ok){ err.textContent = r.error || "Couldn't add to schedule."; err.style.display='block'; btnResetEl(btn); return; }
+    }
+    const days = scheduleViewMode === 'next' ? NEXT_SCHEDULE_DAYS : SCHEDULE_DAYS;
+    const newRow = { department, name, role, cells: new Array(days.length).fill("") };
+    if(scheduleViewMode === 'next') NEXT_SCHEDULE_ROWS.push(newRow);
+    else SCHEDULE_ROWS.push(newRow);
+    await btnSentEl(btn, 'Added');
+    closeAddSchedEmpModal();
+    renderView('mgmt-schedule');
+  } catch(e){
+    err.textContent = e.message || "Couldn't add to schedule — please try again.";
     err.style.display = 'block';
     btnResetEl(btn);
   }
@@ -3628,11 +3703,12 @@ const BUILDERS = {
         <p class="muted" style="margin-top:6px; font-size:12px;">Pick the Sunday that starts the week — Monday through Saturday fill in automatically.</p>
         <p class="login-err" id="nextWeekDatesErr"></p>
       </div>
-      <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
         ${NEXT_SCHEDULE_PUBLISHED
           ? `<button class="btn ghost auto" onclick="unpublishNextWeek()">Unpublish (back to draft)</button>`
           : `<button class="btn auto" onclick="publishNextWeek()">Publish to Employees</button>`}
         <button class="btn auto" onclick="promoteNextWeek()">Promote to Current Week</button>
+        <button class="btn ghost auto" onclick="openAddSchedEmpModal()">+ Add New Employee</button>
       </div>
     </div>` : ''}
     <div class="no-print" style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
