@@ -3667,7 +3667,7 @@ const BUILDERS = {
     return `
     <div class="grid grid-2" style="margin-bottom:16px;">
       <div class="card no-print">
-        <h3><span class="ic">🕐</span> Log an Entry</h3>
+        <h3 id="logCardTitle"><span class="ic">🕐</span> Log an Entry</h3>
         <p class="muted">This is the equivalent of adding a row to the Attendance tab in the Sheet — the employee sees it on their own dashboard right away.</p>
         <label>Employee</label>
         ${employeePickerHtml('logEmp', EMPLOYEE_ROSTER)}
@@ -3679,7 +3679,11 @@ const BUILDERS = {
         <select id="logStatus"><option>Absent</option><option>Late</option><option>Undertime</option></select>
         <label>Remarks</label>
         <textarea id="logRemarks" placeholder="Optional note..."></textarea>
-        <button class="btn" id="logSubmitBtn" onclick="submitAttendanceLog()">Log Entry</button>
+        <p id="logErr" class="login-err" style="display:none;"></p>
+        <div style="display:flex; gap:8px;">
+          <button class="btn" id="logSubmitBtn" onclick="submitAttendanceLog()">Log Entry</button>
+          <button class="btn ghost auto" id="logCancelBtn" style="display:none;" onclick="cancelEditAttendance()">Cancel</button>
+        </div>
       </div>
       <div class="card table-scroll print-doc">
         <h3 class="no-print">Current Log <span class="muted" style="font-weight:400; font-size:13px;">— latest 10, search for more</span></h3>
@@ -4993,7 +4997,7 @@ function renderAttendanceLogRows(){
   let filtered = sortedAttendanceLog();
   const q = attendanceSearchQuery.toLowerCase();
   if(!q) filtered = filtered.slice(0, 10); // keep the default view short — search shows everything that matches
-  return filtered.map(a=>`<tr><td>${a.name}</td><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td><td class="muted">${a.loggedBy||'—'}</td><td><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteAttendanceEntry('${a.id}', this)">Delete</button></td></tr>`).join('')
+  return filtered.map(a=>`<tr><td>${a.name}</td><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td><td class="muted">${a.loggedBy||'—'}</td><td><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditAttendance('${a.id}')">Edit</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteAttendanceEntry('${a.id}', this)">Delete</button></td></tr>`).join('')
     || `<tr><td colspan="7" class="muted">${attendanceSearchQuery ? 'No entries match that search.' : 'No entries logged yet.'}</td></tr>`;
 }
 /* Printed record shows every matching entry, not just the latest 10
@@ -5041,39 +5045,84 @@ async function deleteAttendanceEntry(id, el){
   });
 }
 
+let editingAttendanceId = null;
+
+function startEditAttendance(id){
+  const a = ATTENDANCE_LOG.find(x=>x.id===id);
+  if(!a) return;
+  editingAttendanceId = id;
+  document.getElementById('logEmp').value = a.name;
+  document.getElementById('logDate').value = a.date;
+  document.getElementById('logTime').value = a.time || '';
+  document.getElementById('logStatus').value = a.status;
+  document.getElementById('logRemarks').value = a.remarks || '';
+  document.getElementById('logCardTitle').innerHTML = '<span class="ic">🕐</span> Edit Entry';
+  document.getElementById('logSubmitBtn').textContent = 'Update Entry';
+  document.getElementById('logCancelBtn').style.display = '';
+  document.getElementById('logErr').style.display = 'none';
+  document.getElementById('logEmp').scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+function cancelEditAttendance(){
+  editingAttendanceId = null;
+  renderView('mgmt-attendance');
+}
+
 async function submitAttendanceLog(){
   const name = readEmployeePicker('logEmp');
   const date = document.getElementById('logDate').value;
   const time = document.getElementById('logTime').value;
   const status = document.getElementById('logStatus').value;
   const remarks = document.getElementById('logRemarks').value;
-  if(!name){ alert("Type a name and pick a real match from the suggestions."); return; }
-  if(!date){ alert("Pick a date."); return; }
+  const err = document.getElementById('logErr');
+  err.style.display = 'none';
+  if(!name){ err.textContent = "Type a name and pick a real match from the suggestions."; err.style.display='block'; return; }
+  if(!date){ err.textContent = "Pick a date."; err.style.display='block'; return; }
 
   const loggedBy = CURRENT_USER.displayName || (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.fullName) || '';
+  const isEditing = !!editingAttendanceId;
   const btn = document.getElementById('logSubmitBtn');
   btn.disabled = true;
-  btn.innerHTML = `<span class="btn-spinner"></span>Sending...`;
+  btn.innerHTML = `<span class="btn-spinner"></span>${isEditing ? 'Updating...' : 'Sending...'}`;
 
   try{
-    if(USE_REMOTE()){
-      const r = await apiPostMinDelay('logAttendance', {employeeName:name, day:date, time, status, remarks, loggedBy});
-      if(!r.ok){
-        alert(r.error || "Couldn't save the entry — please try again.");
-        btn.disabled = false;
-        btn.innerHTML = 'Log Entry';
-        return;
+    if(isEditing){
+      if(USE_REMOTE()){
+        const r = await apiPostMinDelay('editAttendance', {id: editingAttendanceId, employeeName:name, day:date, time, status, remarks, loggedBy});
+        if(!r.ok){
+          err.textContent = r.error || "Couldn't update the entry — please try again.";
+          err.style.display = 'block';
+          btn.disabled = false;
+          btn.innerHTML = 'Update Entry';
+          return;
+        }
       }
+      const entry = ATTENDANCE_LOG.find(a=>a.id===editingAttendanceId);
+      if(entry){ entry.name = name; entry.date = date; entry.time = time; entry.status = status; entry.remarks = remarks; entry.loggedBy = loggedBy; }
+      editingAttendanceId = null;
+      btn.innerHTML = `✓ Updated`;
+    } else {
+      if(USE_REMOTE()){
+        const r = await apiPostMinDelay('logAttendance', {employeeName:name, day:date, time, status, remarks, loggedBy});
+        if(!r.ok){
+          err.textContent = r.error || "Couldn't save the entry — please try again.";
+          err.style.display = 'block';
+          btn.disabled = false;
+          btn.innerHTML = 'Log Entry';
+          return;
+        }
+      }
+      ATTENDANCE_LOG = ATTENDANCE_LOG.filter(a => !(a.name===name && a.date===date));
+      ATTENDANCE_LOG.push({name, date, time, status, remarks, loggedBy});
+      btn.innerHTML = `✓ Sent`;
     }
-    ATTENDANCE_LOG = ATTENDANCE_LOG.filter(a => !(a.name===name && a.date===date));
-    ATTENDANCE_LOG.push({name, date, time, status, remarks, loggedBy});
-    btn.innerHTML = `✓ Sent`;
     await new Promise(r=>setTimeout(r, 600));
     renderView('mgmt-attendance');
   } catch(e){
-    alert(e.message || "Couldn't save the entry — please try again.");
+    err.textContent = e.message || "Couldn't save the entry — please try again.";
+    err.style.display = 'block';
     btn.disabled = false;
-    btn.innerHTML = 'Log Entry';
+    btn.innerHTML = isEditing ? 'Update Entry' : 'Log Entry';
   }
 }
 
