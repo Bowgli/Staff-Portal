@@ -278,6 +278,12 @@
        screen, invisible on paper. Force every text element in a
        printout to black, not just table cells and headings. */
     .print-doc, .print-doc p, .print-doc span, .print-doc div{ color:#000 !important; }
+    /* Status pills use light-on-dark colors designed for the app's
+       dark theme — on paper, forcing readable black text (above)
+       left them sitting on their original dark badge background,
+       which is nearly unreadable. Strip the badge entirely for
+       print: plain bold text reads clearly regardless of status. */
+    .print-doc .pill{ background:none !important; color:#000 !important; padding:0 !important; border-radius:0 !important; font-weight:700 !important; display:inline !important; }
     .print-only{ display:block !important; }
     /* table-related elements need their proper table display value,
        not block — a <td>/<th> forced to display:block breaks out of
@@ -3034,7 +3040,7 @@ function fmtLogTime(raw){
   return d.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'});
 }
 function attendancePill(status){
-  const map = {"Present":"ok","Late":"warn","Undertime":"warn","Absent":"bad","Excused":"info","Day Off":"bad","Not Scheduled":"bad"};
+  const map = {"Present":"ok","Late":"warn","Undertime":"warn","Absent":"bad","Excused":"info","Day Off":"bad","Not Scheduled":"bad","Over Breaktime":"warn"};
   return `<span class="pill ${map[status]||'ok'}">${status}</span>`;
 }
 function computeLatestEvaluationByEmployee(){
@@ -3664,6 +3670,8 @@ const BUILDERS = {
     const now = new Date();
     const localDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
     const localTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    const printYears = Array.from(new Set(ATTENDANCE_LOG.map(a=>{ const dt = new Date(a.date); return isNaN(dt) ? null : dt.getFullYear(); }).filter(Boolean))).sort((a,b)=>b-a);
+    if(!printYears.includes(now.getFullYear())) printYears.unshift(now.getFullYear());
     return `
     <div class="grid grid-2" style="margin-bottom:16px;">
       <div class="card no-print">
@@ -3676,7 +3684,7 @@ const BUILDERS = {
         <label>Time</label>
         <input type="time" id="logTime" value="${localTime}">
         <label>Status</label>
-        <select id="logStatus"><option>Absent</option><option>Late</option><option>Undertime</option></select>
+        <select id="logStatus"><option>Absent</option><option>Late</option><option>Undertime</option><option>Over Breaktime</option></select>
         <label>Remarks</label>
         <textarea id="logRemarks" placeholder="Optional note..."></textarea>
         <p id="logErr" class="login-err" style="display:none;"></p>
@@ -3685,24 +3693,37 @@ const BUILDERS = {
           <button class="btn ghost auto" id="logCancelBtn" style="display:none;" onclick="cancelEditAttendance()">Cancel</button>
         </div>
       </div>
+      <div class="card no-print" style="margin-bottom:16px;">
+        <h3><span class="ic">🖨️</span> Individual Employee Print Log</h3>
+        <p class="muted" style="margin-bottom:12px;">Select an employee and year, then search to view their complete attendance record for that year before printing.</p>
+        <div class="grid grid-2">
+          <div>
+            <label>Employee</label>
+            ${employeePickerHtml('attendancePrintEmp', EMPLOYEE_ROSTER)}
+          </div>
+          <div>
+            <label>Year</label>
+            <select id="attendancePrintYear">
+              ${printYears.map(y=>`<option ${y===now.getFullYear()?'selected':''}>${y}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <p id="attendancePrintErr" class="login-err" style="display:none;"></p>
+        <button class="btn ghost auto" onclick="searchEmployeePrintLog()">Search / View Records</button>
+        <div id="attendancePrintPreview"></div>
+      </div>
       <div class="card table-scroll print-doc">
         <h3 class="no-print">Current Log <span class="muted" style="font-weight:400; font-size:13px;">— latest 10, search for more</span></h3>
         <h3 class="print-only" style="display:none;" id="attendancePrintTitle">Attendance / Log Absence</h3>
-        <div class="no-print" style="display:flex; gap:8px; align-items:flex-start; margin-bottom:12px; flex-wrap:wrap;">
-          <input type="text" id="attendanceSearch" placeholder="Search employee name..." value="${attendanceSearchQuery}" oninput="filterAttendanceLog(this.value)" style="flex:1; min-width:160px; margin-bottom:0;">
-          <select id="attendancePrintEmp" style="width:auto;">
-            <option value="">Print: All Employees</option>
-            ${EMPLOYEE_ROSTER.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(e=>`<option value="${e.name.replace(/"/g,'&quot;')}">Print: ${e.name}</option>`).join('')}
-          </select>
-          <button class="btn ghost auto" style="white-space:nowrap;" onclick="printAttendanceLog()">🖨️ Print Log</button>
+        <div class="no-print" style="margin-bottom:12px;">
+          <input type="text" id="attendanceSearch" placeholder="Search employee name..." value="${attendanceSearchQuery}" oninput="filterAttendanceLog(this.value)" style="margin-bottom:0;">
         </div>
         <table class="no-print">
           <tr><th>Employee</th><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th><th>Logged By</th><th></th></tr>
           <tbody id="attendanceLogRows">${renderAttendanceLogRows()}</tbody>
         </table>
         <table class="print-only" style="display:none;" id="attendancePrintTable">
-          <tr><th>Employee</th><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th><th>Logged By</th></tr>
-          ${renderAttendanceLogForPrint()}
+          <tr><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th><th>Logged By</th></tr>
         </table>
       </div>
     </div>
@@ -5000,14 +5021,13 @@ function renderAttendanceLogRows(){
   return filtered.map(a=>`<tr><td>${a.name}</td><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td><td class="muted">${a.loggedBy||'—'}</td><td><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditAttendance('${a.id}')">Edit</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteAttendanceEntry('${a.id}', this)">Delete</button></td></tr>`).join('')
     || `<tr><td colspan="7" class="muted">${attendanceSearchQuery ? 'No entries match that search.' : 'No entries logged yet.'}</td></tr>`;
 }
-/* Printed record shows every matching entry, not just the latest 10
-   — the 10-item cap only exists to keep the live on-screen view
-   short, but a printout is meant to be a complete record.
-   employeeFilter is independent of the on-screen search box, so
-   printing "for this employee" doesn't require first changing what
-   the live view shows. */
-function renderAttendanceLogForPrint(employeeFilter){
-  let filtered = ATTENDANCE_LOG
+/* Individual Employee Print Log — search shows an on-screen preview
+   (with a summary count) before printing; printing regenerates the
+   same filtered set into the print-only table, so what you saw is
+   exactly what prints. */
+function employeeYearAttendance(name, year){
+  return ATTENDANCE_LOG
+    .filter(a => a.name === name && !isNaN(new Date(a.date)) && new Date(a.date).getFullYear() === year)
     .map((a, idx) => Object.assign({}, a, {_idx: idx}))
     .sort((a,b)=>{
       const ak = (a.date||'') + ' ' + (a.time||'');
@@ -5015,14 +5035,48 @@ function renderAttendanceLogForPrint(employeeFilter){
       if(ak !== bk) return bk.localeCompare(ak);
       return b._idx - a._idx;
     });
-  if(employeeFilter) filtered = filtered.filter(a => a.name === employeeFilter);
-  return filtered.map(a=>`<tr><td>${a.name}</td><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td>${a.remarks||'—'}</td><td>${a.loggedBy||'—'}</td></tr>`).join('')
-    || `<tr><td colspan="6">No entries logged yet.</td></tr>`;
 }
-function printAttendanceLog(){
-  const emp = document.getElementById('attendancePrintEmp').value;
-  document.getElementById('attendancePrintTitle').textContent = emp ? `Attendance / Log Absence — ${emp}` : 'Attendance / Log Absence — All Employees';
-  document.getElementById('attendancePrintTable').innerHTML = `<tr><th>Employee</th><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th><th>Logged By</th></tr>${renderAttendanceLogForPrint(emp)}`;
+function attendanceCounts(records){
+  const counts = {Absent:0, Late:0, Undertime:0, "Over Breaktime":0};
+  records.forEach(r=>{ if(counts[r.status] !== undefined) counts[r.status]++; });
+  return counts;
+}
+function searchEmployeePrintLog(){
+  const err = document.getElementById('attendancePrintErr');
+  err.style.display = 'none';
+  const preview = document.getElementById('attendancePrintPreview');
+  const name = readEmployeePicker('attendancePrintEmp');
+  if(!name){ err.textContent = "Type an employee name and pick a real match from the suggestions."; err.style.display='block'; preview.innerHTML=''; return; }
+  const year = Number(document.getElementById('attendancePrintYear').value);
+
+  const records = employeeYearAttendance(name, year);
+  if(!records.length){
+    preview.innerHTML = `<p class="muted" style="margin-top:12px;">No attendance entries found for ${name} in ${year}.</p>`;
+    return;
+  }
+  const counts = attendanceCounts(records);
+  preview.innerHTML = `
+    <div style="margin-top:16px;">
+      <p style="font-weight:600; margin-bottom:6px;">${name} — ${year}</p>
+      <p class="muted" style="margin-bottom:12px;">Absences: ${counts.Absent} · Late: ${counts.Late} · Undertime: ${counts.Undertime} · Over Breaktime: ${counts["Over Breaktime"]} · Total entries: ${records.length}</p>
+      <div class="table-scroll">
+        <table>
+          <tr><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th><th>Logged By</th></tr>
+          ${records.map(a=>`<tr><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td><td class="muted">${a.loggedBy||'—'}</td></tr>`).join('')}
+        </table>
+      </div>
+      <button class="btn ghost auto" style="margin-top:12px;" onclick="printEmployeeLog('${name.replace(/'/g,"\\'")}', ${year})">🖨️ Print Employee Log</button>
+    </div>`;
+}
+function printEmployeeLog(name, year){
+  const records = employeeYearAttendance(name, year);
+  const counts = attendanceCounts(records);
+  document.getElementById('attendancePrintTitle').textContent = `Attendance Log — ${name} — ${year}`;
+  document.getElementById('attendancePrintTable').innerHTML = `
+    <tr><th colspan="5" style="text-align:left;">Summary — Absences: ${counts.Absent} · Late: ${counts.Late} · Undertime: ${counts.Undertime} · Over Breaktime: ${counts["Over Breaktime"]} · Total entries: ${records.length}</th></tr>
+    <tr><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th><th>Logged By</th></tr>
+    ${records.map(a=>`<tr><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td>${a.remarks||'—'}</td><td>${a.loggedBy||'—'}</td></tr>`).join('') || `<tr><td colspan="5">No entries logged for this year.</td></tr>`}
+  `;
   printWithPageSettings('letter','portrait','0.75in');
 }
 function printRequestsLog(){
