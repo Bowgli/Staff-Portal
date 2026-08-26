@@ -3693,25 +3693,6 @@ const BUILDERS = {
           <button class="btn ghost auto" id="logCancelBtn" style="display:none;" onclick="cancelEditAttendance()">Cancel</button>
         </div>
       </div>
-      <div class="card no-print" style="margin-bottom:16px;">
-        <h3><span class="ic">🖨️</span> Individual Employee Print Log</h3>
-        <p class="muted" style="margin-bottom:12px;">Select an employee and year, then search to view their complete attendance record for that year before printing.</p>
-        <div class="grid grid-2">
-          <div>
-            <label>Employee</label>
-            ${employeePickerHtml('attendancePrintEmp', EMPLOYEE_ROSTER)}
-          </div>
-          <div>
-            <label>Year</label>
-            <select id="attendancePrintYear">
-              ${printYears.map(y=>`<option ${y===now.getFullYear()?'selected':''}>${y}</option>`).join('')}
-            </select>
-          </div>
-        </div>
-        <p id="attendancePrintErr" class="login-err" style="display:none;"></p>
-        <button class="btn ghost auto" onclick="searchEmployeePrintLog()">Search / View Records</button>
-        <div id="attendancePrintPreview"></div>
-      </div>
       <div class="card table-scroll print-doc">
         <h3 class="no-print">Current Log <span class="muted" style="font-weight:400; font-size:13px;">— latest 10, search for more</span></h3>
         <h3 class="print-only" style="display:none;" id="attendancePrintTitle">Attendance / Log Absence</h3>
@@ -3726,6 +3707,28 @@ const BUILDERS = {
           <tr><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th><th>Logged By</th></tr>
         </table>
       </div>
+    </div>
+    <div class="card no-print" style="margin-bottom:16px;">
+      <h3><span class="ic">🖨️</span> Individual Employee Print Log</h3>
+      <p class="muted" style="margin-bottom:12px;">Select an employee and year, then search to view their record — or print directly once both are selected.</p>
+      <div class="grid grid-2">
+        <div>
+          <label>Employee</label>
+          ${employeePickerHtml('attendancePrintEmp', EMPLOYEE_ROSTER)}
+        </div>
+        <div>
+          <label>Year</label>
+          <select id="attendancePrintYear">
+            ${printYears.map(y=>`<option ${y===now.getFullYear()?'selected':''}>${y}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <p id="attendancePrintErr" class="login-err" style="display:none;"></p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn ghost auto" onclick="searchEmployeePrintLog()">Search / View Records</button>
+        <button class="btn ghost auto" onclick="printEmployeeLog()">🖨️ Print Employee Log</button>
+      </div>
+      <div id="attendancePrintPreview"></div>
     </div>
     <div class="no-print">${topAttendanceCharts()}</div>`;
   },
@@ -5065,10 +5068,15 @@ function searchEmployeePrintLog(){
           ${records.map(a=>`<tr><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td><td class="muted">${a.loggedBy||'—'}</td></tr>`).join('')}
         </table>
       </div>
-      <button class="btn ghost auto" style="margin-top:12px;" onclick="printEmployeeLog('${name.replace(/'/g,"\\'")}', ${year})">🖨️ Print Employee Log</button>
     </div>`;
 }
-function printEmployeeLog(name, year){
+function printEmployeeLog(){
+  const err = document.getElementById('attendancePrintErr');
+  err.style.display = 'none';
+  const name = readEmployeePicker('attendancePrintEmp');
+  if(!name){ err.textContent = "Type an employee name and pick a real match from the suggestions."; err.style.display='block'; return; }
+  const year = Number(document.getElementById('attendancePrintYear').value);
+
   const records = employeeYearAttendance(name, year);
   const counts = attendanceCounts(records);
   document.getElementById('attendancePrintTitle').textContent = `Attendance Log — ${name} — ${year}`;
