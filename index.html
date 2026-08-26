@@ -4275,14 +4275,22 @@ const BUILDERS = {
 
   "mgmt-requests": ()=>{
     const types = Array.from(new Set(ALL_REQUESTS.map(r=>r.Type))).sort();
-    const filtered = ALL_REQUESTS.filter(r=>{
-      if(reqFilter.employee && !r.EmployeeName.toLowerCase().includes(reqFilter.employee.toLowerCase())) return false;
-      if(reqFilter.type !== 'All' && r.Type !== reqFilter.type) return false;
-      if(reqFilter.status !== 'All' && r.Status !== reqFilter.status) return false;
-      if(reqFilter.dateFrom){ const dt = new Date(r.Date); if(isNaN(dt) || dt < new Date(reqFilter.dateFrom)) return false; }
-      if(reqFilter.dateTo){ const dt = new Date(r.Date); if(isNaN(dt) || dt > new Date(reqFilter.dateTo + 'T23:59:59')) return false; }
-      return true;
-    });
+    const filtered = ALL_REQUESTS
+      .map((r, idx) => Object.assign({}, r, {_idx: idx})) // remember original position as a tiebreaker for same-timestamp entries
+      .filter(r=>{
+        if(reqFilter.employee && !r.EmployeeName.toLowerCase().includes(reqFilter.employee.toLowerCase())) return false;
+        if(reqFilter.type !== 'All' && r.Type !== reqFilter.type) return false;
+        if(reqFilter.status !== 'All' && r.Status !== reqFilter.status) return false;
+        if(reqFilter.dateFrom){ const dt = new Date(r.Date); if(isNaN(dt) || dt < new Date(reqFilter.dateFrom)) return false; }
+        if(reqFilter.dateTo){ const dt = new Date(r.Date); if(isNaN(dt) || dt > new Date(reqFilter.dateTo + 'T23:59:59')) return false; }
+        return true;
+      })
+      .sort((a,b)=>{
+        const ak = a.Date || '';
+        const bk = b.Date || '';
+        if(ak !== bk) return bk.localeCompare(ak); // latest first
+        return b._idx - a._idx; // same timestamp — whichever was added later (further in the array) shows first
+      });
     return `
     <div class="card no-print" style="margin-bottom:16px;">
       <h3>Filter Requests</h3>
@@ -5195,14 +5203,22 @@ function printEmployeeLog(){
 }
 function printRequestsLog(){
   const types = Array.from(new Set(ALL_REQUESTS.map(r=>r.Type))).sort();
-  const filtered = ALL_REQUESTS.filter(r=>{
-    if(reqFilter.employee && !r.EmployeeName.toLowerCase().includes(reqFilter.employee.toLowerCase())) return false;
-    if(reqFilter.type !== 'All' && r.Type !== reqFilter.type) return false;
-    if(reqFilter.status !== 'All' && r.Status !== reqFilter.status) return false;
-    if(reqFilter.dateFrom){ const dt = new Date(r.Date); if(isNaN(dt) || dt < new Date(reqFilter.dateFrom)) return false; }
-    if(reqFilter.dateTo){ const dt = new Date(r.Date); if(isNaN(dt) || dt > new Date(reqFilter.dateTo + 'T23:59:59')) return false; }
-    return true;
-  });
+  const filtered = ALL_REQUESTS
+    .map((r, idx) => Object.assign({}, r, {_idx: idx}))
+    .filter(r=>{
+      if(reqFilter.employee && !r.EmployeeName.toLowerCase().includes(reqFilter.employee.toLowerCase())) return false;
+      if(reqFilter.type !== 'All' && r.Type !== reqFilter.type) return false;
+      if(reqFilter.status !== 'All' && r.Status !== reqFilter.status) return false;
+      if(reqFilter.dateFrom){ const dt = new Date(r.Date); if(isNaN(dt) || dt < new Date(reqFilter.dateFrom)) return false; }
+      if(reqFilter.dateTo){ const dt = new Date(r.Date); if(isNaN(dt) || dt > new Date(reqFilter.dateTo + 'T23:59:59')) return false; }
+      return true;
+    })
+    .sort((a,b)=>{
+      const ak = a.Date || '';
+      const bk = b.Date || '';
+      if(ak !== bk) return bk.localeCompare(ak);
+      return b._idx - a._idx;
+    });
 
   let dateRangeLabel = 'All Dates';
   if(reqFilter.dateFrom || reqFilter.dateTo){
