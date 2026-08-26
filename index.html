@@ -1612,7 +1612,7 @@ function myDisciplinarySnapshot(records){
   if(records) return JSON.stringify(records.map(d=>[d.ID, d.Status]));
   return JSON.stringify(MY_DISCIPLINARY_RECORDS.map(d=>[d.ID, d.Status]));
 }
-let empPendingRequestsBaseline = 0;
+let empPendingRequestsBaseline = new Set(); // set of request IDs already accounted for — not just a count, so we always know exactly WHICH ones are genuinely new
 /* True for any hybrid employee account (Shift Manager, or any future
    role) whose management permissions include Manage Requests — not
    hardcoded to one role name, so it keeps working if more roles are
@@ -1630,7 +1630,7 @@ async function startEmpPolling(){
   if(hasMgmtRequestsAccess()){
     // only count OTHER people's pending requests — her own
     // submissions shouldn't ping her own "new request to review" alert
-    empPendingRequestsBaseline = ALL_REQUESTS.filter(r => r.Status === 'pending' && r.EmployeeName !== CURRENT_EMPLOYEE.name).length;
+    empPendingRequestsBaseline = new Set(ALL_REQUESTS.filter(r => r.Status === 'pending' && r.EmployeeName !== CURRENT_EMPLOYEE.name).map(r=>r.ID));
   }
   empPollInterval = setInterval(async ()=>{
     if(document.hidden) return; // skip while this tab isn't the active/visible one
@@ -1680,7 +1680,11 @@ async function startEmpPolling(){
 
     if(announcements && announcements.length !== empAnnouncementsBaseline){
       newAnnouncements = Math.max(0, announcements.length - empAnnouncementsBaseline);
-      newAnnouncementTitles = announcements.slice(0, newAnnouncements).map(a=>a.Title);
+      // the raw list comes back oldest-first (matching sheet row
+      // order) — the genuinely new ones are the LAST N, not the
+      // first N. Grabbing from the front was surfacing old,
+      // already-seen announcements as if they were new.
+      newAnnouncementTitles = newAnnouncements > 0 ? announcements.slice(-newAnnouncements).map(a=>a.Title) : [];
       empAnnouncementsBaseline = announcements.length;
       changed = true;
     }
@@ -1692,11 +1696,16 @@ async function startEmpPolling(){
     // already covered separately by requestStatusChanged above.
     if(hasMgmtRequestsAccess() && requests){
       const othersPending = requests.filter(r => r.Status === 'pending' && r.EmployeeName !== CURRENT_EMPLOYEE.name);
-      if(othersPending.length !== empPendingRequestsBaseline){
-        newPendingRequests = Math.max(0, othersPending.length - empPendingRequestsBaseline);
-        newPendingRequestNames = othersPending.slice(0, newPendingRequests).map(r=>`${r.EmployeeName} (${r.Type})`);
-        empPendingRequestsBaseline = othersPending.length;
-        changed = true;
+      const currentIds = new Set(othersPending.map(r=>r.ID));
+      const newlyAdded = othersPending.filter(r => !empPendingRequestsBaseline.has(r.ID));
+      const sizeChanged = currentIds.size !== empPendingRequestsBaseline.size;
+      if(newlyAdded.length > 0 || sizeChanged){
+        empPendingRequestsBaseline = currentIds;
+        if(newlyAdded.length > 0){
+          newPendingRequests = newlyAdded.length;
+          newPendingRequestNames = newlyAdded.map(r=>`${r.EmployeeName} (${r.Type})`);
+          changed = true;
+        }
       }
     }
 
@@ -3014,6 +3023,13 @@ function renderView(id, fromHistory){
   document.getElementById('content').innerHTML = BUILDERS[id] ? BUILDERS[id]() : `<div class="empty"><div class="ic">🚧</div>Not built in this demo yet.</div>`;
   closeMobileSidebar();
 
+  // Manage Requests can otherwise sit stale for up to the length of
+  // the polling interval — refresh it the moment someone actually
+  // looks at it, instead of making them wait for the background
+  // check to catch up. Renders instantly from memory first (above),
+  // then quietly re-renders once fresh data lands.
+  if(id === 'mgmt-requests') refreshRequestsOnNavigate();
+
   if(!fromHistory){
     // a normal (forward) navigation — remember it and push a browser
     // history entry so the phone back button can step back to it
@@ -3023,6 +3039,17 @@ function renderView(id, fromHistory){
     }
   }
   try{ localStorage.setItem(LAST_VIEW_KEY, id); } catch(e){} // so a full page refresh (F5) can restore this page, not just Home
+}
+
+async function refreshRequestsOnNavigate(){
+  if(!USE_REMOTE()) return;
+  const requests = await safeApiGet(bustCache_('requests'), null);
+  if(!requests) return;
+  ALL_REQUESTS = requests;
+  // re-render the content directly (not via renderView) — going
+  // through renderView again would re-trigger this same refresh
+  // hook and never stop
+  if(activeView === 'mgmt-requests') document.getElementById('content').innerHTML = BUILDERS['mgmt-requests']();
 }
 
 function fmtDayLabel(raw){
