@@ -641,6 +641,7 @@ let attendanceStatsMode = 'month'; // 'month' or 'year' — for Most Absences/La
 let attendanceStatsPeriod = ''; // "YYYY-MM", defaults to current month on first view
 let attendanceStatsYear = new Date().getFullYear();
 let discCaseAttachments = []; // [{fileId, fileName}] staged during the New Case form, before save
+let discIncidentEditAttachments = []; // same idea, but for editing an EXISTING case's Incident Information — kept separate so the two flows never bleed into each other
 let discNewCaseEmployee = ''; // selected employee name in the New Case form, drives the auto-filled Position/Department
 let attendanceSearchQuery = '';
 let perfFilterMonth = 'All';
@@ -2415,6 +2416,12 @@ function openDisciplinaryCase(id){
 }
 function toggleDiscIncidentEdit(on){
   discIncidentEditMode = on;
+  if(on){
+    const d = ALL_DISCIPLINARY_RECORDS.find(x=>x.ID===discDetailCaseId) || {};
+    const ids = (d.AttachmentFileIds||'').split(',').filter(Boolean);
+    const names = (d.AttachmentNames||'').split(',').filter(Boolean);
+    discIncidentEditAttachments = ids.map((fileId,i)=>({fileId, fileName: names[i]||'file'}));
+  }
   renderView('mgmt-disciplinary-detail');
 }
 function toggleDiscCaseInfoEdit(on){
@@ -2502,6 +2509,8 @@ async function saveDiscIncidentEdit(){
     Description: description,
     PolicyInvolved: document.getElementById('discEditPolicy').value.trim(),
     Witnesses: document.getElementById('discEditWitnesses').value.trim(),
+    AttachmentFileIds: discIncidentEditAttachments.map(f=>f.fileId).join(','),
+    AttachmentNames: discIncidentEditAttachments.map(f=>f.fileName).join(','),
     stage: 'edited',
   };
   const btn = document.getElementById('discSaveIncidentBtn');
@@ -2512,6 +2521,7 @@ async function saveDiscIncidentEdit(){
     await refreshDisciplinaryOnly();
     await btnSentEl(btn, 'Saved');
     discIncidentEditMode = false;
+    discIncidentEditAttachments = [];
     renderView('mgmt-disciplinary-detail');
   } catch(e){
     err.textContent = e.message || "Couldn't save — please try again.";
@@ -2569,6 +2579,34 @@ async function handleDiscFileUpload(event){
     if(!r.ok){ alert(r.error || "Upload failed."); listEl.innerHTML = renderDiscAttachmentList(); return; }
     discCaseAttachments.push({fileId: r.fileId, fileName: r.fileName});
     listEl.innerHTML = renderDiscAttachmentList();
+    event.target.value = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+function renderDiscIncidentEditAttachmentList(){
+  if(!discIncidentEditAttachments.length) return `<p class="muted" style="font-size:13px;">No attachments added yet.</p>`;
+  return discIncidentEditAttachments.map((f,i)=>`<div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0; border-bottom:0.5px solid var(--line);"><span>📎 ${f.fileName}</span><button class="btn ghost auto" style="padding:3px 8px; font-size:12px;" onclick="removeDiscIncidentEditAttachment(${i})">Remove</button></div>`).join('');
+}
+function removeDiscIncidentEditAttachment(i){
+  discIncidentEditAttachments.splice(i,1);
+  document.getElementById('discIncidentEditAttachmentList').innerHTML = renderDiscIncidentEditAttachmentList();
+}
+async function handleDiscIncidentEditFileUpload(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  if(file.size > 10*1024*1024){ alert("File must be under 10MB."); event.target.value=''; return; }
+  if(!USE_REMOTE()){ alert("Connect the backend first — attachments need the live Sheet connection."); event.target.value=''; return; }
+
+  const reader = new FileReader();
+  reader.onload = async ()=>{
+    const base64 = reader.result.split(',')[1];
+    const listEl = document.getElementById('discIncidentEditAttachmentList');
+    listEl.innerHTML = `<p class="muted" style="font-size:13px;"><span class="btn-spinner"></span>Uploading ${file.name}…</p>` + renderDiscIncidentEditAttachmentList();
+    const r = await apiPost('uploadDisciplinaryFile', {base64, mimeType: file.type, fileName: file.name});
+    if(!r.ok){ alert(r.error || "Upload failed."); listEl.innerHTML = renderDiscIncidentEditAttachmentList(); return; }
+    discIncidentEditAttachments.push({fileId: r.fileId, fileName: r.fileName});
+    listEl.innerHTML = renderDiscIncidentEditAttachmentList();
     event.target.value = '';
   };
   reader.readAsDataURL(file);
@@ -4111,6 +4149,10 @@ const BUILDERS = {
         <textarea id="discEditPolicy" rows="3">${d.PolicyInvolved||''}</textarea>
         <label>Witnesses</label>
         <input type="text" id="discEditWitnesses" value="${d.Witnesses||''}">
+        <label>Attachments</label>
+        <input type="file" id="discIncidentEditFileInput" onchange="handleDiscIncidentEditFileUpload(event)" accept=".pdf,.jpg,.jpeg,.png">
+        <p class="muted" style="font-size:12px; margin:4px 0 8px;">PDF or photo, up to 10MB each.</p>
+        <div id="discIncidentEditAttachmentList">${renderDiscIncidentEditAttachmentList()}</div>
         <p id="discEditIncidentErr" class="login-err"></p>
         <div style="display:flex; gap:8px; margin-top:8px;">
           <button class="btn ghost auto" onclick="toggleDiscIncidentEdit(false)">Cancel</button>
