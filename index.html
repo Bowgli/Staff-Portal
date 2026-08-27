@@ -337,7 +337,7 @@
       </select>
       <label>Time</label>
       <select id="cellTime"></select>
-      <label>Position / Task</label>
+      <label>Position / Task <span class="muted" id="cellPositionFixedNote" style="display:none; font-weight:400; font-size:12px;">(fixed for this employee)</span></label>
       <select id="cellPosition"></select>
     </div>
     <p class="login-err" id="cellErr"></p>
@@ -827,6 +827,18 @@ function getUniqueScheduleTimes(){
 }
 const HIDDEN_POSITION_OPTIONS = new Set(["Drop/Main", "Drop/Supervise", "Maint/Drop", "Supervise/Maint", "Drop/Maint"]);
 const EXTRA_POSITION_OPTIONS = ["Slot Tech", "Tech Supervisor"]; // always offered, even if not yet used anywhere in the schedule
+/* Maps an employee's All-Employees Position (their job title) to the
+   fixed shift Position/Task that should always be used for them on
+   the Master Schedule — one less thing to pick, and no risk of
+   picking the wrong one, when adding or editing their shift. */
+const ROSTER_POSITION_TO_SCHEDULE_POSITION = {
+  "Shift Manager": "Shift Manager",
+  "Supervisor": "Supervisor",
+  "Technical Supervisor": "Slot Tech",
+  "Assistant Technical Supervisor": "Slot Tech",
+  "Slot Technician": "Slot Tech",
+  "Security": "Security",
+};
 function getUniqueSchedulePositions(){
   const set = new Set(EXTRA_POSITION_OPTIONS);
   [...SCHEDULE_ROWS, ...NEXT_SCHEDULE_ROWS].forEach(r => r.cells.forEach(c => {
@@ -906,8 +918,26 @@ function openCellModal(name, dayIndex, rawValue, sheetName){
 
   const timeSel = document.getElementById('cellTime');
   const posSel = document.getElementById('cellPosition');
+  const fixedNote = document.getElementById('cellPositionFixedNote');
   timeSel.innerHTML = getUniqueScheduleTimes().map(t=>`<option value="${t}">${t}</option>`).join('');
   posSel.innerHTML = getUniqueSchedulePositions().map(p=>`<option value="${p}">${p}</option>`).join('');
+
+  // If this employee's All-Employees position maps to a fixed
+  // schedule position, lock it in — no need to pick it every time,
+  // and no risk of picking the wrong one.
+  const roster = EMPLOYEE_ROSTER.find(e=>e.name===name);
+  const fixedPosition = roster ? ROSTER_POSITION_TO_SCHEDULE_POSITION[roster.position] : null;
+  if(fixedPosition){
+    if(![...posSel.options].some(o=>o.value===fixedPosition)){
+      posSel.insertAdjacentHTML('beforeend', `<option value="${fixedPosition}">${fixedPosition}</option>`);
+    }
+    posSel.value = fixedPosition;
+    posSel.disabled = true;
+    fixedNote.style.display = 'inline';
+  } else {
+    posSel.disabled = false;
+    fixedNote.style.display = 'none';
+  }
 
   const p = parseScheduleCell(rawValue);
   const statusSel = document.getElementById('cellStatus');
@@ -917,7 +947,7 @@ function openCellModal(name, dayIndex, rawValue, sheetName){
     statusSel.value = 'shift';
     if(p.venue) document.getElementById('cellVenue').value = p.venue;
     if(p.time && [...timeSel.options].some(o=>o.value===p.time)) timeSel.value = p.time;
-    if(p.position && [...posSel.options].some(o=>o.value===p.position)) posSel.value = p.position;
+    if(!fixedPosition && p.position && [...posSel.options].some(o=>o.value===p.position)) posSel.value = p.position;
   }
   toggleCellStatusFields();
   document.getElementById('cellErr').style.display = 'none';
