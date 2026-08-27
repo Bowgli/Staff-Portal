@@ -924,9 +924,14 @@ function openCellModal(name, dayIndex, rawValue, sheetName){
 
   // If this employee's All-Employees position maps to a fixed
   // schedule position, lock it in — no need to pick it every time,
-  // and no risk of picking the wrong one.
-  const roster = EMPLOYEE_ROSTER.find(e=>e.name===name);
-  const fixedPosition = roster ? ROSTER_POSITION_TO_SCHEDULE_POSITION[roster.position] : null;
+  // and no risk of picking the wrong one. Matched case- and
+  // whitespace-insensitively, since a name or position typed
+  // slightly differently between All Employees and the Schedule
+  // (e.g. extra space, different capitalization) would otherwise
+  // silently fail to match.
+  const roster = EMPLOYEE_ROSTER.find(e=>e.name.trim().toLowerCase() === name.trim().toLowerCase());
+  const rosterPositionKey = roster ? Object.keys(ROSTER_POSITION_TO_SCHEDULE_POSITION).find(k => k.toLowerCase() === roster.position.trim().toLowerCase()) : null;
+  const fixedPosition = rosterPositionKey ? ROSTER_POSITION_TO_SCHEDULE_POSITION[rosterPositionKey] : null;
   if(fixedPosition){
     if(![...posSel.options].some(o=>o.value===fixedPosition)){
       posSel.insertAdjacentHTML('beforeend', `<option value="${fixedPosition}">${fixedPosition}</option>`);
@@ -2281,7 +2286,7 @@ function setRole(role){
 /* ============================================================
    Disciplinary Records
    ============================================================ */
-const DISC_VIOLATION_TYPES = ["Attendance / Tardiness","Absence","Undertime","Work Performance","Company Policy","Workplace Conduct","Customer Service","Safety","Insubordination","Phone / Mobile Device Usage","Other"];
+const DISC_VIOLATION_TYPES = ["Attendance / Tardiness","Absence","Undertime","Work Performance","Company Policy","Workplace Conduct","Customer Service","Safety","Insubordination","Phone / Mobile Device Usage","Cash Handling / Cage Transaction Procedures","Procedural / Technical Error","Other"];
 const DISC_CONCERN_TYPES = ["Abusive Behavior","Disrespectful Attitude","Threatening Behavior","Refusal to Follow Policy and Procedure","Creating Disturbance to Customer","Threatening or Intimidating Behavior","Verbal Altercation / Argument","Aggressive or Confrontational Behavior","Inappropriate Language or Comments","Disruptive Behavior","Failure to Follow Supervisor Instructions","Violation of Workplace Rules","Failure to Perform Assigned Duties","Attendance or Punctuality Concern","Uncooperative Behavior","Workplace Conflict","Inappropriate Interaction with Customer","Customer Complaint Regarding Employee","Other"];
 const STATUS_LABELS = {"pending":"Pending","approved":"Approved","declined":"Declined","acknowledged":"Acknowledged","needs-clarification":"Needs Clarification"};
 const DISC_CUSTOMER_CONCERN_TYPES = ["Abusive Behavior / Shouting at Staff","Disrespectful Attitude","Threatening Behavior","Intoxicated / Drunk Customer","Refusal to Follow House Rules","Creating Disturbance to other Guests"];
