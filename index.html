@@ -243,6 +243,10 @@
     th, td{ border:1px solid #999 !important; color:#000 !important; padding:3px 4px !important; font-size:8.5px !important; line-height:1.25 !important; overflow-wrap:break-word !important; word-break:break-word !important; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
     th{ background:#eee !important; font-size:8.5px !important; }
     .print-hide-col{ display:none !important; }
+    /* the Employee Name column on the Master Schedule gets a bit
+       more size than the tiny 8.5px used everywhere else in this
+       wide grid, so names stay easy to read once printed */
+    td.sched-name{ font-size:10.5px !important; font-weight:600 !important; }
     td select{ -webkit-appearance:none; appearance:none; border:none !important; background:transparent !important; color:#000 !important; font-weight:600; padding:0 !important; font-size:8.5px !important; }
     .table-scroll{ overflow:visible !important; }
     /* the light theme's ".muted" text is a faint gray — fine on
@@ -3864,7 +3868,7 @@ const BUILDERS = {
               ${DEPTS.map(d=>`<option value="${d}" ${((r.department||'').toUpperCase()===d)?'selected':''}>${d.charAt(0)+d.slice(1).toLowerCase()}</option>`).join('')}
             </select>
           </td>
-          <td>${r.name}</td><td class="muted print-hide-col">${r.role||''}</td>
+          <td class="sched-name">${r.name}</td><td class="muted print-hide-col">${r.role||''}</td>
           ${r.cells.map((c,i)=>{
             const p = parseScheduleCell(c);
             const cellArg = `'${r.name.replace(/'/g,"\\'")}', ${i}, ${JSON.stringify(c||"").replace(/"/g,'&quot;')}, '${sheetName}'`;
