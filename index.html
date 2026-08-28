@@ -2183,8 +2183,7 @@ function openMyDisciplinaryCase(id){
         <tr><td class="muted" style="vertical-align:top;">Description</td><td style="white-space:pre-wrap;">${d.Description||''}</td></tr>
         <tr><td class="muted">Policy / Rule</td><td>${d.PolicyInvolved||'—'}</td></tr>
         ${d.DisciplinaryLevel ? `<tr><td class="muted">Disciplinary Level</td><td>${d.DisciplinaryLevel}</td></tr>` : ''}
-        ${d.ActionTaken ? `<tr><td class="muted">Action Taken</td><td>${d.ActionTaken}</td></tr>` : ''}
-        ${d.EffectiveDate ? `<tr><td class="muted">Effective Date</td><td>${fmtDiscDate(d.EffectiveDate)}</td></tr>` : ''}
+        ${d.ManagementDecisionAction ? `<tr><td class="muted" style="vertical-align:top;">Management Decision / Action</td><td style="white-space:pre-wrap;">${d.ManagementDecisionAction}</td></tr>` : ''}
       </table>
       <div style="margin-top:16px;">
         <label>Your Response</label>
@@ -2477,18 +2476,14 @@ let discIncidentEditMode = false;
 let discCaseInfoEditMode = false;
 let discReviewEditMode = false;
 let discLevelEditMode = false;
-let discApprovalEditMode = false;
-let discFinalActionEditMode = false;
 let discStatusEditMode = false;
 function openDisciplinaryCase(id){
   discDetailCaseId = id;
   const d = ALL_DISCIPLINARY_RECORDS.find(x=>x.ID===id) || {};
   discIncidentEditMode = false; // Incident Information is always filled in at creation, so it always starts read-only
   discCaseInfoEditMode = false; // same — always populated at creation
-  discReviewEditMode = !(d.ManagementFindings || d.PreviousRelatedCases || d.RecommendedAction || d.ManagementComments);
+  discReviewEditMode = !(d.ManagementFindings || d.PreviousRelatedCases || d.ManagementComments);
   discLevelEditMode = !d.DisciplinaryLevel;
-  discApprovalEditMode = !(d.ReviewedBy || d.ApprovedBy || d.ApprovalDate || d.ApprovalStatus);
-  discFinalActionEditMode = !(d.ActionTaken || d.EffectiveDate || d.FinalComments);
   discStatusEditMode = false;
   renderView('mgmt-disciplinary-detail');
 }
@@ -2512,14 +2507,6 @@ function toggleDiscReviewEdit(on){
 }
 function toggleDiscLevelEdit(on){
   discLevelEditMode = on;
-  renderView('mgmt-disciplinary-detail');
-}
-function toggleDiscApprovalEdit(on){
-  discApprovalEditMode = on;
-  renderView('mgmt-disciplinary-detail');
-}
-function toggleDiscFinalActionEdit(on){
-  discFinalActionEditMode = on;
   renderView('mgmt-disciplinary-detail');
 }
 function toggleDiscStatusEdit(on){
@@ -2818,7 +2805,6 @@ async function saveDiscReview(el){
     id: discDetailCaseId,
     ManagementFindings: document.getElementById('discFindings').value.trim(),
     PreviousRelatedCases: document.getElementById('discPrevCases').value.trim(),
-    RecommendedAction: document.getElementById('discRecommended').value.trim(),
     ManagementComments: document.getElementById('discComments').value.trim(),
     stage: 'review',
   };
@@ -2839,7 +2825,12 @@ async function saveDiscLevel(el){
   btnLoadingEl(el, 'Saving...');
   const level = document.getElementById('discLevelSelect').value;
   const empDecisionEl = document.querySelector('input[name="discEmpDecision"]:checked');
-  const fields = { id: discDetailCaseId, DisciplinaryLevel: level, EmploymentDecision: level===DISC_LEVELS[4] ? (empDecisionEl ? empDecisionEl.value : '') : '' };
+  const fields = {
+    id: discDetailCaseId,
+    DisciplinaryLevel: level,
+    EmploymentDecision: level===DISC_LEVELS[4] ? (empDecisionEl ? empDecisionEl.value : '') : '',
+    ManagementDecisionAction: document.getElementById('discDecisionAction').value.trim(),
+  };
   try{
     const r = await apiPost('updateDisciplinaryCase', fields);
     if(!r.ok){ alert(r.error || "Couldn't save the level — please try again."); btnResetEl(el); return; }
@@ -2849,51 +2840,6 @@ async function saveDiscLevel(el){
     renderView('mgmt-disciplinary-detail');
   } catch(e){
     alert(e.message || "Couldn't save the level — please try again.");
-    btnResetEl(el);
-  }
-}
-
-async function saveDiscApproval(el){
-  btnLoadingEl(el, 'Saving...');
-  const fields = {
-    id: discDetailCaseId,
-    ReviewedBy: document.getElementById('discReviewedBy').value.trim(),
-    ApprovedBy: document.getElementById('discApprovedBy').value.trim(),
-    ApprovalDate: document.getElementById('discApprovalDate').value,
-    ApprovalStatus: document.getElementById('discApprovalStatus').value,
-    stage: document.getElementById('discApprovalStatus').value === 'Approved' ? 'approved' : 'approval',
-  };
-  try{
-    const r = await apiPost('updateDisciplinaryCase', fields);
-    if(!r.ok){ alert(r.error || "Couldn't save the approval — please try again."); btnResetEl(el); return; }
-    await refreshDisciplinaryOnly();
-    await btnSentEl(el, 'Saved');
-    discApprovalEditMode = false;
-    renderView('mgmt-disciplinary-detail');
-  } catch(e){
-    alert(e.message || "Couldn't save the approval — please try again.");
-    btnResetEl(el);
-  }
-}
-
-async function saveDiscFinalAction(el){
-  btnLoadingEl(el, 'Saving...');
-  const fields = {
-    id: discDetailCaseId,
-    ActionTaken: document.getElementById('discActionTaken').value.trim(),
-    EffectiveDate: document.getElementById('discEffectiveDate').value,
-    FinalComments: document.getElementById('discFinalComments').value.trim(),
-    stage: 'final',
-  };
-  try{
-    const r = await apiPost('updateDisciplinaryCase', fields);
-    if(!r.ok){ alert(r.error || "Couldn't save the final action — please try again."); btnResetEl(el); return; }
-    await refreshDisciplinaryOnly();
-    await btnSentEl(el, 'Saved');
-    discFinalActionEditMode = false;
-    renderView('mgmt-disciplinary-detail');
-  } catch(e){
-    alert(e.message || "Couldn't save the final action — please try again.");
     btnResetEl(el);
   }
 }
@@ -2913,6 +2859,32 @@ async function saveDiscStatus(el){
   } catch(e){
     alert(e.message || "Couldn't update the status — please try again.");
     btnResetEl(el);
+  }
+}
+
+async function confirmManagementReview(){
+  if(!confirm("Confirm this review under your account? This records your name plus today's date and time, and can't be reassigned or undone afterward.")) return;
+  const btn = document.getElementById('discConfirmReviewBtn');
+  btnLoadingEl(btn, 'Confirming...');
+  const now = new Date();
+  const reviewDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  const reviewTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  const fields = {
+    id: discDetailCaseId,
+    ReviewConfirmedBy: CURRENT_USER.displayName, // always the logged-in account — never a typed name
+    ReviewConfirmDate: reviewDate,
+    ReviewConfirmTime: reviewTime,
+    stage: 'reviewconfirmed',
+  };
+  try{
+    const r = await apiPost('updateDisciplinaryCase', fields);
+    if(!r.ok){ alert(r.error || "Couldn't confirm the review — please try again."); btnResetEl(btn); return; }
+    await refreshDisciplinaryOnly();
+    await btnSentEl(btn, 'Confirmed');
+    renderView('mgmt-disciplinary-detail');
+  } catch(e){
+    alert(e.message || "Couldn't confirm the review — please try again.");
+    btnResetEl(btn);
   }
 }
 
@@ -4259,15 +4231,13 @@ const BUILDERS = {
     <div class="card" style="margin-bottom:16px;">
       <h3 style="display:flex; justify-content:space-between; align-items:center;">
         <span>Management Review</span>
-        ${!discReviewEditMode ? `<button class="btn ghost auto no-print" style="padding:4px 10px; font-size:13px;" onclick="toggleDiscReviewEdit(true)">Edit</button>` : ''}
+        ${(!discReviewEditMode && currentMgmtRole()==='full') ? `<button class="btn ghost auto no-print" style="padding:4px 10px; font-size:13px;" onclick="toggleDiscReviewEdit(true)">Edit</button>` : ''}
       </h3>
       ${discReviewEditMode ? `
         <label>Management Findings</label>
         <textarea id="discFindings" rows="3">${d.ManagementFindings||''}</textarea>
         <label>Previous Related Cases</label>
         <input type="text" id="discPrevCases" value="${d.PreviousRelatedCases||''}" placeholder="e.g. DR-2026-004 (verbal warning, June)">
-        <label>Recommended Action</label>
-        <input type="text" id="discRecommended" value="${d.RecommendedAction||''}">
         <label>Management Comments</label>
         <textarea id="discComments" rows="3">${d.ManagementComments||''}</textarea>
         <div style="display:flex; gap:8px; margin-top:8px;">
@@ -4278,7 +4248,6 @@ const BUILDERS = {
         <table>
           <tr><td class="muted" style="vertical-align:top;">Findings</td><td style="white-space:pre-wrap;">${d.ManagementFindings||'—'}</td></tr>
           <tr><td class="muted">Previous Related Cases</td><td>${d.PreviousRelatedCases||'—'}</td></tr>
-          <tr><td class="muted">Recommended Action</td><td>${d.RecommendedAction||'—'}</td></tr>
           <tr><td class="muted" style="vertical-align:top;">Comments</td><td style="white-space:pre-wrap;">${d.ManagementComments||'—'}</td></tr>
         </table>
       `}
@@ -4287,7 +4256,7 @@ const BUILDERS = {
     <div class="card" style="margin-bottom:16px;">
       <h3 style="display:flex; justify-content:space-between; align-items:center;">
         <span>Disciplinary Level</span>
-        ${!discLevelEditMode ? `<button class="btn ghost auto no-print" style="padding:4px 10px; font-size:13px;" onclick="toggleDiscLevelEdit(true)">Edit</button>` : ''}
+        ${(!discLevelEditMode && currentMgmtRole()==='full') ? `<button class="btn ghost auto no-print" style="padding:4px 10px; font-size:13px;" onclick="toggleDiscLevelEdit(true)">Edit</button>` : ''}
       </h3>
       ${discLevelEditMode ? `
         <p class="muted" style="margin-bottom:8px;">Management should review the circumstances, employee response, and company policy before selecting a level — it's never assigned automatically from case count.</p>
@@ -4299,6 +4268,8 @@ const BUILDERS = {
           <label>Employment Decision</label>
           ${DISC_EMPLOYMENT_DECISIONS.map(o=>`<div class="checkbox-row"><input type="radio" name="discEmpDecision" id="discED_${o.replace(/[^a-zA-Z]/g,'')}" value="${o}" ${d.EmploymentDecision===o?'checked':''}><label for="discED_${o.replace(/[^a-zA-Z]/g,'')}">${o}</label></div>`).join('')}
         </div>
+        <label>Management Decision / Action</label>
+        <textarea id="discDecisionAction" rows="3" placeholder="What management has decided to do about this case">${d.ManagementDecisionAction||''}</textarea>
         <div style="display:flex; gap:8px; margin-top:8px;">
           <button class="btn ghost auto" onclick="toggleDiscLevelEdit(false)">Cancel</button>
           <button class="btn auto" onclick="saveDiscLevel(this)">Save Level</button>
@@ -4307,65 +4278,7 @@ const BUILDERS = {
         <table>
           <tr><td class="muted">Level</td><td>${d.DisciplinaryLevel||'<span class="muted">Not yet determined</span>'}</td></tr>
           ${isLevel5 ? `<tr><td class="muted">Employment Decision</td><td>${d.EmploymentDecision||'—'}</td></tr>` : ''}
-        </table>
-      `}
-    </div>
-
-    <div class="card" style="margin-bottom:16px;">
-      <h3 style="display:flex; justify-content:space-between; align-items:center;">
-        <span>Approval</span>
-        ${!discApprovalEditMode ? `<button class="btn ghost auto no-print" style="padding:4px 10px; font-size:13px;" onclick="toggleDiscApprovalEdit(true)">Edit</button>` : ''}
-      </h3>
-      ${discApprovalEditMode ? `
-        <div class="grid grid-2">
-          <div><label>Reviewed By</label><input type="text" id="discReviewedBy" value="${d.ReviewedBy||''}"></div>
-          <div><label>Approved By</label><input type="text" id="discApprovedBy" value="${d.ApprovedBy||''}"></div>
-        </div>
-        <div class="grid grid-2">
-          <div><label>Approval Date</label><input type="date" id="discApprovalDate" value="${d.ApprovalDate||''}"></div>
-          <div><label>Approval Status</label>
-            <select id="discApprovalStatus">
-              <option value="" ${!d.ApprovalStatus?'selected':''}>— Pending —</option>
-              <option ${d.ApprovalStatus==='Approved'?'selected':''}>Approved</option>
-              <option ${d.ApprovalStatus==='Declined'?'selected':''}>Declined</option>
-            </select>
-          </div>
-        </div>
-        <div style="display:flex; gap:8px; margin-top:8px;">
-          <button class="btn ghost auto" onclick="toggleDiscApprovalEdit(false)">Cancel</button>
-          <button class="btn auto" onclick="saveDiscApproval(this)">Save Approval</button>
-        </div>
-      ` : `
-        <table>
-          <tr><td class="muted">Reviewed By</td><td>${d.ReviewedBy||'—'}</td></tr>
-          <tr><td class="muted">Approved By</td><td>${d.ApprovedBy||'—'}</td></tr>
-          <tr><td class="muted">Approval Date</td><td>${d.ApprovalDate ? fmtDiscDate(d.ApprovalDate) : '—'}</td></tr>
-          <tr><td class="muted">Approval Status</td><td>${d.ApprovalStatus||'<span class="muted">Pending</span>'}</td></tr>
-        </table>
-      `}
-    </div>
-
-    <div class="card" style="margin-bottom:16px;">
-      <h3 style="display:flex; justify-content:space-between; align-items:center;">
-        <span>Final Action</span>
-        ${!discFinalActionEditMode ? `<button class="btn ghost auto no-print" style="padding:4px 10px; font-size:13px;" onclick="toggleDiscFinalActionEdit(true)">Edit</button>` : ''}
-      </h3>
-      ${discFinalActionEditMode ? `
-        <div class="grid grid-2">
-          <div><label>Action Taken</label><input type="text" id="discActionTaken" value="${d.ActionTaken||''}"></div>
-          <div><label>Effective Date</label><input type="date" id="discEffectiveDate" value="${d.EffectiveDate||''}"></div>
-        </div>
-        <label>Additional Comments</label>
-        <textarea id="discFinalComments" rows="3">${d.FinalComments||''}</textarea>
-        <div style="display:flex; gap:8px; margin-top:8px;">
-          <button class="btn ghost auto" onclick="toggleDiscFinalActionEdit(false)">Cancel</button>
-          <button class="btn auto" onclick="saveDiscFinalAction(this)">Save Final Action</button>
-        </div>
-      ` : `
-        <table>
-          <tr><td class="muted">Action Taken</td><td>${d.ActionTaken||'—'}</td></tr>
-          <tr><td class="muted">Effective Date</td><td>${d.EffectiveDate ? fmtDiscDate(d.EffectiveDate) : '—'}</td></tr>
-          <tr><td class="muted" style="vertical-align:top;">Comments</td><td style="white-space:pre-wrap;">${d.FinalComments||'—'}</td></tr>
+          <tr><td class="muted" style="vertical-align:top;">Management Decision / Action</td><td style="white-space:pre-wrap;">${d.ManagementDecisionAction||'—'}</td></tr>
         </table>
       `}
     </div>
@@ -4373,7 +4286,7 @@ const BUILDERS = {
     <div class="card" style="margin-bottom:16px;">
       <h3 style="display:flex; justify-content:space-between; align-items:center;">
         <span>Case Status</span>
-        ${!discStatusEditMode ? `<button class="btn ghost auto no-print" style="padding:4px 10px; font-size:13px;" onclick="toggleDiscStatusEdit(true)">Change Status</button>` : ''}
+        ${(!discStatusEditMode && currentMgmtRole()==='full') ? `<button class="btn ghost auto no-print" style="padding:4px 10px; font-size:13px;" onclick="toggleDiscStatusEdit(true)">Change Status</button>` : ''}
       </h3>
       ${discStatusEditMode ? `
         <select id="discStatusSelect">
@@ -4384,6 +4297,26 @@ const BUILDERS = {
           <button class="btn auto" onclick="saveDiscStatus(this)">Update Status</button>
         </div>
       ` : `<p>${discStatusPill(d.Status)}</p>`}
+    </div>
+
+    <div class="card print-doc" style="margin-bottom:16px;">
+      <h3>Management Review Confirmation</h3>
+      ${d.ReviewConfirmedBy ? `
+        <table>
+          <tr><td class="muted">Reviewed By</td><td>${d.ReviewConfirmedBy}</td></tr>
+          <tr><td class="muted">Review Date</td><td>${fmtDiscDate(d.ReviewConfirmDate)}</td></tr>
+          <tr><td class="muted">Review Time</td><td>${fmtDiscTime(d.ReviewConfirmTime)}</td></tr>
+        </table>
+        <div style="margin-top:24px; max-width:280px;">
+          <div style="border-bottom:1px solid #000;">&nbsp;</div>
+          <p class="muted" style="margin-top:4px; font-size:12px;">Management Reviewer Signature</p>
+        </div>
+      ` : `
+        ${currentMgmtRole()==='full' ? `
+          <p class="muted no-print" style="margin-bottom:8px;">This records who reviewed the case and when, under your logged-in account — it can't be reassigned to someone else or undone afterward.</p>
+          <button class="btn auto no-print" id="discConfirmReviewBtn" onclick="confirmManagementReview()">Confirm Review</button>
+        ` : `<p class="muted">Not yet confirmed by management.</p>`}
+      `}
     </div>
     </div>
 
