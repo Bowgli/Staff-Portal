@@ -426,7 +426,7 @@
     <p class="login-err" id="acctModalErr"></p>
     <div class="modal-btns">
       <button class="btn ghost" onclick="closeAcctModal()">Cancel</button>
-      <button class="btn" onclick="confirmAcctModal()">Save</button>
+      <button class="btn" id="acctModalSaveBtn" onclick="confirmAcctModal()">Save</button>
     </div>
   </div>
 </div>
@@ -438,7 +438,15 @@
     <label>Full Name</label>
     <input type="text" id="addEmpName" placeholder="e.g. Juan Dela Cruz">
     <label>Position</label>
-    <input type="text" id="addEmpPosition" placeholder="e.g. Cashier">
+    <select id="addEmpPosition">
+      <option>Shift Manager</option>
+      <option>Supervisor</option>
+      <option>Cashier</option>
+      <option>Slot Technician</option>
+      <option>Attendant</option>
+      <option>Membership Officer</option>
+      <option>Security</option>
+    </select>
     <label>Status</label>
     <select id="addEmpStatus">
       <option>Active</option>
@@ -880,33 +888,54 @@ async function updateNextWeekDates(){
 
 async function promoteNextWeek(){
   if(!confirm("This replaces the current week's schedule with what's in Next Week. Next Week's content stays as-is afterward — a ready starting point for the following round. Continue?")) return;
-  if(USE_REMOTE()){
-    const r = await apiPost('promoteNextWeekSchedule', {});
-    if(!r.ok){ alert(r.error || "Couldn't promote."); return; }
-    await refreshScheduleOnly();
+  const btn = document.getElementById('promoteNextBtn');
+  btnLoadingEl(btn, 'Promoting...');
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPost('promoteNextWeekSchedule', {});
+      if(!r.ok){ alert(r.error || "Couldn't promote."); btnResetEl(btn); return; }
+      await refreshScheduleOnly();
+    }
+    scheduleViewMode = 'current';
+    renderView('mgmt-schedule');
+    alert("✅ New schedule sent successfully! It's now the current week — everyone will see it right away.");
+  } catch(e){
+    alert(e.message || "Couldn't promote — please try again.");
+    btnResetEl(btn);
   }
-  scheduleViewMode = 'current';
-  renderView('mgmt-schedule');
-  alert("✅ New schedule sent successfully! It's now the current week — everyone will see it right away.");
 }
 
 async function publishNextWeek(){
-  if(USE_REMOTE()){
-    const r = await apiPost('publishNextSchedule', {});
-    if(!r.ok){ alert(r.error || "Couldn't publish."); return; }
+  const btn = document.getElementById('publishNextBtn');
+  btnLoadingEl(btn, 'Publishing...');
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPost('publishNextSchedule', {});
+      if(!r.ok){ alert(r.error || "Couldn't publish."); btnResetEl(btn); return; }
+    }
+    NEXT_SCHEDULE_PUBLISHED = true;
+    renderView('mgmt-schedule');
+  } catch(e){
+    alert(e.message || "Couldn't publish — please try again.");
+    btnResetEl(btn);
   }
-  NEXT_SCHEDULE_PUBLISHED = true;
-  renderView('mgmt-schedule');
 }
 
 async function unpublishNextWeek(){
   if(!confirm("Employees will no longer see the Next Week preview until you publish it again. Continue?")) return;
-  if(USE_REMOTE()){
-    const r = await apiPost('unpublishNextSchedule', {});
-    if(!r.ok){ alert(r.error || "Couldn't unpublish."); return; }
+  const btn = document.getElementById('unpublishNextBtn');
+  btnLoadingEl(btn, 'Unpublishing...');
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPost('unpublishNextSchedule', {});
+      if(!r.ok){ alert(r.error || "Couldn't unpublish."); btnResetEl(btn); return; }
+    }
+    NEXT_SCHEDULE_PUBLISHED = false;
+    renderView('mgmt-schedule');
+  } catch(e){
+    alert(e.message || "Couldn't unpublish — please try again.");
+    btnResetEl(btn);
   }
-  NEXT_SCHEDULE_PUBLISHED = false;
-  renderView('mgmt-schedule');
 }
 
 let cellModalTarget = null; // {name, dayIndex, sheetName}
@@ -1820,7 +1849,7 @@ function closeAcctModal(){ document.getElementById('acctModal').classList.remove
 
 function openAddEmpModal(){
   document.getElementById('addEmpName').value = '';
-  document.getElementById('addEmpPosition').value = '';
+  document.getElementById('addEmpPosition').value = 'Shift Manager';
   document.getElementById('addEmpStatus').value = 'Active';
   document.getElementById('addEmpDateHired').value = '';
   document.getElementById('addEmpErr').style.display = 'none';
@@ -1970,16 +1999,27 @@ async function confirmAcctModal(){
   const acct = findAccountByEmployeeName(acctModalTarget);
   const pass = document.getElementById('acctModalPass').value;
   const err = document.getElementById('acctModalErr');
+  err.style.display = 'none';
   if(!pass || pass.length<4){ err.textContent="Password must be at least 4 characters."; err.style.display='block'; return; }
+
+  const btn = document.getElementById('acctModalSaveBtn');
 
   if(USE_REMOTE()){
     const username = document.getElementById('acctModalUsername').value.trim();
     const fullName = document.getElementById('acctModalFullName').value.trim();
-    const r = await apiPost('resetOrAssignPassword', {employeeName:acctModalTarget, username, fullName, newPassword:pass});
-    if(!r.ok){ err.textContent = r.error || "Something went wrong."; err.style.display='block'; return; }
-    await loadRemoteData();
-    closeAcctModal();
-    renderView('mgmt-accounts');
+    btnLoadingEl(btn, 'Saving...');
+    try{
+      const r = await apiPost('resetOrAssignPassword', {employeeName:acctModalTarget, username, fullName, newPassword:pass});
+      if(!r.ok){ err.textContent = r.error || "Something went wrong."; err.style.display='block'; btnResetEl(btn); return; }
+      await loadRemoteData();
+      await btnSentEl(btn, 'Saved');
+      closeAcctModal();
+      renderView('mgmt-accounts');
+    } catch(e){
+      err.textContent = e.message || "Couldn't save — please try again.";
+      err.style.display = 'block';
+      btnResetEl(btn);
+    }
     return;
   }
 
@@ -3804,9 +3844,9 @@ const BUILDERS = {
       </div>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
         ${NEXT_SCHEDULE_PUBLISHED
-          ? `<button class="btn ghost auto" onclick="unpublishNextWeek()">Unpublish (back to draft)</button>`
-          : `<button class="btn auto" onclick="publishNextWeek()">Publish to Employees</button>`}
-        <button class="btn auto" onclick="promoteNextWeek()">Promote to Current Week</button>
+          ? `<button class="btn ghost auto" id="unpublishNextBtn" onclick="unpublishNextWeek()">Unpublish (back to draft)</button>`
+          : `<button class="btn auto" id="publishNextBtn" onclick="publishNextWeek()">Publish to Employees</button>`}
+        <button class="btn auto" id="promoteNextBtn" onclick="promoteNextWeek()">Promote to Current Week</button>
         <button class="btn ghost auto" onclick="openAddSchedEmpModal()">+ Add New Employee</button>
       </div>
     </div>` : ''}
