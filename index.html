@@ -351,6 +351,19 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="weekScheduleModal">
+  <div class="modal-box" style="max-width:720px;">
+    <h3>Edit Week</h3>
+    <p id="weekModalSub" style="margin-bottom:14px; color:#FF8C28; font-weight:600;"></p>
+    <div id="weekModalDays" style="max-height:60vh; overflow-y:auto; padding-right:4px;"></div>
+    <p class="login-err" id="weekErr"></p>
+    <div class="modal-btns">
+      <button class="btn ghost" onclick="closeWeekModal()">Cancel</button>
+      <button class="btn" id="weekSaveBtn" onclick="saveWeekSchedule()">Save Week</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== LOGIN GATE ===== -->
 <div class="login-gate" id="loginGate">
   <div class="login-card">
@@ -1000,6 +1013,120 @@ function closeCellModal(){
   document.getElementById('scheduleCellModal').classList.remove('active');
   cellModalTarget = null;
 }
+
+let weekModalTarget = null;
+
+function renderWeekDayRow(i, dayRaw, p, fixedPosition, timeOptions, positionOptions){
+  const status = p.type === 'off' ? 'OFF' : p.type === 'leave' ? 'LEAVE' : 'shift';
+  const posValue = fixedPosition || p.position || '';
+  return `
+  <div class="card" style="margin-bottom:10px; padding:12px 14px;">
+    <p style="font-weight:600; margin-bottom:8px;">${fmtDayLabel(dayRaw)}</p>
+    <label style="font-size:12px;">Status</label>
+    <select id="weekDay${i}Status" onchange="toggleWeekDayFields(${i})">
+      <option value="shift" ${status==='shift'?'selected':''}>Working (Shift)</option>
+      <option value="OFF" ${status==='OFF'?'selected':''}>OFF</option>
+      <option value="LEAVE" ${status==='LEAVE'?'selected':''}>LEAVE</option>
+    </select>
+    <div id="weekDay${i}ShiftFields" class="grid grid-3" style="display:${status==='shift'?'grid':'none'}; margin-top:6px;">
+      <div>
+        <label style="font-size:12px;">Venue</label>
+        <select id="weekDay${i}Venue">
+          <option value="SV" ${p.venue==='SV'?'selected':''}>Saipan Vegas</option>
+          <option value="C88" ${p.venue==='C88'?'selected':''}>Club 88</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px;">Time</label>
+        <select id="weekDay${i}Time">${timeOptions.map(t=>`<option value="${t}" ${p.time===t?'selected':''}>${t}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label style="font-size:12px;">Position ${fixedPosition ? '<span class="muted" style="font-weight:400;">(fixed)</span>' : ''}</label>
+        <select id="weekDay${i}Position" ${fixedPosition ? 'disabled' : ''}>${positionOptions.map(pos=>`<option value="${pos}" ${posValue===pos?'selected':''}>${pos}</option>`).join('')}</select>
+      </div>
+    </div>
+  </div>`;
+}
+
+function toggleWeekDayFields(i){
+  const status = document.getElementById(`weekDay${i}Status`).value;
+  document.getElementById(`weekDay${i}ShiftFields`).style.display = status === 'shift' ? 'grid' : 'none';
+}
+
+function openWeekModal(name, sheetName){
+  weekModalTarget = { name, sheetName };
+  const days = sheetName === 'NextSchedule' ? NEXT_SCHEDULE_DAYS : SCHEDULE_DAYS;
+  const rows = sheetName === 'NextSchedule' ? NEXT_SCHEDULE_ROWS : SCHEDULE_ROWS;
+  const row = rows.find(r=>r.name===name);
+  if(!row) return;
+
+  // Same fixed-position lookup as the single-day editor, so the
+  // week view stays consistent with it.
+  const roster = EMPLOYEE_ROSTER.find(e=>e.name.trim().toLowerCase() === name.trim().toLowerCase());
+  const rosterPositionKey = roster ? Object.keys(ROSTER_POSITION_TO_SCHEDULE_POSITION).find(k => k.toLowerCase() === roster.position.trim().toLowerCase()) : null;
+  const fixedPosition = rosterPositionKey ? ROSTER_POSITION_TO_SCHEDULE_POSITION[rosterPositionKey] : null;
+
+  const timeOptions = getUniqueScheduleTimes();
+  const positionOptions = getUniqueSchedulePositions();
+  if(fixedPosition && !positionOptions.includes(fixedPosition)) positionOptions.push(fixedPosition);
+
+  document.getElementById('weekModalSub').textContent = name;
+  document.getElementById('weekModalDays').innerHTML = days.map((dayRaw, i)=>{
+    const p = parseScheduleCell(row.cells[i]);
+    return renderWeekDayRow(i, dayRaw, p, fixedPosition, timeOptions, positionOptions);
+  }).join('');
+  document.getElementById('weekErr').style.display = 'none';
+  document.getElementById('weekSaveBtn').disabled = false;
+  document.getElementById('weekSaveBtn').textContent = 'Save Week';
+  document.getElementById('weekScheduleModal').classList.add('active');
+}
+
+function closeWeekModal(){
+  document.getElementById('weekScheduleModal').classList.remove('active');
+  weekModalTarget = null;
+}
+
+async function saveWeekSchedule(){
+  if(!weekModalTarget) return;
+  const { name, sheetName } = weekModalTarget;
+  const days = sheetName === 'NextSchedule' ? NEXT_SCHEDULE_DAYS : SCHEDULE_DAYS;
+  const err = document.getElementById('weekErr');
+  err.style.display = 'none';
+
+  const cells = [];
+  for(let i=0; i<days.length; i++){
+    const status = document.getElementById(`weekDay${i}Status`).value;
+    if(status === 'OFF'){ cells.push('OFF'); continue; }
+    if(status === 'LEAVE'){ cells.push('LEAVE'); continue; }
+    const venue = document.getElementById(`weekDay${i}Venue`).value;
+    const time = document.getElementById(`weekDay${i}Time`).value;
+    const position = document.getElementById(`weekDay${i}Position`).value;
+    if(!time || !position){ err.textContent = `Pick a time and position for ${fmtDayLabel(days[i])}.`; err.style.display = 'block'; return; }
+    cells.push(`${venue} ${time} ${position}`);
+  }
+
+  const btn = document.getElementById('weekSaveBtn');
+  btnLoadingEl(btn, 'Saving...');
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPost('updateScheduleWeek', {name, sheetName, cells});
+      if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display = 'block'; btnResetEl(btn); return; }
+      await refreshScheduleOnly();
+    } else {
+      const rows = sheetName === 'NextSchedule' ? NEXT_SCHEDULE_ROWS : SCHEDULE_ROWS;
+      const row = rows.find(r=>r.name===name);
+      if(row) row.cells = cells;
+    }
+    await btnSentEl(btn, 'Saved');
+    closeWeekModal();
+    renderView('mgmt-schedule');
+  } catch(e){
+    err.textContent = e.message || "Couldn't save — please try again.";
+    err.style.display = 'block';
+    btnResetEl(btn);
+  }
+}
+
 async function saveCellEdit(){
   if(!cellModalTarget) return;
   const status = document.getElementById('cellStatus').value;
@@ -3840,7 +3967,7 @@ const BUILDERS = {
               ${DEPTS.map(d=>`<option value="${d}" ${((r.department||'').toUpperCase()===d)?'selected':''}>${d.charAt(0)+d.slice(1).toLowerCase()}</option>`).join('')}
             </select>
           </td>
-          <td class="sched-name">${r.name}</td><td class="muted print-hide-col">${r.role||''}</td>
+          <td class="sched-name">${r.name}<br><button class="btn ghost auto no-print" style="padding:2px 8px; font-size:10px; margin-top:3px;" onclick="openWeekModal('${r.name.replace(/'/g,"\\'")}', '${sheetName}')">Edit Week</button></td><td class="muted print-hide-col">${r.role||''}</td>
           ${r.cells.map((c,i)=>{
             const p = parseScheduleCell(c);
             const cellArg = `'${r.name.replace(/'/g,"\\'")}', ${i}, ${JSON.stringify(c||"").replace(/"/g,'&quot;')}, '${sheetName}'`;
