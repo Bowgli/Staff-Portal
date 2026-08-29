@@ -1736,6 +1736,10 @@ function getMgmtAlertCounts(){
     suggestions: MOCK.suggestionsLog.filter(s=>s.status==='new').length,
     evaluations: ALL_EVALUATIONS.length,
     discResponses: ALL_DISCIPLINARY_RECORDS.filter(d=>d.EmployeeResponse).length,
+    nominations: ALL_NOMINATIONS.length,
+    requestsSig: ALL_REQUESTS.map(r=>r.ID+':'+r.Status).join(','),
+    concernsSig: MOCK.concernsLog.map(c=>c.id+':'+c.status+':'+c.topic).join(','),
+    suggestionsSig: MOCK.suggestionsLog.map(s=>s.id+':'+s.status).join(','),
   };
 }
 
@@ -1788,7 +1792,8 @@ async function startMgmtPolling(){
     if(document.hidden) return; // skip while this tab isn't the active/visible one — avoids piling up requests across multiple open tabs
     let counts;
     try{ counts = await apiGet('counts'); } catch(e){ return; } // one cheap call instead of a full 10-fetch reload every cycle
-    const changed = counts.requests !== mgmtAlertBaseline.requests || counts.concerns !== mgmtAlertBaseline.concerns || counts.suggestions !== mgmtAlertBaseline.suggestions || counts.evaluations !== mgmtAlertBaseline.evaluations || counts.discResponses !== mgmtAlertBaseline.discResponses;
+    const changed = counts.requests !== mgmtAlertBaseline.requests || counts.concerns !== mgmtAlertBaseline.concerns || counts.suggestions !== mgmtAlertBaseline.suggestions || counts.evaluations !== mgmtAlertBaseline.evaluations || counts.discResponses !== mgmtAlertBaseline.discResponses || counts.nominations !== mgmtAlertBaseline.nominations
+      || counts.requestsSig !== mgmtAlertBaseline.requestsSig || counts.concernsSig !== mgmtAlertBaseline.concernsSig || counts.suggestionsSig !== mgmtAlertBaseline.suggestionsSig;
     if(!changed) return; // nothing new — skip the full reload entirely this cycle
 
     const newRequests = counts.requests - mgmtAlertBaseline.requests;
@@ -1796,26 +1801,39 @@ async function startMgmtPolling(){
     const newSuggestions = counts.suggestions - mgmtAlertBaseline.suggestions;
     const newEvaluations = (counts.evaluations||0) - (mgmtAlertBaseline.evaluations||0);
     const newDiscResponses = (counts.discResponses||0) - (mgmtAlertBaseline.discResponses||0);
+    const newNominations = (counts.nominations||0) - (mgmtAlertBaseline.nominations||0);
+    // An employee EDITING an existing item (not submitting a new
+    // one) doesn't change its status count, but does change its
+    // signature — that's how we catch it separately.
+    const requestsEdited = newRequests <= 0 && counts.requestsSig !== mgmtAlertBaseline.requestsSig;
+    const concernsEdited = newConcerns <= 0 && counts.concernsSig !== mgmtAlertBaseline.concernsSig;
+    const suggestionsEdited = newSuggestions <= 0 && counts.suggestionsSig !== mgmtAlertBaseline.suggestionsSig;
     mgmtAlertBaseline = counts;
 
     await loadRemoteData(); // reload first so we can name what actually came in
 
-    if(newRequests > 0 || newConcerns > 0 || newSuggestions > 0 || newEvaluations > 0 || newDiscResponses > 0){
+    if(newRequests > 0 || newConcerns > 0 || newSuggestions > 0 || newEvaluations > 0 || newDiscResponses > 0 || newNominations > 0 || requestsEdited || concernsEdited || suggestionsEdited){
       if(soundAlertsEnabled()) playAlertTone();
       if(newRequests > 0){
         const latest = ALL_REQUESTS.filter(r=>r.Status==='pending').slice(0, newRequests);
         const detail = latest.length===1 ? `${latest[0].EmployeeName} — ${latest[0].Type}` : latest.map(r=>`${r.EmployeeName} (${r.Type})`).join(', ');
         showMgmtToast('📝', newRequests===1?'New Request':`${newRequests} New Requests`, `${detail || 'A new request came in'} — tap to view`, 'mgmt-requests');
+      } else if(requestsEdited){
+        showMgmtToast('📝', 'Request Updated', 'An employee updated one of their requests — tap to view', 'mgmt-requests');
       }
       if(newConcerns > 0){
         const latest = MOCK.concernsLog.filter(c=>c.status==='Open').slice(0, newConcerns);
         const detail = latest.length===1 ? `${latest[0].from} — ${latest[0].topic}` : latest.map(c=>c.topic).join(', ');
         showMgmtToast('⚠️', newConcerns===1?'New Concern':`${newConcerns} New Concerns`, `${detail || 'A new concern was reported'} — tap to view`, 'mgmt-concerns');
+      } else if(concernsEdited){
+        showMgmtToast('⚠️', 'Concern Updated', 'An employee updated a submitted concern — tap to view', 'mgmt-concerns');
       }
       if(newSuggestions > 0){
         const latest = MOCK.suggestionsLog.filter(s=>s.status==='new').slice(0, newSuggestions);
         const snippet = latest.length===1 ? (latest[0].idea||'').slice(0,60) : latest.map(s=>s.from).join(', ');
         showMgmtToast('💡', newSuggestions===1?'New Suggestion':`${newSuggestions} New Suggestions`, `${snippet || 'A new idea was submitted'}${latest.length===1 && (latest[0].idea||'').length>60?'…':''} — tap to view`, 'mgmt-suggestions');
+      } else if(suggestionsEdited){
+        showMgmtToast('💡', 'Suggestion Updated', 'An employee updated a submitted suggestion — tap to view', 'mgmt-suggestions');
       }
       if(newEvaluations > 0){
         const latest = ALL_EVALUATIONS.slice(0, newEvaluations);
@@ -1827,9 +1845,14 @@ async function startMgmtPolling(){
         const detail = latest.length===1 ? `${latest[0].EmployeeName} — ${latest[0].CaseNumber||'case'}` : latest.map(d=>d.EmployeeName).join(', ');
         showMgmtToast('📁', newDiscResponses===1?'New Employee Response':`${newDiscResponses} New Employee Responses`, `${detail || 'A response was added to a case'} — tap to view`, 'mgmt-disciplinary');
       }
+      if(newNominations > 0){
+        const latest = ALL_NOMINATIONS.slice(0, newNominations);
+        const detail = latest.length===1 ? `${latest[0].NomineeName} — ${latest[0].AwardCategory}` : latest.map(n=>n.NomineeName).join(', ');
+        showMgmtToast('🌟', newNominations===1?'New Award Nomination':`${newNominations} New Award Nominations`, `${detail || 'A new nomination was submitted'} — tap to view`, 'mgmt-nominations');
+      }
     }
     renderNav();
-    if(['mgmt-home','mgmt-requests','mgmt-concerns','mgmt-suggestions','mgmt-performance','mgmt-disciplinary'].includes(activeView)) renderView(activeView);
+    if(['mgmt-home','mgmt-requests','mgmt-concerns','mgmt-suggestions','mgmt-performance','mgmt-disciplinary','mgmt-nominations'].includes(activeView)) renderView(activeView);
   }, 30000); // check every 30 seconds
 }
 
@@ -1858,6 +1881,16 @@ function myDisciplinarySnapshot(records){
   if(records) return JSON.stringify(records.map(d=>[d.ID, d.Status]));
   return JSON.stringify(MY_DISCIPLINARY_RECORDS.map(d=>[d.ID, d.Status]));
 }
+let empConcernsBaseline = '';
+function myConcernsSnapshot(records){
+  if(records) return JSON.stringify(records.map(c=>[c.ID, c.Status]));
+  return JSON.stringify(MY_CONCERNS.map(c=>[c.id, c.status]));
+}
+let empSuggestionsBaseline = '';
+function mySuggestionsSnapshot(records){
+  if(records) return JSON.stringify(records.map(s=>[s.ID, s.Status]));
+  return JSON.stringify(MY_SUGGESTIONS.map(s=>[s.id, s.status]));
+}
 let empPendingRequestsBaseline = new Set(); // set of request IDs already accounted for — not just a count, so we always know exactly WHICH ones are genuinely new
 /* True for any hybrid employee account (Shift Manager, or any future
    role) whose management permissions include Manage Requests — not
@@ -1873,6 +1906,8 @@ async function startEmpPolling(){
   empNextSchedulePublished = NEXT_SCHEDULE_PUBLISHED;
   empDiscBaseline = myDisciplinarySnapshot();
   empAnnouncementsBaseline = ALL_ANNOUNCEMENTS.length;
+  empConcernsBaseline = myConcernsSnapshot();
+  empSuggestionsBaseline = mySuggestionsSnapshot();
   if(hasMgmtRequestsAccess()){
     // only count OTHER people's pending requests — her own
     // submissions shouldn't ping her own "new request to review" alert
@@ -1880,11 +1915,14 @@ async function startEmpPolling(){
   }
   empPollInterval = setInterval(async ()=>{
     if(document.hidden) return; // skip while this tab isn't the active/visible one
-    const [requests, nextSchedule, myDisc, announcements] = await Promise.all([
-      safeApiGet('requests', null),
+    const needsFullRequests = hasMgmtRequestsAccess(); // hybrid roles also watch for new requests from OTHER employees — a plain employee only ever needs her own, via the scoped endpoint below
+    const [requests, nextSchedule, myDisc, announcements, myConcerns, mySuggestions] = await Promise.all([
+      needsFullRequests ? safeApiGet('requests', null) : safeApiGet('myRequestsScoped&name=' + encodeURIComponent(CURRENT_EMPLOYEE.name), null),
       safeApiGet('nextSchedule', null),
       safeApiGet('myDisciplinaryRecords&name=' + encodeURIComponent(CURRENT_EMPLOYEE.fullName), null),
-      safeApiGet('announcements', null)
+      safeApiGet('announcements', null),
+      safeApiGet('myConcerns&name=' + encodeURIComponent(CURRENT_EMPLOYEE.fullName), null),
+      safeApiGet('mySuggestions&name=' + encodeURIComponent(CURRENT_EMPLOYEE.fullName), null)
     ]);
 
     let changed = false;
@@ -1924,6 +1962,24 @@ async function startEmpPolling(){
       if(snap !== empDiscBaseline){ empDiscBaseline = snap; changed = true; discChanged = true; }
     }
 
+    let concernChanged = false, changedConcernDetail = '';
+    if(myConcerns){
+      const snap = myConcernsSnapshot(myConcerns);
+      if(snap !== empConcernsBaseline){
+        empConcernsBaseline = snap;
+        changed = true;
+        concernChanged = true;
+        const changedC = myConcerns[myConcerns.length - 1]; // best-effort — not critical which one if several changed at once
+        if(changedC) changedConcernDetail = `${changedC.Topic} — ${changedC.Status}`;
+      }
+    }
+
+    let suggestionChanged = false;
+    if(mySuggestions){
+      const snap = mySuggestionsSnapshot(mySuggestions);
+      if(snap !== empSuggestionsBaseline){ empSuggestionsBaseline = snap; changed = true; suggestionChanged = true; }
+    }
+
     if(announcements && announcements.length !== empAnnouncementsBaseline){
       newAnnouncements = Math.max(0, announcements.length - empAnnouncementsBaseline);
       // the raw list comes back oldest-first (matching sheet row
@@ -1960,7 +2016,7 @@ async function startEmpPolling(){
     await loadRemoteData(); // picks up everything, including any Schedule change from an approved swap or a fresh publish
 
     // Let them know something new arrived, wherever they currently are.
-    const notifyWorthy = newAnnouncements > 0 || scheduleJustPublished || requestStatusChanged || discChanged || newPendingRequests > 0;
+    const notifyWorthy = newAnnouncements > 0 || scheduleJustPublished || requestStatusChanged || discChanged || newPendingRequests > 0 || concernChanged || suggestionChanged;
     if(notifyWorthy) playAlertTone();
     if(newAnnouncements > 0){
       const title = newAnnouncementTitles.length===1 ? newAnnouncementTitles[0] : newAnnouncementTitles.join(', ');
@@ -1969,12 +2025,14 @@ async function startEmpPolling(){
     if(scheduleJustPublished) showMgmtToast('📅', 'Schedule Published', 'Next week\'s schedule was just published — tap to view', 'schedule');
     if(requestStatusChanged) showMgmtToast('📝', 'Request Updated', `${changedRequestDetail || 'One of your requests was updated'} — tap to view`, 'requests');
     if(discChanged) showMgmtToast('📁', 'Record Updated', 'A disciplinary case naming you was updated — tap to view', 'my-disciplinary');
+    if(concernChanged) showMgmtToast('⚠️', 'Concern Updated', `${changedConcernDetail || 'One of your concerns was updated'} — tap to view`, 'concern');
+    if(suggestionChanged) showMgmtToast('💡', 'Suggestion Updated', 'One of your suggestions was updated — tap to view', 'suggestion');
     if(newPendingRequests > 0){
       const detail = newPendingRequestNames.length===1 ? newPendingRequestNames[0] : newPendingRequestNames.join(', ');
       showMgmtToast('📝', newPendingRequests===1?'New Request':`${newPendingRequests} New Requests`, `${detail || 'A new request came in'} — tap to view`, 'mgmt-requests');
     }
 
-    if(['home','requests','schedule','my-disciplinary','announcements','mgmt-requests'].includes(activeView)) renderView(activeView);
+    if(['home','requests','schedule','my-disciplinary','announcements','mgmt-requests','concern','suggestion'].includes(activeView)) renderView(activeView);
   }, 45000); // check every 45 seconds
 }
 function stopEmpPolling(){
@@ -3846,6 +3904,16 @@ const BUILDERS = {
           <option>Outstanding Performance</option>
           <option>Other</option>
         </select>
+        <div class="grid grid-2">
+          <div>
+            <label>Month</label>
+            <select id="nominateMonth">${["January","February","March","April","May","June","July","August","September","October","November","December"].map(m=>`<option>${m}</option>`).join('')}</select>
+          </div>
+          <div>
+            <label>Year</label>
+            <input type="text" id="nominateYear" value="${new Date().getFullYear()}" style="margin-top:0;">
+          </div>
+        </div>
         <label>Reason for Nomination</label>
         <textarea id="nominateReason" rows="3" placeholder="Why does this person deserve this award?"></textarea>
         <label>Supporting Comments or Details <span class="muted">(optional)</span></label>
@@ -3859,8 +3927,8 @@ const BUILDERS = {
       <div class="card table-scroll">
         <h3>Your Nominations</h3>
         <table>
-          <tr><th>Nominee</th><th>Category</th><th>Date</th><th></th></tr>
-          ${MY_NOMINATIONS.map(n=>`<tr><td>${n.NomineeName}</td><td>${n.AwardCategory}</td><td>${fmtDateTime(n.DateSubmitted)}</td><td><button class="btn ghost auto" style="padding:5px 10px;" onclick="startEditNomination('${n.ID}')">Edit</button></td></tr>`).join('') || `<tr><td colspan="4" class="muted">No nominations submitted yet.</td></tr>`}
+          <tr><th>Nominee</th><th>Category</th><th>Period</th><th>Date Submitted</th><th></th></tr>
+          ${MY_NOMINATIONS.map(n=>`<tr><td>${n.NomineeName}</td><td>${n.AwardCategory}</td><td class="muted">${n.Month||''} ${n.Year||''}</td><td>${fmtDateTime(n.DateSubmitted)}</td><td><button class="btn ghost auto" style="padding:5px 10px;" onclick="startEditNomination('${n.ID}')">Edit</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">No nominations submitted yet.</td></tr>`}
         </table>
       </div>
     </div>`,
@@ -4874,14 +4942,13 @@ const BUILDERS = {
 
   "mgmt-nominations": ()=>{
     const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-    const years = Array.from(new Set(ALL_NOMINATIONS.map(n=>{ const dt = new Date(n.DateSubmitted); return isNaN(dt)?null:String(dt.getFullYear()); }).filter(Boolean))).sort().reverse();
+    const years = Array.from(new Set(ALL_NOMINATIONS.map(n=>n.Year).filter(Boolean))).sort().reverse();
     const categories = Array.from(new Set(ALL_NOMINATIONS.map(n=>n.AwardCategory))).sort();
 
     const filtered = ALL_NOMINATIONS.filter(n=>{
       if(nomFilterCategory !== 'All' && n.AwardCategory !== nomFilterCategory) return false;
-      const dt = new Date(n.DateSubmitted);
-      if(nomFilterMonth !== 'All' && (isNaN(dt) || months[dt.getMonth()] !== nomFilterMonth)) return false;
-      if(nomFilterYear !== 'All' && (isNaN(dt) || String(dt.getFullYear()) !== String(nomFilterYear))) return false;
+      if(nomFilterMonth !== 'All' && n.Month !== nomFilterMonth) return false;
+      if(nomFilterYear !== 'All' && String(n.Year) !== String(nomFilterYear)) return false;
       return true;
     });
 
@@ -4917,8 +4984,8 @@ const BUILDERS = {
       <h3><span class="ic">🌟</span> Award Nominations</h3>
       <p class="muted" style="margin-bottom:12px;">Employee-submitted nominations for recognition awards.</p>
       <table>
-        <tr><th>Nominee</th><th>Category</th><th>Reason</th><th>Nominated By</th><th>Date</th></tr>
-        ${filtered.map(n=>`<tr><td>${n.NomineeName}</td><td>${n.AwardCategory}</td><td class="muted" style="white-space:pre-wrap;">${n.Reason}${n.SupportingDetails ? `<br><span style="font-size:11px;">${n.SupportingDetails}</span>` : ''}</td><td>${n.NominatorName}</td><td>${fmtDateTime(n.DateSubmitted)}</td></tr>`).join('') || `<tr><td colspan="5" class="muted">No matching nominations.</td></tr>`}
+        <tr><th>Nominee</th><th>Category</th><th>Period</th><th>Reason</th><th>Nominated By</th><th>Date Submitted</th></tr>
+        ${filtered.map(n=>`<tr><td>${n.NomineeName}</td><td>${n.AwardCategory}</td><td class="muted">${n.Month||''} ${n.Year||''}</td><td class="muted" style="white-space:pre-wrap;">${n.Reason}${n.SupportingDetails ? `<br><span style="font-size:11px;">${n.SupportingDetails}</span>` : ''}</td><td>${n.NominatorName}</td><td>${fmtDateTime(n.DateSubmitted)}</td></tr>`).join('') || `<tr><td colspan="6" class="muted">No matching nominations.</td></tr>`}
       </table>
     </div>`;
   },
@@ -5402,6 +5469,8 @@ async function refreshNominationsOnly(){
 async function submitNomination(){
   const nomineeName = readEmployeePicker('nominateEmp');
   const category = document.getElementById('nominateCategory').value;
+  const month = document.getElementById('nominateMonth').value;
+  const year = document.getElementById('nominateYear').value.trim();
   const reason = document.getElementById('nominateReason').value.trim();
   const details = document.getElementById('nominateDetails').value.trim();
   const err = document.getElementById('nominateErr');
@@ -5415,16 +5484,16 @@ async function submitNomination(){
   try{
     if(isEditing){
       if(USE_REMOTE()){
-        const r = await apiPostMinDelay('editNomination', {id: editingNominationId, nominatorName: CURRENT_EMPLOYEE.fullName, NomineeName: nomineeName, AwardCategory: category, Reason: reason, SupportingDetails: details});
+        const r = await apiPostMinDelay('editNomination', {id: editingNominationId, nominatorName: CURRENT_EMPLOYEE.fullName, NomineeName: nomineeName, AwardCategory: category, Month: month, Year: year, Reason: reason, SupportingDetails: details});
         if(!r.ok){ err.textContent = r.error || "Couldn't update — please try again."; err.style.display='block'; btnReset('nominateSubmitBtn','Update Nomination'); return; }
       }
       const n = MY_NOMINATIONS.find(x=>x.ID===editingNominationId);
-      if(n){ n.NomineeName = nomineeName; n.AwardCategory = category; n.Reason = reason; n.SupportingDetails = details; }
+      if(n){ n.NomineeName = nomineeName; n.AwardCategory = category; n.Month = month; n.Year = year; n.Reason = reason; n.SupportingDetails = details; }
       editingNominationId = null;
       await btnSent('nominateSubmitBtn');
     } else {
       if(USE_REMOTE()){
-        const r = await apiPostMinDelay('submitNomination', {NomineeName: nomineeName, AwardCategory: category, Reason: reason, SupportingDetails: details, NominatorName: CURRENT_EMPLOYEE.fullName});
+        const r = await apiPostMinDelay('submitNomination', {NomineeName: nomineeName, AwardCategory: category, Month: month, Year: year, Reason: reason, SupportingDetails: details, NominatorName: CURRENT_EMPLOYEE.fullName});
         if(!r.ok){ err.textContent = r.error || "Couldn't submit — please try again."; err.style.display='block'; btnReset('nominateSubmitBtn','Submit Nomination'); return; }
         await refreshNominationsOnly();
       }
@@ -5449,6 +5518,8 @@ function startEditNomination(id){
   editingNominationId = id;
   document.getElementById('nominateEmp').value = n.NomineeName;
   document.getElementById('nominateCategory').value = n.AwardCategory;
+  if(n.Month) document.getElementById('nominateMonth').value = n.Month;
+  if(n.Year) document.getElementById('nominateYear').value = n.Year;
   document.getElementById('nominateReason').value = n.Reason || '';
   document.getElementById('nominateDetails').value = n.SupportingDetails || '';
   document.getElementById('nominateCardTitle').innerHTML = '<span class="ic">🌟</span> Edit Nomination';
