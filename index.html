@@ -467,9 +467,10 @@
     <label>Status</label>
     <select id="addEmpStatus">
       <option>Active</option>
-      <option>Under Probation</option>
-      <option>Inactive</option>
       <option>On Leave</option>
+      <option>Furlough</option>
+      <option>Resigned</option>
+      <option>Terminated</option>
     </select>
     <label>Date Hired <span class="muted">(optional)</span></label>
     <input type="date" id="addEmpDateHired">
@@ -655,6 +656,9 @@ let MY_EVALUATIONS = [];     // the current employee's own evaluation history (r
 let MY_GIVEN_EVALUATIONS = []; // evaluations the current employee has given to others
 let ALL_DISCIPLINARY_RECORDS = []; // full records, management-only
 let ALL_FORMS = []; // Forms Library entries
+let ALL_NOMINATIONS = []; // Award Nominations — full list, for management
+let MY_NOMINATIONS = []; // Award Nominations this employee submitted, so they can edit their own
+let editingNominationId = null;
 let MY_DISCIPLINARY_RECORDS = []; // scoped to the current employee, excludes Drafts and internal-only fields
 let discFilter = { employee:'', department:'All', position:'All', violation:'All', level:'All', status:'All', dateFrom:'', dateTo:'' };
 let discSummaryPeriod = ''; // "YYYY-MM", defaults to current month on first view
@@ -673,6 +677,7 @@ let perfFilterYear = 'All';
 let perfSearchQuery = '';
 let employeesSearchQuery = '';
 let reqFilter = { employee:'', type:'All', status:'All', dateFrom:'', dateTo:'' };
+let concernFilter = { employee:'', venue:'All', topic:'All', status:'All', dateFrom:'', dateTo:'' };
 let accountsSearchQuery = '';
 function setPerfFilter(type, val){
   if(type==='month') perfFilterMonth = val;
@@ -710,6 +715,21 @@ function setReqFilter(field, val){
 function resetReqFilter(){
   reqFilter = { employee:'', type:'All', status:'All', dateFrom:'', dateTo:'' };
   renderView('mgmt-requests');
+}
+function setConcernFilter(field, val){
+  concernFilter[field] = val;
+  if(field === 'employee'){
+    const cursorPos = document.activeElement && document.activeElement.selectionStart;
+    renderView('mgmt-concerns');
+    const input = document.querySelector('#content input[placeholder="Search submitter name..."]');
+    if(input){ input.focus(); if(cursorPos != null) input.setSelectionRange(cursorPos, cursorPos); }
+  } else {
+    renderView('mgmt-concerns');
+  }
+}
+function resetConcernFilter(){
+  concernFilter = { employee:'', venue:'All', topic:'All', status:'All', dateFrom:'', dateTo:'' };
+  renderView('mgmt-concerns');
 }
 function setAccountsSearch(val){
   accountsSearchQuery = val;
@@ -1386,7 +1406,7 @@ async function doLoginWithCredentials(u, p){
     const r = await apiPost('login', {username:u, password:p});
     if(!r.ok) return {success:false, error: r.error || "Incorrect username or password."};
     if(r.role === 'management'){
-      CURRENT_USER = {role:'management', displayName:r.displayName, accessLevel: r.accessLevel || 'full', mgmtRole: r.mgmtRole || 'full'};
+      CURRENT_USER = {role:'management', displayName:r.displayName, username:r.username, accessLevel: r.accessLevel || 'full', mgmtRole: r.mgmtRole || 'full'};
     } else {
       CURRENT_USER = {role:'employee', employeeName:r.employeeName, mgmtRole: r.mgmtRole || null, displayName: r.fullName};
       CURRENT_EMPLOYEE = {
@@ -1528,7 +1548,7 @@ async function refreshMyConcerns(){
   if(!USE_REMOTE()) return;
   const myName = (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.fullName) || '';
   const myConcernsRaw = await safeApiGet(bustCache_('myConcerns&name=' + encodeURIComponent(myName)), null);
-  if(myConcernsRaw) MY_CONCERNS = myConcernsRaw.map(c => ({from:c.From, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID, coworkerName:c.CoworkerName, concernTypes:c.ConcernTypes, requestCCTV:c.RequestCCTV, cctvDate:c.CCTVDate, cctvTime:c.CCTVTime})).reverse();
+  if(myConcernsRaw) MY_CONCERNS = myConcernsRaw.map(c => ({from:c.From, venue:c.Venue, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID, coworkerName:c.CoworkerName, concernTypes:c.ConcernTypes, requestCCTV:c.RequestCCTV, cctvDate:c.CCTVDate, cctvTime:c.CCTVTime})).reverse();
 }
 async function refreshMySuggestions(){
   if(!USE_REMOTE()) return;
@@ -1559,14 +1579,15 @@ async function loadRemoteData(){
   if(!USE_REMOTE()) return;
   try{
     const myName = (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.fullName) || '';
-    const [roster, schedule, nextSchedule, attendance, announcements, recognition, requests, accountsStatus, concerns, suggestions, evaluations, myConcernsRaw, mySuggestionsRaw, myGivenEvaluationsRaw, disciplinaryRecords, myDisciplinaryRaw, formsLibrary] = await Promise.all([
+    const [roster, schedule, nextSchedule, attendance, announcements, recognition, requests, accountsStatus, concerns, suggestions, evaluations, myConcernsRaw, mySuggestionsRaw, myGivenEvaluationsRaw, disciplinaryRecords, myDisciplinaryRaw, formsLibrary, nominations, myNominationsRaw] = await Promise.all([
       safeApiGet('roster', []), safeApiGet('schedule', {days:[],rows:[]}), safeApiGet('nextSchedule', {days:[],rows:[],published:false}), safeApiGet('attendance', []),
       safeApiGet('announcements', []), safeApiGet('recognition', []), safeApiGet('requests', []), safeApiGet('accountsStatus', []),
       safeApiGet('concerns', []), safeApiGet('suggestions', []), safeApiGet('evaluations', []),
       safeApiGet('myConcerns&name=' + encodeURIComponent(myName), []), safeApiGet('mySuggestions&name=' + encodeURIComponent(myName), []),
       safeApiGet('myGivenEvaluations&name=' + encodeURIComponent(myName), []),
       safeApiGet('disciplinaryRecords', []), safeApiGet('myDisciplinaryRecords&name=' + encodeURIComponent(myName), []),
-      safeApiGet('formsLibrary', [])
+      safeApiGet('formsLibrary', []),
+      safeApiGet('nominations', []), safeApiGet('myNominations&name=' + encodeURIComponent(myName), [])
     ]);
     EMPLOYEE_ROSTER.length = 0;
     roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, position:r.Position, status:r.Status||"Active", attendance:"—", dateHired:r.DateHired||''}));
@@ -1598,10 +1619,12 @@ async function loadRemoteData(){
     ALL_REQUESTS = requests.slice().reverse();
     EMPLOYEE_ACCOUNTS.length = 0;
     accountsStatus.forEach(a => EMPLOYEE_ACCOUNTS.push({employeeName:a.employeeName, fullName:a.fullName, username:a.username, role:"employee"}));
-    MOCK.concernsLog = concerns.map(c => ({from:c.From, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID, coworkerName:c.CoworkerName, concernTypes:c.ConcernTypes, requestCCTV:c.RequestCCTV, cctvDate:c.CCTVDate, cctvTime:c.CCTVTime, investigationNotes:c.InvestigationNotes, investigatedBy:c.InvestigatedBy, actionTaken:c.ActionTaken})).reverse();
-    MY_CONCERNS = myConcernsRaw.map(c => ({from:c.From, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID})).reverse();
+    MOCK.concernsLog = concerns.map(c => ({from:c.From, venue:c.Venue, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID, coworkerName:c.CoworkerName, concernTypes:c.ConcernTypes, requestCCTV:c.RequestCCTV, cctvDate:c.CCTVDate, cctvTime:c.CCTVTime, investigationNotes:c.InvestigationNotes, investigatedBy:c.InvestigatedBy, actionTaken:c.ActionTaken})).reverse();
+    MY_CONCERNS = myConcernsRaw.map(c => ({from:c.From, venue:c.Venue, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID})).reverse();
     MOCK.suggestionsLog = suggestions.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID})).reverse();
     MY_SUGGESTIONS = mySuggestionsRaw.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID})).reverse();
+    ALL_NOMINATIONS = nominations.slice().reverse();
+    MY_NOMINATIONS = myNominationsRaw.slice().reverse();
   } catch(e){ /* keep whatever was already loaded if a fetch fails */ }
 }
 /* ============================================================
@@ -1930,11 +1953,36 @@ function stopEmpPolling(){
   if(empPollInterval){ clearInterval(empPollInterval); empPollInterval = null; }
 }
 
+/* Auto-logout after 30 minutes with no user activity — helps guard
+   against a device left logged in and unattended. Any interaction
+   at all resets the clock; it only ever fires from a genuine gap
+   with nothing happening. */
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+let sessionTimeoutTimer = null;
+
+function resetSessionTimeout(){
+  if(!CURRENT_USER) return; // nothing to protect while logged out
+  if(sessionTimeoutTimer) clearTimeout(sessionTimeoutTimer);
+  sessionTimeoutTimer = setTimeout(()=>{
+    alert("You've been logged out after 30 minutes of inactivity.");
+    logout();
+  }, SESSION_TIMEOUT_MS);
+}
+function stopSessionTimeout(){
+  if(sessionTimeoutTimer){ clearTimeout(sessionTimeoutTimer); sessionTimeoutTimer = null; }
+}
+// Any of these counts as activity — passive listeners so they never
+// slow down scrolling or touch handling.
+['mousemove','mousedown','keydown','scroll','touchstart','click'].forEach(evt=>{
+  document.addEventListener(evt, resetSessionTimeout, {passive:true});
+});
+
 function logout(){
   CURRENT_USER = null;
   CURRENT_EMPLOYEE = null;
   stopMgmtPolling();
   stopEmpPolling();
+  stopSessionTimeout();
   try{ localStorage.removeItem(SESSION_KEY); } catch(e){}
   try{ localStorage.removeItem(LAST_VIEW_KEY); } catch(e){}
   document.getElementById('loginUser').value = '';
@@ -2194,6 +2242,7 @@ const NAV = {
     ]},
     {group:"Team", items:[
       {id:"evaluate", ic:"📋", label:"Evaluate a Staff"},
+      {id:"nominate", ic:"🌟", label:"Nominate for Award"},
     ]},
     {group:"Support", items:[
       {id:"requests", ic:"📝", label:"My Requests"},
@@ -2205,6 +2254,7 @@ const NAV = {
   ],
   management: [
     {group:"Overview", items:[{id:"mgmt-home", ic:"🏠", label:"Home"}]},
+    {group:"Account", items:[{id:"mgmt-account-settings", ic:"🔑", label:"Account Settings"}]},
     {group:"Workforce", items:[
       {id:"mgmt-employees", ic:"👥", label:"All Employees"},
       {id:"mgmt-accounts", ic:"🔑", label:"Manage Accounts", restricted:true},
@@ -2221,6 +2271,7 @@ const NAV = {
     ]},
     {group:"Communications", items:[
       {id:"mgmt-recognition", ic:"🏆", label:"Recognition Management"},
+      {id:"mgmt-nominations", ic:"🌟", label:"Award Nominations"},
       {id:"mgmt-announcements", ic:"📢", label:"Post Announcements"},
     ]},
   ]
@@ -2237,18 +2288,52 @@ async function changeOwnPassword(){
   if(p1 !== p2){ err.textContent="Passwords don't match."; err.style.display='block'; return; }
 
   btnLoading('pwChangeBtn', 'Updating...');
-  if(USE_REMOTE()){
-    const r = await apiPostMinDelay('changePassword', {employeeName: CURRENT_EMPLOYEE.name, newPassword: p1});
-    if(!r.ok){ err.textContent = r.error || "Couldn't update password."; err.style.display='block'; btnReset('pwChangeBtn','Update Password'); return; }
-  } else {
-    const acct = findAccountByEmployeeName(CURRENT_EMPLOYEE.name);
-    if(acct) acct.password = p1;
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPostMinDelay('changePassword', {employeeName: CURRENT_EMPLOYEE.name, newPassword: p1});
+      if(!r.ok){ err.textContent = r.error || "Couldn't update password."; err.style.display='block'; btnReset('pwChangeBtn','Update Password'); return; }
+    } else {
+      const acct = findAccountByEmployeeName(CURRENT_EMPLOYEE.name);
+      if(acct) acct.password = p1;
+    }
+    await btnSent('pwChangeBtn');
+    document.getElementById('newPass1').value='';
+    document.getElementById('newPass2').value='';
+    ok.style.display='block';
+    btnReset('pwChangeBtn','Update Password');
+  } catch(e){
+    err.textContent = e.message || "Couldn't update password — please try again.";
+    err.style.display = 'block';
+    btnReset('pwChangeBtn','Update Password');
   }
-  await btnSent('pwChangeBtn');
-  document.getElementById('newPass1').value='';
-  document.getElementById('newPass2').value='';
-  ok.style.display='block';
-  btnReset('pwChangeBtn','Update Password');
+}
+
+async function changeAdminPassword(){
+  const p1 = document.getElementById('adminNewPass1').value;
+  const p2 = document.getElementById('adminNewPass2').value;
+  const err = document.getElementById('adminPwChangeErr');
+  const ok = document.getElementById('adminPwChangeOk');
+  err.style.display='none'; ok.style.display='none';
+
+  if(!p1 || p1.length<4){ err.textContent="Password must be at least 4 characters."; err.style.display='block'; return; }
+  if(p1 !== p2){ err.textContent="Passwords don't match."; err.style.display='block'; return; }
+
+  btnLoading('adminPwChangeBtn', 'Updating...');
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPostMinDelay('changePassword', {username: CURRENT_USER.username, newPassword: p1});
+      if(!r.ok){ err.textContent = r.error || "Couldn't update password."; err.style.display='block'; btnReset('adminPwChangeBtn','Update Password'); return; }
+    }
+    await btnSent('adminPwChangeBtn');
+    document.getElementById('adminNewPass1').value='';
+    document.getElementById('adminNewPass2').value='';
+    ok.style.display='block';
+    btnReset('adminPwChangeBtn','Update Password');
+  } catch(e){
+    err.textContent = e.message || "Couldn't update password — please try again.";
+    err.style.display = 'block';
+    btnReset('adminPwChangeBtn','Update Password');
+  }
 }
 
 async function saveEmail(){
@@ -2444,6 +2529,7 @@ function setRole(role){
   }
   renderNav();
   restoreLastViewOrDefault();
+  resetSessionTimeout();
 }
 
 /* Renders a searchable "type to filter" employee picker: a text
@@ -3173,12 +3259,14 @@ const TITLES = {
   announcements:["Announcements","Company updates"],
   recognition:["Employee Recognition","Awards and milestones"],
   evaluate:["Evaluate a Staff","Rate a coworker's monthly performance"],
+  nominate:["Nominate for Award","Recognize a coworker for an employee award"],
   requests:["My Requests","Leave, swaps, and other requests you've filed"],
   concern:["Report a Concern","Sent directly to management"],
   suggestion:["Suggestion Box","Share an idea — anonymously if you prefer"],
   "my-disciplinary":["My Records","Disciplinary case records that name you"],
   notifications:["Notifications","Recent activity on your account"],
   "mgmt-home":["Management Overview","Company-wide snapshot — management team only"],
+  "mgmt-account-settings":["Account Settings","Update your own password"],
   "mgmt-employees":["All Employees","Full staff directory"],
   "mgmt-accounts":["Manage Accounts","Employees create their own login — you can only reset or assign one"],
   "mgmt-schedule":["Master Schedule","Every employee, every shift — full sheet"],
@@ -3193,6 +3281,7 @@ const TITLES = {
   "mgmt-concern-detail":["Concern Report","Full details and investigation"],
   "mgmt-suggestions":["Suggestions Log","All submitted suggestions"],
   "mgmt-recognition":["Recognition Management","Issue awards and recognitions"],
+  "mgmt-nominations":["Award Nominations","Employee-submitted nominations for recognition awards"],
   "mgmt-announcements":["Post Announcements","Compose company-wide updates"],
 };
 
@@ -3462,7 +3551,7 @@ function topAttendanceCharts(){
 }
 
 function statusPill(status){
-  const map = {"approved":"ok","done":"ok","Active":"ok","pending":"warn","open":"bad","resolved":"ok","On Leave":"bad","declined":"bad","acknowledged":"ok","needs-clarification":"warn","Inactive":"bad","Under Probation":"warn"};
+  const map = {"approved":"ok","done":"ok","Active":"ok","pending":"warn","open":"bad","resolved":"ok","On Leave":"bad","declined":"bad","acknowledged":"ok","needs-clarification":"warn","Inactive":"bad","Under Probation":"warn","Furlough":"warn","Resigned":"bad","Terminated":"bad"};
   const labels = {"acknowledged":"Acknowledged","needs-clarification":"Needs Clarification"};
   return `<span class="pill ${map[status]||'ok'}">${labels[status]||status}</span>`;
 }
@@ -3701,6 +3790,38 @@ const BUILDERS = {
       </table>
     </div>`,
 
+  nominate: ()=>`
+    <div class="grid grid-2" style="margin-bottom:16px;">
+      <div class="card">
+        <h3 id="nominateCardTitle"><span class="ic">🌟</span> Nominate for Award</h3>
+        <label>Employee Being Nominated</label>
+        ${employeePickerHtml('nominateEmp', EMPLOYEE_ROSTER.filter(e=>e.name!==CURRENT_EMPLOYEE.name))}
+        <label>Award Category</label>
+        <select id="nominateCategory">
+          <option>Employee of the Month</option>
+          <option>Customer Service Excellence</option>
+          <option>Outstanding Performance</option>
+          <option>Other</option>
+        </select>
+        <label>Reason for Nomination</label>
+        <textarea id="nominateReason" rows="3" placeholder="Why does this person deserve this award?"></textarea>
+        <label>Supporting Comments or Details <span class="muted">(optional)</span></label>
+        <textarea id="nominateDetails" rows="3" placeholder="Specific examples, dates, or other context"></textarea>
+        <p id="nominateErr" class="login-err" style="display:none;"></p>
+        <div style="display:flex; gap:8px;">
+          <button class="btn" id="nominateSubmitBtn" onclick="submitNomination()">Submit Nomination</button>
+          <button class="btn ghost auto" id="nominateCancelBtn" style="display:none;" onclick="cancelEditNomination()">Cancel</button>
+        </div>
+      </div>
+      <div class="card table-scroll">
+        <h3>Your Nominations</h3>
+        <table>
+          <tr><th>Nominee</th><th>Category</th><th>Date</th><th></th></tr>
+          ${MY_NOMINATIONS.map(n=>`<tr><td>${n.NomineeName}</td><td>${n.AwardCategory}</td><td>${fmtDateTime(n.DateSubmitted)}</td><td><button class="btn ghost auto" style="padding:5px 10px;" onclick="startEditNomination('${n.ID}')">Edit</button></td></tr>`).join('') || `<tr><td colspan="4" class="muted">No nominations submitted yet.</td></tr>`}
+        </table>
+      </div>
+    </div>`,
+
   requests: ()=>`
     <div class="grid grid-2">
       <div class="card">
@@ -3747,6 +3868,11 @@ const BUILDERS = {
       <div class="card" style="max-width:520px;">
         <h3><span class="ic">⚠️</span> Report a Concern</h3>
         <p class="muted">This goes directly to management. Your name is attached unless you check anonymous below.</p>
+        <label>Venue</label>
+        <select id="concernVenue">
+          <option value="Saipan Vegas">Saipan Vegas</option>
+          <option value="Club 88">Club 88</option>
+        </select>
         <label>What's the concern about?</label>
         <select id="concernTopic" onchange="toggleConcernCoworkerFields()"><option>Workplace safety</option><option>Coworker conduct</option><option>Customer conduct</option><option>Facilities</option><option>Other</option></select>
         <div id="concernCoworkerFields" style="display:none;">
@@ -3855,6 +3981,19 @@ const BUILDERS = {
     ${attendanceConcernsSection()}
     ${disciplinaryCasesTableSection(ALL_DISCIPLINARY_RECORDS, 'Disciplinary Cases')}`,
 
+  "mgmt-account-settings": ()=>`
+    <div class="card" style="max-width:420px;">
+      <h3><span class="ic">🔑</span> Change Password</h3>
+      <p class="muted" style="margin-bottom:12px;">Update the password for your own account, ${CURRENT_USER.displayName}.</p>
+      <label>New password</label>
+      <input type="password" id="adminNewPass1" placeholder="At least 4 characters">
+      <label>Confirm new password</label>
+      <input type="password" id="adminNewPass2" placeholder="Re-enter password">
+      <button class="btn auto" id="adminPwChangeBtn" style="margin-top:10px;" onclick="changeAdminPassword()">Update Password</button>
+      <p class="login-err" id="adminPwChangeErr"></p>
+      <p class="login-ok" id="adminPwChangeOk">Password updated.</p>
+    </div>`,
+
   "mgmt-employees": ()=>{
     const discCountByEmployee = {};
     ALL_DISCIPLINARY_RECORDS.forEach(d=>{ if(d.Status !== 'Draft') discCountByEmployee[d.EmployeeName] = (discCountByEmployee[d.EmployeeName]||0) + 1; });
@@ -3872,9 +4011,10 @@ const BUILDERS = {
         ${rows.map(e=>`<tr><td>${e.name}</td><td>${e.position}</td><td>
             <select class="status-select" onchange="updateEmployeeStatus('${e.name.replace(/'/g,"\\'")}', this.value, this)">
               <option ${e.status==='Active'?'selected':''}>Active</option>
-              <option ${e.status==='Under Probation'?'selected':''}>Under Probation</option>
-              <option ${e.status==='Inactive'?'selected':''}>Inactive</option>
               <option ${e.status==='On Leave'?'selected':''}>On Leave</option>
+              <option ${e.status==='Furlough'?'selected':''}>Furlough</option>
+              <option ${e.status==='Resigned'?'selected':''}>Resigned</option>
+              <option ${e.status==='Terminated'?'selected':''}>Terminated</option>
             </select>
           </td><td class="mono">${e.attendance}</td><td>${discCountByEmployee[e.name] ? `<button class="btn ghost auto" style="padding:4px 10px;" onclick="viewEmployeeDisciplinaryHistory('${e.name.replace(/'/g,"\\'")}')">${discCountByEmployee[e.name]} record${discCountByEmployee[e.name]===1?'':'s'}</button>` : '<span class="muted">None</span>'}</td><td><button class="btn ghost auto" style="padding:4px 10px;" onclick="deleteEmployeeConfirm('${e.name.replace(/'/g,"\\'")}', this)">Delete</button></td></tr>`).join('') || `<tr><td colspan="6" class="muted">No matches.</td></tr>`}
       </table>
@@ -4538,15 +4678,70 @@ const BUILDERS = {
     </div>`;
   },
 
-  "mgmt-concerns": ()=>`
+  "mgmt-concerns": ()=>{
+    const filtered = MOCK.concernsLog.filter(c=>{
+      if(concernFilter.employee && !(c.from||'').toLowerCase().includes(concernFilter.employee.toLowerCase())) return false;
+      if(concernFilter.venue !== 'All' && c.venue !== concernFilter.venue) return false;
+      if(concernFilter.topic !== 'All' && c.topic !== concernFilter.topic) return false;
+      if(concernFilter.status !== 'All' && c.status !== concernFilter.status) return false;
+      if(concernFilter.dateFrom){ const dt = new Date(c.date); if(isNaN(dt) || dt < new Date(concernFilter.dateFrom)) return false; }
+      if(concernFilter.dateTo){ const dt = new Date(c.date); if(isNaN(dt) || dt > new Date(concernFilter.dateTo + 'T23:59:59')) return false; }
+      return true;
+    });
+    return `
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Filter Concerns</h3>
+      <div class="grid grid-2">
+        <div>
+          <label>Employee</label>
+          <input type="text" placeholder="Search submitter name..." value="${concernFilter.employee}" oninput="setConcernFilter('employee', this.value)">
+        </div>
+        <div>
+          <label>Venue</label>
+          <select onchange="setConcernFilter('venue', this.value)">
+            <option value="All" ${concernFilter.venue==='All'?'selected':''}>All Venues</option>
+            <option value="Saipan Vegas" ${concernFilter.venue==='Saipan Vegas'?'selected':''}>Saipan Vegas</option>
+            <option value="Club 88" ${concernFilter.venue==='Club 88'?'selected':''}>Club 88</option>
+          </select>
+        </div>
+        <div>
+          <label>Topic</label>
+          <select onchange="setConcernFilter('topic', this.value)">
+            <option value="All" ${concernFilter.topic==='All'?'selected':''}>All Topics</option>
+            <option ${concernFilter.topic==='Workplace safety'?'selected':''}>Workplace safety</option>
+            <option ${concernFilter.topic==='Coworker conduct'?'selected':''}>Coworker conduct</option>
+            <option ${concernFilter.topic==='Customer conduct'?'selected':''}>Customer conduct</option>
+            <option ${concernFilter.topic==='Facilities'?'selected':''}>Facilities</option>
+            <option ${concernFilter.topic==='Other'?'selected':''}>Other</option>
+          </select>
+        </div>
+        <div>
+          <label>Status</label>
+          <select onchange="setConcernFilter('status', this.value)">
+            <option value="All" ${concernFilter.status==='All'?'selected':''}>All Statuses</option>
+            ${CONCERN_STATUSES.map(s=>`<option ${concernFilter.status===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label>Date From</label>
+          <input type="date" value="${concernFilter.dateFrom}" onchange="setConcernFilter('dateFrom', this.value)">
+        </div>
+        <div>
+          <label>Date To</label>
+          <input type="date" value="${concernFilter.dateTo}" onchange="setConcernFilter('dateTo', this.value)">
+        </div>
+      </div>
+      <button class="btn ghost auto" style="margin-top:8px;" onclick="resetConcernFilter()">Reset Filters</button>
+    </div>
     <div class="card">
       <h3><span class="ic">⚠️</span> All Reported Concerns</h3>
       <table>
-        <tr><th>From</th><th>Topic</th><th>Date</th><th>Status</th><th></th></tr>
-        ${MOCK.concernsLog.map(c=>`<tr><td>${c.from}</td><td>${c.topic}${c.coworkerName ? `<br><span class="muted" style="font-size:11px;">${c.topic==='Customer conduct'?'Customer':'Coworker'}: ${c.coworkerName}</span>` : ''}</td><td>${fmtDateTime(c.date)}</td><td>${concernStatusPill(c.status)}</td>
-          <td><button class="btn ghost auto" style="padding:5px 10px;" onclick="openConcernDetail('${c.id}')">View Report</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">No concerns reported yet.</td></tr>`}
+        <tr><th>From</th><th>Venue</th><th>Topic</th><th>Date</th><th>Status</th><th></th></tr>
+        ${filtered.map(c=>`<tr><td>${c.from}</td><td class="muted">${c.venue||'—'}</td><td>${c.topic}${c.coworkerName ? `<br><span class="muted" style="font-size:11px;">${c.topic==='Customer conduct'?'Customer':'Coworker'}: ${c.coworkerName}</span>` : ''}</td><td>${fmtDateTime(c.date)}</td><td>${concernStatusPill(c.status)}</td>
+          <td><button class="btn ghost auto" style="padding:5px 10px;" onclick="openConcernDetail('${c.id}')">View Report</button></td></tr>`).join('') || `<tr><td colspan="6" class="muted">No matching concerns.</td></tr>`}
       </table>
-    </div>`,
+    </div>`;
+  },
 
   "mgmt-concern-detail": ()=>{
     const c = MOCK.concernsLog.find(x=>x.id===discDetailConcernId);
@@ -4562,6 +4757,7 @@ const BUILDERS = {
       <h3>Report Details</h3>
       <table>
         <tr><td class="muted">Reported By</td><td>${c.from}</td></tr>
+        <tr><td class="muted">Venue</td><td>${c.venue||'—'}</td></tr>
         <tr><td class="muted">Date</td><td>${fmtDateTime(c.date)}</td></tr>
         <tr><td class="muted">Topic</td><td>${c.topic}</td></tr>
         ${c.topic==='Customer conduct' ? `<tr><td class="muted">Customer Name</td><td>${c.coworkerName || '<span class="muted">Unknown</span>'}</td></tr>` : (c.coworkerName ? `<tr><td class="muted">Coworker Name</td><td>${c.coworkerName}</td></tr>` : '')}
@@ -4627,6 +4823,16 @@ const BUILDERS = {
         <tr><th>Employee</th><th>Award</th><th>Note</th><th>Date</th><th></th></tr>
         ${MOCK.recognition.map(r=>`<tr><td>${r.employeeName||''}</td><td>${r.name}</td><td class="muted">${r.desc}</td><td>${fmtDateTime(r.date)}</td>
           <td><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteRecognitionEntry('${r.id}', this)">Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">No awards issued yet.</td></tr>`}
+      </table>
+    </div>`,
+
+  "mgmt-nominations": ()=>`
+    <div class="card table-scroll">
+      <h3><span class="ic">🌟</span> Award Nominations</h3>
+      <p class="muted" style="margin-bottom:12px;">Employee-submitted nominations for recognition awards.</p>
+      <table>
+        <tr><th>Nominee</th><th>Category</th><th>Reason</th><th>Nominated By</th><th>Date</th></tr>
+        ${ALL_NOMINATIONS.map(n=>`<tr><td>${n.NomineeName}</td><td>${n.AwardCategory}</td><td class="muted" style="white-space:pre-wrap;">${n.Reason}${n.SupportingDetails ? `<br><span style="font-size:11px;">${n.SupportingDetails}</span>` : ''}</td><td>${n.NominatorName}</td><td>${fmtDateTime(n.DateSubmitted)}</td></tr>`).join('') || `<tr><td colspan="5" class="muted">No nominations submitted yet.</td></tr>`}
       </table>
     </div>`,
 
@@ -4867,6 +5073,7 @@ async function deleteMyRequest(id, el){
 }
 
 async function submitMyConcern(){
+  const Venue = document.getElementById('concernVenue').value;
   const Topic = document.getElementById('concernTopic').value;
   const Details = document.getElementById('concernDetails').value.trim();
   const anon = document.getElementById('anonConcern').checked;
@@ -4901,12 +5108,12 @@ async function submitMyConcern(){
     btnLoading('concernSubmitBtn', 'Updating...');
     const From = anon ? "Anonymous" : CURRENT_EMPLOYEE.fullName;
     if(USE_REMOTE()){
-      const r = await apiPostMinDelay('editConcern', {id:editingConcernId, Topic, Details, From, Anonymous: anon, CoworkerName, ConcernTypes, RequestCCTV, CCTVDate, CCTVTime});
+      const r = await apiPostMinDelay('editConcern', {id:editingConcernId, Venue, Topic, Details, From, Anonymous: anon, CoworkerName, ConcernTypes, RequestCCTV, CCTVDate, CCTVTime});
       if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('concernSubmitBtn','Update Concern'); return; }
       await refreshMyConcerns();
     } else {
       const c = MY_CONCERNS.find(x=>x.id===editingConcernId);
-      if(c){ c.topic = Topic; c.details = Details; c.from = From; }
+      if(c){ c.venue = Venue; c.topic = Topic; c.details = Details; c.from = From; }
     }
     editingConcernId = null;
     await btnSent('concernSubmitBtn');
@@ -4919,7 +5126,7 @@ async function submitMyConcern(){
   btnLoading('concernSubmitBtn');
   const From = anon ? "Anonymous" : CURRENT_EMPLOYEE.fullName;
   if(USE_REMOTE()){
-    const r = await apiPostMinDelay('submitConcern', {From, Topic, Details, Anonymous: anon, SubmittedBy: CURRENT_EMPLOYEE.fullName, CoworkerName, ConcernTypes, RequestCCTV, CCTVDate, CCTVTime});
+    const r = await apiPostMinDelay('submitConcern', {From, Venue, Topic, Details, Anonymous: anon, SubmittedBy: CURRENT_EMPLOYEE.fullName, CoworkerName, ConcernTypes, RequestCCTV, CCTVDate, CCTVTime});
     if(!r.ok){ err.textContent = r.error || "Couldn't submit."; err.style.display='block'; btnReset('concernSubmitBtn','Submit Concern'); return; }
     await refreshMyConcerns();
   }
@@ -4932,6 +5139,7 @@ async function submitMyConcern(){
 function startEditConcern(id){
   const c = MY_CONCERNS.find(x=>x.id===id);
   if(!c) return;
+  document.getElementById('concernVenue').value = c.venue || 'Saipan Vegas';
   document.getElementById('concernTopic').value = c.topic;
   document.getElementById('concernDetails').value = c.details || '';
   toggleConcernCoworkerFields(); // setting .value above doesn't fire onchange, so trigger it manually to reveal the right sub-section
@@ -5089,6 +5297,77 @@ function startEditEvaluation(id){
   for(let i=1;i<=10;i++){ document.getElementById('evalQ'+i).value = e['Q'+i]; }
   document.getElementById('evalSubmitBtn').textContent = 'Update Evaluation';
   window.scrollTo({top:0, behavior:'smooth'});
+}
+
+async function refreshNominationsOnly(){
+  if(!USE_REMOTE()) return;
+  const myName = (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.fullName) || '';
+  const myNominationsRaw = await safeApiGet(bustCache_('myNominations&name=' + encodeURIComponent(myName)), null);
+  if(myNominationsRaw) MY_NOMINATIONS = myNominationsRaw.slice().reverse();
+}
+
+async function submitNomination(){
+  const nomineeName = readEmployeePicker('nominateEmp');
+  const category = document.getElementById('nominateCategory').value;
+  const reason = document.getElementById('nominateReason').value.trim();
+  const details = document.getElementById('nominateDetails').value.trim();
+  const err = document.getElementById('nominateErr');
+  err.style.display = 'none';
+  if(!nomineeName){ err.textContent = "Type a name and pick a real match from the suggestions."; err.style.display='block'; return; }
+  if(!reason){ err.textContent = "Add a reason for the nomination."; err.style.display='block'; return; }
+
+  const isEditing = !!editingNominationId;
+  const btn = document.getElementById('nominateSubmitBtn');
+  btnLoading('nominateSubmitBtn', isEditing ? 'Updating...' : 'Sending...');
+  try{
+    if(isEditing){
+      if(USE_REMOTE()){
+        const r = await apiPostMinDelay('editNomination', {id: editingNominationId, nominatorName: CURRENT_EMPLOYEE.fullName, NomineeName: nomineeName, AwardCategory: category, Reason: reason, SupportingDetails: details});
+        if(!r.ok){ err.textContent = r.error || "Couldn't update — please try again."; err.style.display='block'; btnReset('nominateSubmitBtn','Update Nomination'); return; }
+      }
+      const n = MY_NOMINATIONS.find(x=>x.ID===editingNominationId);
+      if(n){ n.NomineeName = nomineeName; n.AwardCategory = category; n.Reason = reason; n.SupportingDetails = details; }
+      editingNominationId = null;
+      await btnSent('nominateSubmitBtn');
+    } else {
+      if(USE_REMOTE()){
+        const r = await apiPostMinDelay('submitNomination', {NomineeName: nomineeName, AwardCategory: category, Reason: reason, SupportingDetails: details, NominatorName: CURRENT_EMPLOYEE.fullName});
+        if(!r.ok){ err.textContent = r.error || "Couldn't submit — please try again."; err.style.display='block'; btnReset('nominateSubmitBtn','Submit Nomination'); return; }
+        await refreshNominationsOnly();
+      }
+      await btnSent('nominateSubmitBtn');
+    }
+    document.getElementById('nominateReason').value = '';
+    document.getElementById('nominateDetails').value = '';
+    document.getElementById('nominateCardTitle').innerHTML = '<span class="ic">🌟</span> Nominate for Award';
+    document.getElementById('nominateSubmitBtn').textContent = 'Submit Nomination';
+    document.getElementById('nominateCancelBtn').style.display = 'none';
+    renderView('nominate');
+  } catch(e){
+    err.textContent = e.message || "Something went wrong — please try again.";
+    err.style.display = 'block';
+    btnReset('nominateSubmitBtn', isEditing ? 'Update Nomination' : 'Submit Nomination');
+  }
+}
+
+function startEditNomination(id){
+  const n = MY_NOMINATIONS.find(x=>x.ID===id);
+  if(!n) return;
+  editingNominationId = id;
+  document.getElementById('nominateEmp').value = n.NomineeName;
+  document.getElementById('nominateCategory').value = n.AwardCategory;
+  document.getElementById('nominateReason').value = n.Reason || '';
+  document.getElementById('nominateDetails').value = n.SupportingDetails || '';
+  document.getElementById('nominateCardTitle').innerHTML = '<span class="ic">🌟</span> Edit Nomination';
+  document.getElementById('nominateSubmitBtn').textContent = 'Update Nomination';
+  document.getElementById('nominateCancelBtn').style.display = '';
+  document.getElementById('nominateErr').style.display = 'none';
+  document.getElementById('nominateEmp').scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+function cancelEditNomination(){
+  editingNominationId = null;
+  renderView('nominate');
 }
 
 async function deleteMyEvaluation(id, el){
