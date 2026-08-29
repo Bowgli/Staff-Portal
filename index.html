@@ -1588,15 +1588,31 @@ async function loadRemoteData(){
   if(!USE_REMOTE()) return;
   try{
     const myName = (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.fullName) || '';
-    const [roster, schedule, nextSchedule, attendance, announcements, recognition, requests, accountsStatus, concerns, suggestions, evaluations, myConcernsRaw, mySuggestionsRaw, myGivenEvaluationsRaw, disciplinaryRecords, myDisciplinaryRaw, formsLibrary, nominations, myNominationsRaw] = await Promise.all([
+    // Management (full/limited) and any hybrid role (Shift Manager,
+    // Supervisor) need the full company-wide lists for their review
+    // pages. A plain employee never reads them (only ever their own
+    // slice, via the my*-scoped endpoints below) — fetching the
+    // whole company's requests/concerns/suggestions/evaluations/
+    // disciplinary records just to filter out one person's own data
+    // was pure waste, and the biggest, slowest-growing payloads in
+    // the whole login sequence.
+    const isMgmtCapable = !!(CURRENT_USER && (CURRENT_USER.role === 'management' || CURRENT_USER.mgmtRole));
+    const [roster, schedule, nextSchedule, attendance, announcements, recognition, requests, accountsStatus, concerns, suggestions, evaluations, myConcernsRaw, mySuggestionsRaw, myGivenEvaluationsRaw, disciplinaryRecords, myDisciplinaryRaw, formsLibrary, nominations, myNominationsRaw, myEvaluationsReceivedRaw, myRequestsScopedRaw] = await Promise.all([
       safeApiGet('roster', []), safeApiGet('schedule', {days:[],rows:[]}), safeApiGet('nextSchedule', {days:[],rows:[],published:false}), safeApiGet('attendance', []),
-      safeApiGet('announcements', []), safeApiGet('recognition', []), safeApiGet('requests', []), safeApiGet('accountsStatus', []),
-      safeApiGet('concerns', []), safeApiGet('suggestions', []), safeApiGet('evaluations', []),
+      safeApiGet('announcements', []), safeApiGet('recognition', []),
+      isMgmtCapable ? safeApiGet('requests', []) : Promise.resolve([]),
+      safeApiGet('accountsStatus', []),
+      isMgmtCapable ? safeApiGet('concerns', []) : Promise.resolve([]),
+      isMgmtCapable ? safeApiGet('suggestions', []) : Promise.resolve([]),
+      isMgmtCapable ? safeApiGet('evaluations', []) : Promise.resolve([]),
       safeApiGet('myConcerns&name=' + encodeURIComponent(myName), []), safeApiGet('mySuggestions&name=' + encodeURIComponent(myName), []),
       safeApiGet('myGivenEvaluations&name=' + encodeURIComponent(myName), []),
-      safeApiGet('disciplinaryRecords', []), safeApiGet('myDisciplinaryRecords&name=' + encodeURIComponent(myName), []),
+      isMgmtCapable ? safeApiGet('disciplinaryRecords', []) : Promise.resolve([]),
+      safeApiGet('myDisciplinaryRecords&name=' + encodeURIComponent(myName), []),
       safeApiGet('formsLibrary', []),
-      safeApiGet('nominations', []), safeApiGet('myNominations&name=' + encodeURIComponent(myName), [])
+      safeApiGet('nominations', []), safeApiGet('myNominations&name=' + encodeURIComponent(myName), []),
+      !isMgmtCapable ? safeApiGet('myEvaluationsReceived&name=' + encodeURIComponent(myName), []) : Promise.resolve([]),
+      !isMgmtCapable ? safeApiGet('myRequestsScoped&name=' + encodeURIComponent(myName), []) : Promise.resolve([])
     ]);
     EMPLOYEE_ROSTER.length = 0;
     roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, position:r.Position, status:r.Status||"Active", attendance:"—", dateHired:r.DateHired||''}));
@@ -1618,12 +1634,15 @@ async function loadRemoteData(){
     MOCK.recognition = recognition.map(r => ({medal:"🏆", name:r.AwardTitle, desc:r.Note, employeeName:r.EmployeeName, date:r.Date, id:r.ID})).reverse();
     MY_RECOGNITION = MOCK.recognition.filter(r => CURRENT_EMPLOYEE && r.employeeName === CURRENT_EMPLOYEE.name);
     ALL_EVALUATIONS = evaluations.slice().reverse();
-    MY_EVALUATIONS = ALL_EVALUATIONS.filter(e => CURRENT_EMPLOYEE && e.EmployeeName === CURRENT_EMPLOYEE.name);
+    MY_EVALUATIONS = isMgmtCapable
+      ? ALL_EVALUATIONS.filter(e => CURRENT_EMPLOYEE && e.EmployeeName === CURRENT_EMPLOYEE.name)
+      : myEvaluationsReceivedRaw.slice().reverse();
     MY_GIVEN_EVALUATIONS = myGivenEvaluationsRaw.slice().reverse();
     ALL_DISCIPLINARY_RECORDS = disciplinaryRecords.slice().reverse();
     MY_DISCIPLINARY_RECORDS = myDisciplinaryRaw.slice().reverse();
     ALL_FORMS = formsLibrary.slice().reverse();
-    MOCK.requests = requests.filter(r => r.EmployeeName === (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.name))
+    const myRequestsSource = isMgmtCapable ? requests : myRequestsScopedRaw;
+    MOCK.requests = myRequestsSource.filter(r => r.EmployeeName === (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.name))
       .map(r => ({type:r.Type, date:r.Date, status:r.Status, id:r.ID, details:r.Details, swapDay:r.SwapDay, theirDay:r.TheirDay, swapWithName:r.SwapWithName, reasonForAbsence:r.ReasonForAbsence, minutesLate:r.MinutesLate, shiftSchedule:r.ShiftSchedule}));
     ALL_REQUESTS = requests.slice().reverse();
     EMPLOYEE_ACCOUNTS.length = 0;
@@ -3923,7 +3942,10 @@ const BUILDERS = {
         <label>Details</label>
         <textarea id="concernDetails" placeholder="Describe what happened..."></textarea>
         <div class="checkbox-row"><input type="checkbox" id="anonConcern"><label for="anonConcern">Submit anonymously</label></div>
-        <button class="btn" id="concernSubmitBtn" onclick="submitMyConcern()">Submit Concern</button>
+        <div style="display:flex; gap:8px;">
+          <button class="btn" id="concernSubmitBtn" onclick="submitMyConcern()">Submit Concern</button>
+          <button class="btn ghost auto" id="concernCancelBtn" style="display:none;" onclick="cancelEditConcern()">Cancel</button>
+        </div>
         <p class="login-err" id="concernErr"></p>
         <p class="login-ok" id="concernOk">Saved.</p>
       </div>
@@ -5230,7 +5252,13 @@ function startEditConcern(id){
 
   editingConcernId = id;
   document.getElementById('concernSubmitBtn').textContent = 'Update Concern';
+  document.getElementById('concernCancelBtn').style.display = '';
   document.getElementById('concernTopic').scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+function cancelEditConcern(){
+  editingConcernId = null;
+  renderView('concern');
 }
 
 async function deleteMyConcern(id, el){
