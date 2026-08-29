@@ -665,6 +665,9 @@ let discSummaryPeriod = ''; // "YYYY-MM", defaults to current month on first vie
 let discSummaryMode = 'month'; // 'month' or 'year'
 let discSummaryYear = new Date().getFullYear();
 let discDetailCaseId = null; // which case mgmt-disciplinary-detail is showing
+let viewingEmployeeName = null; // which employee mgmt-employee-profile is showing
+let employeeProfileTab = 'performance'; // 'performance' | 'attendance' | 'disciplinary' | 'recognition'
+let employeeProfileEditMode = false;
 let attendanceStatsMode = 'month'; // 'month' or 'year' — for Most Absences/Late/Undertime on the Attendance page
 let attendanceStatsPeriod = ''; // "YYYY-MM", defaults to current month on first view
 let attendanceStatsYear = new Date().getFullYear();
@@ -1422,7 +1425,7 @@ async function doLoginWithCredentials(u, p){
         name: r.employeeName, fullName: r.fullName,
         initials: r.fullName.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(),
         position: r.position, id: "EMP-"+u.toUpperCase(), hireDate:"—",
-        email: r.email || "", photoUrl: ""
+        email: r.email || "", phone: r.phone || "", photoUrl: ""
       };
       // Fire-and-forget: don't block login on this, just update the
       // avatar in place once it arrives.
@@ -1615,7 +1618,9 @@ async function loadRemoteData(){
       !isMgmtCapable ? safeApiGet('myRequestsScoped&name=' + encodeURIComponent(myName), []) : Promise.resolve([])
     ]);
     EMPLOYEE_ROSTER.length = 0;
-    roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, position:r.Position, status:r.Status||"Active", attendance:"—", dateHired:r.DateHired||''}));
+    const acctByName = {};
+    accountsStatus.forEach(a => { acctByName[a.employeeName] = a; });
+    roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, position:r.Position, status:r.Status||"Active", attendance:"—", dateHired:r.DateHired||'', phone:(acctByName[r.Name]&&acctByName[r.Name].phone)||'', email:(acctByName[r.Name]&&acctByName[r.Name].email)||''}));
     SCHEDULE_DAYS = schedule.days || [];
     SCHEDULE_ROWS = schedule.rows || [];
     NEXT_SCHEDULE_DAYS = nextSchedule.days || [];
@@ -1646,7 +1651,7 @@ async function loadRemoteData(){
       .map(r => ({type:r.Type, date:r.Date, status:r.Status, id:r.ID, details:r.Details, swapDay:r.SwapDay, theirDay:r.TheirDay, swapWithName:r.SwapWithName, reasonForAbsence:r.ReasonForAbsence, minutesLate:r.MinutesLate, shiftSchedule:r.ShiftSchedule}));
     ALL_REQUESTS = requests.slice().reverse();
     EMPLOYEE_ACCOUNTS.length = 0;
-    accountsStatus.forEach(a => EMPLOYEE_ACCOUNTS.push({employeeName:a.employeeName, fullName:a.fullName, username:a.username, role:"employee"}));
+    accountsStatus.forEach(a => EMPLOYEE_ACCOUNTS.push({employeeName:a.employeeName, fullName:a.fullName, username:a.username, role:"employee", email:a.email, phone:a.phone}));
     MOCK.concernsLog = concerns.map(c => ({from:c.From, venue:c.Venue, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID, coworkerName:c.CoworkerName, concernTypes:c.ConcernTypes, requestCCTV:c.RequestCCTV, cctvDate:c.CCTVDate, cctvTime:c.CCTVTime, investigationNotes:c.InvestigationNotes, investigatedBy:c.InvestigatedBy, actionTaken:c.ActionTaken})).reverse();
     MY_CONCERNS = myConcernsRaw.map(c => ({from:c.From, venue:c.Venue, topic:c.Topic, details:c.Details, date:c.Date, status:c.Status, id:c.ID, coworkerName:c.CoworkerName, concernTypes:c.ConcernTypes, requestCCTV:c.RequestCCTV, cctvDate:c.CCTVDate, cctvTime:c.CCTVTime})).reverse();
     MOCK.suggestionsLog = suggestions.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID})).reverse();
@@ -2221,29 +2226,6 @@ async function updateEmployeeStatus(name, status, el){
   }
 }
 
-async function updateEmployeeDateHired(name, dateHired, el){
-  const emp = EMPLOYEE_ROSTER.find(e=>e.name===name);
-  const previous = emp ? emp.dateHired : null;
-  if(emp) emp.dateHired = dateHired;
-  el.disabled = true;
-  try{
-    if(USE_REMOTE()){
-      const r = await apiPost('updateEmployee', {name, dateHired});
-      if(!r.ok){
-        if(emp) emp.dateHired = previous;
-        alert(r.error || "Couldn't update Date Hired.");
-        renderView('mgmt-accounts');
-        return;
-      }
-    }
-    el.disabled = false;
-  } catch(e){
-    if(emp) emp.dateHired = previous;
-    alert(e.message || "Couldn't update Date Hired — please try again.");
-    renderView('mgmt-accounts');
-  }
-}
-
 async function deleteEmployeeConfirm(name, el){
   await confirmAndDelete(el, `Remove ${name} from the Staff Directory? This also removes their login account, if any. Their existing Schedule/Attendance/Request history stays as-is. This can't be undone.`, async ()=>{
     try{
@@ -2422,23 +2404,34 @@ async function changeAdminPassword(){
   }
 }
 
-async function saveEmail(){
+async function savePersonalDetails(){
+  const phone = document.getElementById('profilePhone').value.trim();
   const email = document.getElementById('profileEmail').value.trim();
-  const err = document.getElementById('emailErr');
-  const ok = document.getElementById('emailOk');
+  const err = document.getElementById('personalDetailsErr');
+  const ok = document.getElementById('personalDetailsOk');
   err.style.display='none'; ok.style.display='none';
 
+  if(!phone){ err.textContent="Contact Number is required."; err.style.display='block'; return; }
   if(email && !email.includes('@')){ err.textContent="Enter a valid email or leave it blank."; err.style.display='block'; return; }
 
-  btnLoading('emailSaveBtn');
-  if(USE_REMOTE()){
-    const r = await apiPostMinDelay('updateEmail', {employeeName: CURRENT_EMPLOYEE.name, email});
-    if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnReset('emailSaveBtn','Save Email'); return; }
+  btnLoading('personalDetailsSaveBtn');
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPostMinDelay('updatePersonalDetails', {employeeName: CURRENT_EMPLOYEE.name, phone, email});
+      if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnReset('personalDetailsSaveBtn','Save Personal Details'); return; }
+    }
+    CURRENT_EMPLOYEE.phone = phone;
+    CURRENT_EMPLOYEE.email = email;
+    const roster = EMPLOYEE_ROSTER.find(e=>e.name===CURRENT_EMPLOYEE.name);
+    if(roster){ roster.phone = phone; roster.email = email; }
+    await btnSent('personalDetailsSaveBtn');
+    ok.style.display='block';
+    btnReset('personalDetailsSaveBtn','Save Personal Details');
+  } catch(e){
+    err.textContent = e.message || "Couldn't save — please try again.";
+    err.style.display = 'block';
+    btnReset('personalDetailsSaveBtn','Save Personal Details');
   }
-  CURRENT_EMPLOYEE.email = email;
-  await btnSent('emailSaveBtn');
-  ok.style.display='block';
-  btnReset('emailSaveBtn','Save Email');
 }
 
 function renderPolicySections(doc){
@@ -2738,6 +2731,60 @@ function disciplinaryCasesTableSection(rows, title){
 function viewEmployeeDisciplinaryHistory(employeeName){
   discFilter.employee = employeeName;
   renderView('mgmt-disciplinary');
+}
+
+function openEmployeeProfile(name){
+  viewingEmployeeName = name;
+  employeeProfileTab = 'performance';
+  employeeProfileEditMode = false;
+  renderView('mgmt-employee-profile');
+}
+
+function setEmployeeProfileTab(tab){
+  employeeProfileTab = tab;
+  renderView('mgmt-employee-profile');
+}
+
+function toggleEmployeeProfileEdit(on){
+  employeeProfileEditMode = on;
+  renderView('mgmt-employee-profile');
+}
+
+async function saveEmployeeProfile(){
+  const oldName = viewingEmployeeName;
+  const newName = document.getElementById('empProfileName').value.trim();
+  const position = document.getElementById('empProfilePosition').value;
+  const status = document.getElementById('empProfileStatus').value;
+  const dateHired = document.getElementById('empProfileDateHired').value;
+  const err = document.getElementById('empProfileErr');
+  err.style.display = 'none';
+  if(!newName){ err.textContent = "Name can't be empty."; err.style.display='block'; return; }
+
+  const btn = document.getElementById('empProfileSaveBtn');
+  btnLoadingEl(btn, 'Saving...');
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPost('updateEmployee', {name: oldName, newName, position, status, dateHired});
+      if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnResetEl(btn); return; }
+    }
+    const roster = EMPLOYEE_ROSTER.find(e=>e.name===oldName);
+    if(roster){ roster.name = newName; roster.position = position; roster.status = status; roster.dateHired = dateHired; }
+    viewingEmployeeName = newName; // keep viewing the same person under their (possibly new) name
+    await btnSentEl(btn, 'Saved');
+    employeeProfileEditMode = false;
+    if(newName !== oldName){
+      // A rename touches every sheet linked by name — reload
+      // everything so Attendance/Performance/Disciplinary/
+      // Recognition all show up correctly under the new name
+      // instead of looking empty until the next full refresh.
+      await loadRemoteData();
+    }
+    renderView('mgmt-employee-profile');
+  } catch(e){
+    err.textContent = e.message || "Couldn't save — please try again.";
+    err.style.display = 'block';
+    btnResetEl(btn);
+  }
 }
 
 function setDiscEmployeeFilter(val){
@@ -3362,6 +3409,7 @@ const TITLES = {
   "mgmt-forms":["Forms Library","Company forms and templates — open or print any of them"],
   "mgmt-disciplinary-new":["New Disciplinary Case","Fill in every section that applies"],
   "mgmt-disciplinary-detail":["Case Details","Full record, review, and timeline"],
+  "mgmt-employee-profile":["Employee Profile","Employment info, contact details, and full record"],
   "mgmt-requests":["Manage Requests","Approve or decline pending requests"],
   "mgmt-concerns":["Concerns Log","All reported concerns"],
   "mgmt-concern-detail":["Concern Report","Full details and investigation"],
@@ -3711,11 +3759,14 @@ const BUILDERS = {
           <tr><td class="muted">Employee ID</td><td class="mono">${CURRENT_EMPLOYEE.id}</td></tr>
           <tr><td class="muted">Position</td><td>${CURRENT_EMPLOYEE.position}</td></tr>
         </table>
-        <label>Email (optional)</label>
+        <p class="muted" style="font-size:11.5px; margin-top:8px;">Full name and Position are your official employment information — set by management, not editable here.</p>
+        <label>Contact Number <span style="color:var(--red);">*required</span></label>
+        <input type="text" id="profilePhone" placeholder="e.g. 670-235-1234" value="${CURRENT_EMPLOYEE.phone || ''}">
+        <label>Email <span class="muted">(optional)</span></label>
         <input type="text" id="profileEmail" placeholder="you@example.com" value="${CURRENT_EMPLOYEE.email || ''}">
-        <button class="btn auto" id="emailSaveBtn" style="margin-top:10px;" onclick="saveEmail()">Save Email</button>
-        <p class="login-err" id="emailErr"></p>
-        <p class="login-ok" id="emailOk">Email saved.</p>
+        <button class="btn auto" id="personalDetailsSaveBtn" style="margin-top:10px;" onclick="savePersonalDetails()">Save Personal Details</button>
+        <p class="login-err" id="personalDetailsErr"></p>
+        <p class="login-ok" id="personalDetailsOk">Saved.</p>
       </div>
       <div class="card">
         <h3><span class="ic">🔑</span> Change Password</h3>
@@ -4109,8 +4160,6 @@ const BUILDERS = {
     </div>`,
 
   "mgmt-employees": ()=>{
-    const discCountByEmployee = {};
-    ALL_DISCIPLINARY_RECORDS.forEach(d=>{ if(d.Status !== 'Draft') discCountByEmployee[d.EmployeeName] = (discCountByEmployee[d.EmployeeName]||0) + 1; });
     const q = employeesSearchQuery.toLowerCase();
     const rows = EMPLOYEE_ROSTER.filter(e => !q || e.name.toLowerCase().includes(q) || e.position.toLowerCase().includes(q));
     return `
@@ -4119,10 +4168,14 @@ const BUILDERS = {
     </div>
     <div class="card table-scroll">
       <h3><span class="ic">👥</span> Staff Directory</h3>
+      <p class="muted" style="margin-bottom:12px;">Click a name to open their full Employee Profile — employment info, contact details, performance, attendance, disciplinary, and recognition records all in one place.</p>
       <input type="text" placeholder="🔍 Search by name or position…" value="${employeesSearchQuery}" oninput="setEmployeesSearch(this.value)" style="margin-bottom:12px;">
       <table>
-        <tr><th>Name</th><th>Position</th><th>Status</th><th>Attendance</th><th>Disciplinary Records</th><th></th></tr>
-        ${rows.map(e=>`<tr><td>${e.name}</td><td>${e.position}</td><td>
+        <tr><th>Name</th><th>Position</th><th>Status</th><th>Contact Number</th><th>Email</th><th>Date Hired</th><th></th></tr>
+        ${rows.map(e=>`<tr>
+          <td><button class="btn ghost auto" style="padding:3px 10px; font-weight:600;" onclick="openEmployeeProfile('${e.name.replace(/'/g,"\\'")}')">${e.name}</button></td>
+          <td>${e.position}</td>
+          <td>
             <select class="status-select" onchange="updateEmployeeStatus('${e.name.replace(/'/g,"\\'")}', this.value, this)">
               <option ${e.status==='Active'?'selected':''}>Active</option>
               <option ${e.status==='On Leave'?'selected':''}>On Leave</option>
@@ -4130,8 +4183,141 @@ const BUILDERS = {
               <option ${e.status==='Resigned'?'selected':''}>Resigned</option>
               <option ${e.status==='Terminated'?'selected':''}>Terminated</option>
             </select>
-          </td><td class="mono">${e.attendance}</td><td>${discCountByEmployee[e.name] ? `<button class="btn ghost auto" style="padding:4px 10px;" onclick="viewEmployeeDisciplinaryHistory('${e.name.replace(/'/g,"\\'")}')">${discCountByEmployee[e.name]} record${discCountByEmployee[e.name]===1?'':'s'}</button>` : '<span class="muted">None</span>'}</td><td><button class="btn ghost auto" style="padding:4px 10px;" onclick="deleteEmployeeConfirm('${e.name.replace(/'/g,"\\'")}', this)">Delete</button></td></tr>`).join('') || `<tr><td colspan="6" class="muted">No matches.</td></tr>`}
+          </td>
+          <td class="muted">${e.phone || '—'}</td>
+          <td class="muted">${e.email || '—'}</td>
+          <td class="muted">${e.dateHired ? fmtDiscDate(e.dateHired) : '—'}</td>
+          <td><button class="btn ghost auto" style="padding:4px 10px;" onclick="deleteEmployeeConfirm('${e.name.replace(/'/g,"\\'")}', this)">Delete</button></td>
+        </tr>`).join('') || `<tr><td colspan="7" class="muted">No matches.</td></tr>`}
       </table>
+    </div>`;
+  },
+
+  "mgmt-employee-profile": ()=>{
+    const name = viewingEmployeeName;
+    const e = EMPLOYEE_ROSTER.find(r=>r.name===name);
+    if(!e) return `<div class="empty"><div class="ic">🚧</div>Employee not found. <button class="btn ghost auto" onclick="renderView('mgmt-employees')">Back to Staff Directory</button></div>`;
+
+    const myAttendance = ATTENDANCE_LOG.filter(a=>a.name===name).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+    const myEvaluations = ALL_EVALUATIONS.filter(ev=>ev.EmployeeName===name);
+    const myDisc = ALL_DISCIPLINARY_RECORDS.filter(d=>d.EmployeeName===name && d.Status !== 'Draft');
+    const myRecognition = MOCK.recognition.filter(r=>r.employeeName===name);
+    const myNominations = ALL_NOMINATIONS.filter(n=>n.NomineeName===name);
+    const absences = myAttendance.filter(a=>a.status==='Absent').length;
+    const lates = myAttendance.filter(a=>a.status==='Late').length;
+    const undertimes = myAttendance.filter(a=>a.status==='Undertime').length;
+    const leaves = myAttendance.filter(a=>a.status==='On Leave' || a.status==='Leave').length;
+
+    const tabs = [
+      {id:'performance', ic:'📊', label:'Performance'},
+      {id:'attendance', ic:'📅', label:'Attendance'},
+      {id:'disciplinary', ic:'⚠️', label:'Disciplinary'},
+      {id:'recognition', ic:'🏆', label:'Recognition'},
+    ];
+
+    return `
+    <div class="no-print" style="margin-bottom:16px;">
+      <button class="btn ghost auto" onclick="renderView('mgmt-employees')">← Back to Staff Directory</button>
+    </div>
+    <div class="grid grid-2" style="margin-bottom:16px;">
+      <div class="card">
+        <h3 style="display:flex; justify-content:space-between; align-items:center;">
+          <span>Employment Information</span>
+          ${!employeeProfileEditMode ? `<button class="btn ghost auto no-print" style="padding:4px 10px; font-size:13px;" onclick="toggleEmployeeProfileEdit(true)">Edit</button>` : ''}
+        </h3>
+        ${employeeProfileEditMode ? `
+          <label>Full Name</label>
+          <input type="text" id="empProfileName" value="${e.name}">
+          <label>Position</label>
+          <select id="empProfilePosition">
+            <option ${e.position==='Shift Manager'?'selected':''}>Shift Manager</option>
+            <option ${e.position==='Supervisor'?'selected':''}>Supervisor</option>
+            <option ${e.position==='Cashier'?'selected':''}>Cashier</option>
+            <option ${e.position==='Slot Technician'?'selected':''}>Slot Technician</option>
+            <option ${e.position==='Attendant'?'selected':''}>Attendant</option>
+            <option ${e.position==='Membership Officer'?'selected':''}>Membership Officer</option>
+            <option ${e.position==='Security'?'selected':''}>Security</option>
+          </select>
+          <label>Employment Status</label>
+          <select id="empProfileStatus">
+            <option ${e.status==='Active'?'selected':''}>Active</option>
+            <option ${e.status==='On Leave'?'selected':''}>On Leave</option>
+            <option ${e.status==='Furlough'?'selected':''}>Furlough</option>
+            <option ${e.status==='Resigned'?'selected':''}>Resigned</option>
+            <option ${e.status==='Terminated'?'selected':''}>Terminated</option>
+          </select>
+          <label>Date Hired</label>
+          <input type="date" id="empProfileDateHired" value="${e.dateHired||''}">
+          <p id="empProfileErr" class="login-err"></p>
+          <div style="display:flex; gap:8px; margin-top:8px;">
+            <button class="btn ghost auto" onclick="toggleEmployeeProfileEdit(false)">Cancel</button>
+            <button class="btn auto" id="empProfileSaveBtn" onclick="saveEmployeeProfile()">Save Changes</button>
+          </div>
+          <p class="muted" style="font-size:11px; margin-top:8px;">Changing the name updates it everywhere this employee is referenced — Attendance, Requests, Evaluations, Disciplinary Records, Recognition, and Nominations. Their history stays fully intact either way.</p>
+        ` : `
+          <table>
+            <tr><td class="muted">Full Name</td><td>${e.name}</td></tr>
+            <tr><td class="muted">Position</td><td>${e.position}</td></tr>
+            <tr><td class="muted">Employment Status</td><td>${statusPill(e.status)}</td></tr>
+            <tr><td class="muted">Date Hired</td><td>${e.dateHired ? fmtDiscDate(e.dateHired) : '—'}</td></tr>
+          </table>
+        `}
+      </div>
+      <div class="card">
+        <h3>Personal Contact Information</h3>
+        <p class="muted" style="margin-bottom:8px; font-size:12px;">Kept up to date by the employee through their own Personal Details — not editable here.</p>
+        <table>
+          <tr><td class="muted">Contact Number</td><td>${e.phone || '<span class="muted">Not provided yet</span>'}</td></tr>
+          <tr><td class="muted">Email</td><td>${e.email || '<span class="muted">Not provided</span>'}</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="no-print" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:0;">
+      ${tabs.map(t=>`<button class="btn ${employeeProfileTab===t.id?'':'ghost'} auto" style="border-radius:8px 8px 0 0;" onclick="setEmployeeProfileTab('${t.id}')">${t.ic} ${t.label}</button>`).join('')}
+    </div>
+
+    <div class="card table-scroll" style="margin-top:0;">
+      ${employeeProfileTab==='performance' ? `
+        <h3><span class="ic">📊</span> Performance Report</h3>
+        ${myEvaluations.length ? `
+        <table>
+          <tr><th>Month</th><th>Year</th><th>Score</th><th>Rating</th></tr>
+          ${myEvaluations.map(ev=>`<tr><td>${ev.Month}</td><td>${ev.Year}</td><td class="mono">${ev.AverageScore}</td><td>${ratingStars(ev.AverageScore)} ${ev.RatingLabel}</td></tr>`).join('')}
+        </table>` : `<p class="muted">No records available</p>`}
+      ` : ''}
+      ${employeeProfileTab==='attendance' ? `
+        <h3><span class="ic">📅</span> Attendance Report</h3>
+        <div class="grid grid-4" style="margin-bottom:16px;">
+          <div class="card stat-card"><div class="num">${absences}</div><div class="label">Absences</div></div>
+          <div class="card stat-card"><div class="num">${lates}</div><div class="label">Late</div></div>
+          <div class="card stat-card"><div class="num">${undertimes}</div><div class="label">Undertime</div></div>
+          <div class="card stat-card"><div class="num">${leaves}</div><div class="label">Leave</div></div>
+        </div>
+        ${myAttendance.length ? `
+        <table>
+          <tr><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th></tr>
+          ${myAttendance.map(a=>`<tr><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td></tr>`).join('')}
+        </table>` : `<p class="muted">No records available</p>`}
+      ` : ''}
+      ${employeeProfileTab==='disciplinary' ? `
+        <h3><span class="ic">⚠️</span> Disciplinary Report</h3>
+        ${myDisc.length ? `
+        <table>
+          <tr><th>Case #</th><th>Date Reported</th><th>Level</th><th>Status</th><th></th></tr>
+          ${myDisc.map(d=>`<tr><td class="mono">${d.CaseNumber}</td><td>${fmtDateTime(d.DateReported)}</td><td>${d.DisciplinaryLevel||'—'}</td><td>${discStatusPill(d.Status)}</td><td><button class="btn ghost auto" style="padding:4px 10px;" onclick="openDisciplinaryCase('${d.ID}')">View</button></td></tr>`).join('')}
+        </table>` : `<p class="muted">No records available</p>`}
+      ` : ''}
+      ${employeeProfileTab==='recognition' ? `
+        <h3><span class="ic">🏆</span> Recognition</h3>
+        ${myRecognition.length ? myRecognition.map(r=>`<div class="badge-recog"><div class="medal">${r.medal}</div><div><div class="name">${r.name}</div><div class="desc">${r.desc}</div></div></div>`).join('') : `<p class="muted">No records available</p>`}
+        <h3 style="margin-top:20px;">Award Nominations</h3>
+        ${myNominations.length ? `
+        <table>
+          <tr><th>Category</th><th>Period</th><th>Reason</th><th>Nominated By</th></tr>
+          ${myNominations.map(n=>`<tr><td>${n.AwardCategory}</td><td class="muted">${n.Month||''} ${n.Year||''}</td><td class="muted">${n.Reason}</td><td>${n.NominatorName}</td></tr>`).join('')}
+        </table>` : `<p class="muted">No records available</p>`}
+      ` : ''}
     </div>`;
   },
 
@@ -4149,13 +4335,12 @@ const BUILDERS = {
       <h3><span class="ic">🔑</span> Account Status by Employee</h3>
       <input type="text" placeholder="🔍 Search by name, position, or username…" value="${accountsSearchQuery}" oninput="setAccountsSearch(this.value)" style="margin-bottom:12px;">
       <table>
-        <tr><th>Employee</th><th>Position</th><th>Date Hired</th><th>Username</th><th>Account Status</th><th></th><th>Photo</th></tr>
+        <tr><th>Employee</th><th>Position</th><th>Username</th><th>Account Status</th><th></th><th>Photo</th></tr>
         ${rows.map(e=>{
           const acct = findAccountByEmployeeName(e.name);
           return `<tr>
             <td>${acct && acct.fullName ? acct.fullName : e.name}</td>
             <td class="muted">${e.position}</td>
-            <td><input type="date" value="${e.dateHired||''}" style="margin-bottom:0; padding:6px 8px; font-size:13px;" onchange="updateEmployeeDateHired('${e.name.replace(/'/g,"\\'")}', this.value, this)"></td>
             <td class="mono">${acct ? acct.username : '—'}</td>
             <td>${acct ? `<span class="pill ok">Registered</span>` : `<span class="pill warn">Not registered</span>`}</td>
             <td><button class="btn ghost auto" style="padding:5px 10px;" onclick="openResetModal('${e.name}')">${acct ? 'Reset Password' : 'Assign Account'}</button></td>
@@ -4165,7 +4350,7 @@ const BUILDERS = {
               </label>
             </td>
           </tr>`;
-        }).join('') || `<tr><td colspan="7" class="muted">No matches.</td></tr>`}
+        }).join('') || `<tr><td colspan="6" class="muted">No matches.</td></tr>`}
       </table>
     </div>`;
   },
