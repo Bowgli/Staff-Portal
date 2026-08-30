@@ -1672,6 +1672,9 @@ async function loadRemoteData(){
 let mgmtAudioCtx = null;
 let mgmtPollInterval = null;
 let mgmtAlertBaseline = null;
+let mgmtConcernsSnapshot = null; // Map: id -> {status, topic}
+let mgmtRequestsSnapshot = null; // Map: id -> {status, details}
+let mgmtSuggestionsSnapshot = null; // Map: id -> {status}
 
 async function initMgmtAudio(){
   try{
@@ -1793,6 +1796,14 @@ async function startMgmtPolling(){
   // connection where local data is still catching up), which was
   // showing up as a false "new item" on the very next check.
   try{ mgmtAlertBaseline = await apiGet('counts'); } catch(e){ mgmtAlertBaseline = getMgmtAlertCounts(); }
+  // Precise per-item snapshots (id -> {status, ...}) — built from the
+  // already-loaded MOCK.concernsLog / ALL_REQUESTS / MOCK.suggestionsLog
+  // right after login, so the very first poll cycle compares against
+  // an accurate starting point rather than an empty one.
+  mgmtConcernsSnapshot = new Map(MOCK.concernsLog.map(c=>[c.id, {status:c.status, topic:c.topic}]));
+  mgmtRequestsSnapshot = new Map(ALL_REQUESTS.map(r=>[r.ID, {status:r.Status, details:r.Details}]));
+  mgmtSuggestionsSnapshot = new Map(MOCK.suggestionsLog.map(s=>[s.id, {status:s.status}]));
+
   mgmtPollInterval = setInterval(async ()=>{
     if(document.hidden) return; // skip while this tab isn't the active/visible one — avoids piling up requests across multiple open tabs
     let counts;
@@ -1801,44 +1812,71 @@ async function startMgmtPolling(){
       || counts.requestsSig !== mgmtAlertBaseline.requestsSig || counts.concernsSig !== mgmtAlertBaseline.concernsSig || counts.suggestionsSig !== mgmtAlertBaseline.suggestionsSig;
     if(!changed) return; // nothing new — skip the full reload entirely this cycle
 
-    const newRequests = counts.requests - mgmtAlertBaseline.requests;
-    const newConcerns = counts.concerns - mgmtAlertBaseline.concerns;
-    const newSuggestions = counts.suggestions - mgmtAlertBaseline.suggestions;
-    const newEvaluations = (counts.evaluations||0) - (mgmtAlertBaseline.evaluations||0);
-    const newDiscResponses = (counts.discResponses||0) - (mgmtAlertBaseline.discResponses||0);
-    const newNominations = (counts.nominations||0) - (mgmtAlertBaseline.nominations||0);
-    // An employee EDITING an existing item (not submitting a new
-    // one) doesn't change its status count, but does change its
-    // signature — that's how we catch it separately.
-    const requestsEdited = newRequests <= 0 && counts.requestsSig !== mgmtAlertBaseline.requestsSig;
-    const concernsEdited = newConcerns <= 0 && counts.concernsSig !== mgmtAlertBaseline.concernsSig;
-    const suggestionsEdited = newSuggestions <= 0 && counts.suggestionsSig !== mgmtAlertBaseline.suggestionsSig;
+    const newEvaluations = counts.evaluations - mgmtAlertBaseline.evaluations;
+    const newDiscResponses = counts.discResponses - mgmtAlertBaseline.discResponses;
+    const newNominations = counts.nominations - mgmtAlertBaseline.nominations;
     mgmtAlertBaseline = counts;
 
-    await loadRemoteData(); // reload first so we can name what actually came in
+    await loadRemoteData(); // reload first so the diff below compares against fresh data
 
-    if(newRequests > 0 || newConcerns > 0 || newSuggestions > 0 || newEvaluations > 0 || newDiscResponses > 0 || newNominations > 0 || requestsEdited || concernsEdited || suggestionsEdited){
+    // Diff each list against its OWN last-known snapshot, per ID —
+    // this is what correctly tells apart three different things that
+    // a single count/signature comparison could never reliably
+    // separate: a brand new submission, a status change (which for
+    // Concerns/Requests only an Admin/Hybrid account can make), and
+    // an employee editing their own existing submission. It also
+    // means one admin's own status update can never be misread as
+    // "an employee updated it" on their own screen, and a genuinely
+    // new submission is never masked just because something else
+    // also changed in the same 30-second window.
+    const concernsNow = new Map(MOCK.concernsLog.map(c=>[c.id, {status:c.status, topic:c.topic, from:c.from}]));
+    const newConcerns = [], contentEditedConcerns = [];
+    concernsNow.forEach((cur, id)=>{
+      const prev = mgmtConcernsSnapshot.get(id);
+      if(!prev) newConcerns.push(cur);
+      else if(prev.status === cur.status && prev.topic !== cur.topic) contentEditedConcerns.push(cur);
+      // a status change alone (prev.status !== cur.status) is an
+      // Admin/Hybrid action — never toasted here, only to the employee
+    });
+    mgmtConcernsSnapshot = concernsNow;
+
+    const requestsNow = new Map(ALL_REQUESTS.map(r=>[r.ID, {status:r.Status, details:r.Details, employeeName:r.EmployeeName, type:r.Type}]));
+    const newRequestsList = [], contentEditedRequests = [];
+    requestsNow.forEach((cur, id)=>{
+      const prev = mgmtRequestsSnapshot.get(id);
+      if(!prev) newRequestsList.push(cur);
+      else if(prev.status === cur.status && prev.details !== cur.details) contentEditedRequests.push(cur);
+    });
+    mgmtRequestsSnapshot = requestsNow;
+
+    const suggestionsNow = new Map(MOCK.suggestionsLog.map(s=>[s.id, {status:s.status, idea:s.idea, from:s.from}]));
+    const newSuggestionsList = [];
+    suggestionsNow.forEach((cur, id)=>{
+      const prev = mgmtSuggestionsSnapshot.get(id);
+      if(!prev) newSuggestionsList.push(cur);
+      // suggestions have no employee-edit feature, so only "new" is tracked
+    });
+    mgmtSuggestionsSnapshot = suggestionsNow;
+
+    const anythingToNotify = newRequestsList.length || newConcerns.length || newSuggestionsList.length || newEvaluations > 0 || newDiscResponses > 0 || newNominations > 0 || contentEditedRequests.length || contentEditedConcerns.length;
+    if(anythingToNotify){
       if(soundAlertsEnabled()) playAlertTone();
-      if(newRequests > 0){
-        const latest = ALL_REQUESTS.filter(r=>r.Status==='pending').slice(0, newRequests);
-        const detail = latest.length===1 ? `${latest[0].EmployeeName} — ${latest[0].Type}` : latest.map(r=>`${r.EmployeeName} (${r.Type})`).join(', ');
-        showMgmtToast('📝', newRequests===1?'New Request':`${newRequests} New Requests`, `${detail || 'A new request came in'} — tap to view`, 'mgmt-requests');
-      } else if(requestsEdited){
-        showMgmtToast('📝', 'Request Updated', 'An employee updated one of their requests — tap to view', 'mgmt-requests');
+      if(newRequestsList.length){
+        const detail = newRequestsList.length===1 ? `${newRequestsList[0].employeeName} — ${newRequestsList[0].type}` : newRequestsList.map(r=>`${r.employeeName} (${r.type})`).join(', ');
+        showMgmtToast('📝', newRequestsList.length===1?'New Request Submitted':`${newRequestsList.length} New Requests`, `${detail} — tap to view`, 'mgmt-requests');
+      } else if(contentEditedRequests.length){
+        showMgmtToast('📝', 'Request Updated', 'An employee updated a submitted request — tap to view', 'mgmt-requests');
       }
-      if(newConcerns > 0){
-        const latest = MOCK.concernsLog.filter(c=>c.status==='Open').slice(0, newConcerns);
-        const detail = latest.length===1 ? `${latest[0].from} — ${latest[0].topic}` : latest.map(c=>c.topic).join(', ');
-        showMgmtToast('⚠️', newConcerns===1?'New Concern':`${newConcerns} New Concerns`, `${detail || 'A new concern was reported'} — tap to view`, 'mgmt-concerns');
-      } else if(concernsEdited){
+      if(newConcerns.length){
+        const detail = newConcerns.length===1 ? `${newConcerns[0].from} submitted a new concern` : newConcerns.map(c=>c.from).join(', ');
+        showMgmtToast('⚠️', newConcerns.length===1?'New Concern Submitted':`${newConcerns.length} New Concerns`, `${detail} — tap to view`, 'mgmt-concerns');
+      } else if(contentEditedConcerns.length){
         showMgmtToast('⚠️', 'Concern Updated', 'An employee updated a submitted concern — tap to view', 'mgmt-concerns');
       }
-      if(newSuggestions > 0){
-        const latest = MOCK.suggestionsLog.filter(s=>s.status==='new').slice(0, newSuggestions);
-        const snippet = latest.length===1 ? (latest[0].idea||'').slice(0,60) : latest.map(s=>s.from).join(', ');
-        showMgmtToast('💡', newSuggestions===1?'New Suggestion':`${newSuggestions} New Suggestions`, `${snippet || 'A new idea was submitted'}${latest.length===1 && (latest[0].idea||'').length>60?'…':''} — tap to view`, 'mgmt-suggestions');
-      } else if(suggestionsEdited){
-        showMgmtToast('💡', 'Suggestion Updated', 'An employee updated a submitted suggestion — tap to view', 'mgmt-suggestions');
+      if(newSuggestionsList.length){
+        const s0 = newSuggestionsList[0];
+        const snippet = newSuggestionsList.length===1 ? (s0.idea||'').slice(0,60) : newSuggestionsList.map(s=>s.from).join(', ');
+        showMgmtToast('💡', newSuggestionsList.length===1?'New Suggestion':`${newSuggestionsList.length} New Suggestions`, `${snippet}${newSuggestionsList.length===1 && (s0.idea||'').length>60?'…':''} — tap to view`, 'mgmt-suggestions');
       }
       if(newEvaluations > 0){
         const latest = ALL_EVALUATIONS.slice(0, newEvaluations);
@@ -2030,7 +2068,7 @@ async function startEmpPolling(){
     if(scheduleJustPublished) showMgmtToast('📅', 'Schedule Published', 'Next week\'s schedule was just published — tap to view', 'schedule');
     if(requestStatusChanged) showMgmtToast('📝', 'Request Updated', `${changedRequestDetail || 'One of your requests was updated'} — tap to view`, 'requests');
     if(discChanged) showMgmtToast('📁', 'Record Updated', 'A disciplinary case naming you was updated — tap to view', 'my-disciplinary');
-    if(concernChanged) showMgmtToast('⚠️', 'Concern Updated', `${changedConcernDetail || 'One of your concerns was updated'} — tap to view`, 'concern');
+    if(concernChanged) showMgmtToast('⚠️', 'Concern Status Updated', `Your submitted concern has been updated${changedConcernDetail ? ' — '+changedConcernDetail : ''} — tap to view`, 'concern');
     if(suggestionChanged) showMgmtToast('💡', 'Suggestion Updated', 'One of your suggestions was updated — tap to view', 'suggestion');
     if(newPendingRequests > 0){
       const detail = newPendingRequestNames.length===1 ? newPendingRequestNames[0] : newPendingRequestNames.join(', ');
