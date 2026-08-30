@@ -1461,6 +1461,12 @@ async function attemptLogin(){
 
   if(!u || !p){ err.textContent = "Enter both username and password."; err.style.display='block'; return; }
 
+  // Unlock audio playback right here, in the same synchronous tick as
+  // the click — browsers are strict about tying audio permission to
+  // a genuine user gesture, and that link can get silently lost if
+  // this waits until after the login network call finishes.
+  initMgmtAudio();
+
   btnLoading('loginBtn', 'Logging in...');
 
   let result;
@@ -1675,6 +1681,9 @@ let mgmtAlertBaseline = null;
 let mgmtConcernsSnapshot = null; // Map: id -> {status, topic}
 let mgmtRequestsSnapshot = null; // Map: id -> {status, details}
 let mgmtSuggestionsSnapshot = null; // Map: id -> {status}
+let mgmtDiscResponseSnapshot = null; // Map: caseId -> whether EmployeeResponse is filled in
+let mgmtEvaluationsSnapshot = null; // Set of evaluation IDs already seen
+let mgmtNominationsSnapshot = null; // Set of nomination IDs already seen
 
 async function initMgmtAudio(){
   try{
@@ -1803,6 +1812,9 @@ async function startMgmtPolling(){
   mgmtConcernsSnapshot = new Map(MOCK.concernsLog.map(c=>[c.id, {status:c.status, topic:c.topic}]));
   mgmtRequestsSnapshot = new Map(ALL_REQUESTS.map(r=>[r.ID, {status:r.Status, details:r.Details}]));
   mgmtSuggestionsSnapshot = new Map(MOCK.suggestionsLog.map(s=>[s.id, {status:s.status}]));
+  mgmtDiscResponseSnapshot = new Map(ALL_DISCIPLINARY_RECORDS.map(d=>[d.ID, !!d.EmployeeResponse]));
+  mgmtEvaluationsSnapshot = new Set(ALL_EVALUATIONS.map(e=>e.ID));
+  mgmtNominationsSnapshot = new Set(ALL_NOMINATIONS.map(n=>n.ID));
 
   mgmtPollInterval = setInterval(async ()=>{
     if(document.hidden) return; // skip while this tab isn't the active/visible one — avoids piling up requests across multiple open tabs
@@ -1812,9 +1824,6 @@ async function startMgmtPolling(){
       || counts.requestsSig !== mgmtAlertBaseline.requestsSig || counts.concernsSig !== mgmtAlertBaseline.concernsSig || counts.suggestionsSig !== mgmtAlertBaseline.suggestionsSig;
     if(!changed) return; // nothing new — skip the full reload entirely this cycle
 
-    const newEvaluations = counts.evaluations - mgmtAlertBaseline.evaluations;
-    const newDiscResponses = counts.discResponses - mgmtAlertBaseline.discResponses;
-    const newNominations = counts.nominations - mgmtAlertBaseline.nominations;
     mgmtAlertBaseline = counts;
 
     await loadRemoteData(); // reload first so the diff below compares against fresh data
@@ -1858,7 +1867,30 @@ async function startMgmtPolling(){
     });
     mgmtSuggestionsSnapshot = suggestionsNow;
 
-    const anythingToNotify = newRequestsList.length || newConcerns.length || newSuggestionsList.length || newEvaluations > 0 || newDiscResponses > 0 || newNominations > 0 || contentEditedRequests.length || contentEditedConcerns.length;
+    // Same precision fix as above, but for a FIELD changing on an
+    // existing case (EmployeeResponse going from empty to filled)
+    // rather than a whole new row — the old code picked the first N
+    // cases that HAD a response at all, which could easily be a
+    // totally different, older case than the one that actually just
+    // received a new response.
+    const discRespNow = new Map(ALL_DISCIPLINARY_RECORDS.map(d=>[d.ID, !!d.EmployeeResponse]));
+    const newDiscResponseRecords = [];
+    discRespNow.forEach((hasResponse, id)=>{
+      const prevHad = mgmtDiscResponseSnapshot ? mgmtDiscResponseSnapshot.get(id) : false;
+      if(hasResponse && !prevHad){
+        const rec = ALL_DISCIPLINARY_RECORDS.find(d=>d.ID===id);
+        if(rec) newDiscResponseRecords.push(rec);
+      }
+    });
+    mgmtDiscResponseSnapshot = discRespNow;
+
+    const newEvaluationRecords = ALL_EVALUATIONS.filter(e => !mgmtEvaluationsSnapshot.has(e.ID));
+    mgmtEvaluationsSnapshot = new Set(ALL_EVALUATIONS.map(e=>e.ID));
+
+    const newNominationRecords = ALL_NOMINATIONS.filter(n => !mgmtNominationsSnapshot.has(n.ID));
+    mgmtNominationsSnapshot = new Set(ALL_NOMINATIONS.map(n=>n.ID));
+
+    const anythingToNotify = newRequestsList.length || newConcerns.length || newSuggestionsList.length || newEvaluationRecords.length || newDiscResponseRecords.length || newNominationRecords.length || contentEditedRequests.length || contentEditedConcerns.length;
     if(anythingToNotify){
       if(soundAlertsEnabled()) playAlertTone();
       if(newRequestsList.length){
@@ -1878,20 +1910,17 @@ async function startMgmtPolling(){
         const snippet = newSuggestionsList.length===1 ? (s0.idea||'').slice(0,60) : newSuggestionsList.map(s=>s.from).join(', ');
         showMgmtToast('💡', newSuggestionsList.length===1?'New Suggestion':`${newSuggestionsList.length} New Suggestions`, `${snippet}${newSuggestionsList.length===1 && (s0.idea||'').length>60?'…':''} — tap to view`, 'mgmt-suggestions');
       }
-      if(newEvaluations > 0){
-        const latest = ALL_EVALUATIONS.slice(0, newEvaluations);
-        const detail = latest.map(e=>e.EmployeeName).join(', ');
-        showMgmtToast('📋', newEvaluations===1?'New Evaluation':`${newEvaluations} New Evaluations`, `${detail || 'A new evaluation was submitted'} — tap to view`, 'mgmt-performance');
+      if(newEvaluationRecords.length){
+        const detail = newEvaluationRecords.map(e=>e.EmployeeName).join(', ');
+        showMgmtToast('📋', newEvaluationRecords.length===1?'New Evaluation':`${newEvaluationRecords.length} New Evaluations`, `${detail} — tap to view`, 'mgmt-performance');
       }
-      if(newDiscResponses > 0){
-        const latest = ALL_DISCIPLINARY_RECORDS.filter(d=>d.EmployeeResponse).slice(0, newDiscResponses);
-        const detail = latest.length===1 ? `${latest[0].EmployeeName} — ${latest[0].CaseNumber||'case'}` : latest.map(d=>d.EmployeeName).join(', ');
-        showMgmtToast('📁', newDiscResponses===1?'New Employee Response':`${newDiscResponses} New Employee Responses`, `${detail || 'A response was added to a case'} — tap to view`, 'mgmt-disciplinary');
+      if(newDiscResponseRecords.length){
+        const detail = newDiscResponseRecords.length===1 ? `${newDiscResponseRecords[0].EmployeeName} — ${newDiscResponseRecords[0].CaseNumber||'case'}` : newDiscResponseRecords.map(d=>d.EmployeeName).join(', ');
+        showMgmtToast('📁', newDiscResponseRecords.length===1?'New Employee Response':`${newDiscResponseRecords.length} New Employee Responses`, `${detail} — tap to view`, 'mgmt-disciplinary');
       }
-      if(newNominations > 0){
-        const latest = ALL_NOMINATIONS.slice(0, newNominations);
-        const detail = latest.length===1 ? `${latest[0].NomineeName} — ${latest[0].AwardCategory}` : latest.map(n=>n.NomineeName).join(', ');
-        showMgmtToast('🌟', newNominations===1?'New Award Nomination':`${newNominations} New Award Nominations`, `${detail || 'A new nomination was submitted'} — tap to view`, 'mgmt-nominations');
+      if(newNominationRecords.length){
+        const detail = newNominationRecords.length===1 ? `${newNominationRecords[0].NomineeName} — ${newNominationRecords[0].AwardCategory}` : newNominationRecords.map(n=>n.NomineeName).join(', ');
+        showMgmtToast('🌟', newNominationRecords.length===1?'New Award Nomination':`${newNominationRecords.length} New Award Nominations`, `${detail} — tap to view`, 'mgmt-nominations');
       }
     }
     renderNav();
@@ -1907,9 +1936,9 @@ let empPollInterval = null;
 let empRequestsBaseline = null; // {requestId: status}, scoped to just this employee's own requests
 
 function myRequestsSnapshot(){
-  const snap = {};
-  MOCK.requests.forEach(r=>{ if(r.id) snap[r.id] = r.status; });
-  return snap;
+  const map = new Map();
+  MOCK.requests.forEach(r=>{ if(r.id) map.set(r.id, r.status); });
+  return map;
 }
 function nextScheduleSnapshot(ns){
   if(ns) return JSON.stringify({published: ns.published, days: ns.days, rows: ns.rows});
@@ -1918,21 +1947,46 @@ function nextScheduleSnapshot(ns){
 
 let empNextScheduleBaseline = '';
 let empNextSchedulePublished = false; // tracks the published flag specifically, so we can tell a real "just published" moment apart from routine in-progress edits
-let empDiscBaseline = '';
+let empDiscBaseline = null;
 let empAnnouncementsBaseline = 0;
 function myDisciplinarySnapshot(records){
-  if(records) return JSON.stringify(records.map(d=>[d.ID, d.Status]));
-  return JSON.stringify(MY_DISCIPLINARY_RECORDS.map(d=>[d.ID, d.Status]));
+  const list = records || MY_DISCIPLINARY_RECORDS;
+  const map = new Map();
+  list.forEach(d=>map.set(d.ID, d.Status));
+  return map;
 }
-let empConcernsBaseline = '';
+let empConcernsBaseline = null;
 function myConcernsSnapshot(records){
-  if(records) return JSON.stringify(records.map(c=>[c.ID, c.Status]));
-  return JSON.stringify(MY_CONCERNS.map(c=>[c.id, c.status]));
+  const list = records || MY_CONCERNS;
+  const map = new Map();
+  list.forEach(c=>map.set(c.ID !== undefined ? c.ID : c.id, c.Status !== undefined ? c.Status : c.status));
+  return map;
 }
-let empSuggestionsBaseline = '';
+let empSuggestionsBaseline = null;
 function mySuggestionsSnapshot(records){
-  if(records) return JSON.stringify(records.map(s=>[s.ID, s.Status]));
-  return JSON.stringify(MY_SUGGESTIONS.map(s=>[s.id, s.status]));
+  const list = records || MY_SUGGESTIONS;
+  const map = new Map();
+  list.forEach(s=>map.set(s.ID !== undefined ? s.ID : s.id, s.Status !== undefined ? s.Status : s.status));
+  return map;
+}
+/* Diffs a "current" id->status Map against the previous baseline
+   Map. isNew is true the moment an id first appears at all — that's
+   the submitter's OWN brand-new submission, which they already know
+   about and should never be told is a "status update". statusChanged
+   is only true when an id EXISTED before with a DIFFERENT status —
+   that's a genuine change made by someone else (e.g. an Admin). */
+function diffIdStatusMap(currentMap, previousMap){
+  let anyDiff = false, statusChangedId = null;
+  currentMap.forEach((status, id)=>{
+    if(!previousMap || !previousMap.has(id)){
+      anyDiff = true; // brand new — refresh their own view, but not toast-worthy
+    } else if(previousMap.get(id) !== status){
+      anyDiff = true;
+      statusChangedId = id; // last one wins if several changed at once — good enough for the toast detail
+    }
+  });
+  if(previousMap && previousMap.size !== currentMap.size) anyDiff = true; // covers deletions too
+  return { anyDiff, statusChangedId };
 }
 let empPendingRequestsBaseline = new Set(); // set of request IDs already accounted for — not just a count, so we always know exactly WHICH ones are genuinely new
 /* True for any hybrid employee account (Shift Manager, or any future
@@ -1973,16 +2027,17 @@ async function startEmpPolling(){
     let changedRequestDetail = '', newAnnouncementTitles = [], newPendingRequestNames = [];
 
     if(requests){
-      const currentSnap = {};
-      requests.forEach(r=>{ if(r.EmployeeName === CURRENT_EMPLOYEE.name) currentSnap[r.ID] = r.Status; });
-      const ids = new Set([...Object.keys(currentSnap), ...Object.keys(empRequestsBaseline)]);
-      const changedIds = [...ids].filter(id => currentSnap[id] !== empRequestsBaseline[id]);
-      if(changedIds.length){
+      const currentSnap = new Map();
+      requests.forEach(r=>{ if(r.EmployeeName === CURRENT_EMPLOYEE.name) currentSnap.set(r.ID, r.Status); });
+      const { anyDiff, statusChangedId } = diffIdStatusMap(currentSnap, empRequestsBaseline);
+      if(anyDiff){
         empRequestsBaseline = currentSnap;
         changed = true;
-        requestStatusChanged = true;
-        const changedReq = requests.find(r=>r.ID===changedIds[0]);
-        if(changedReq) changedRequestDetail = `${changedReq.Type} — ${changedReq.Status}`;
+        if(statusChangedId){
+          requestStatusChanged = true;
+          const changedReq = requests.find(r=>r.ID===statusChangedId);
+          if(changedReq) changedRequestDetail = `${changedReq.Type} — ${changedReq.Status}`;
+        }
       }
     }
 
@@ -2002,25 +2057,38 @@ async function startEmpPolling(){
 
     if(myDisc){
       const snap = myDisciplinarySnapshot(myDisc);
-      if(snap !== empDiscBaseline){ empDiscBaseline = snap; changed = true; discChanged = true; }
+      const { anyDiff } = diffIdStatusMap(snap, empDiscBaseline);
+      // Disciplinary cases are always created BY management, never
+      // by the employee themselves — so unlike Concerns/Suggestions,
+      // even a brand-new one showing up is still something the
+      // employee didn't already know about and should be told.
+      if(anyDiff){ empDiscBaseline = snap; changed = true; discChanged = true; }
     }
 
     let concernChanged = false, changedConcernDetail = '';
     if(myConcerns){
       const snap = myConcernsSnapshot(myConcerns);
-      if(snap !== empConcernsBaseline){
+      const { anyDiff, statusChangedId } = diffIdStatusMap(snap, empConcernsBaseline);
+      if(anyDiff){
         empConcernsBaseline = snap;
-        changed = true;
-        concernChanged = true;
-        const changedC = myConcerns[myConcerns.length - 1]; // best-effort — not critical which one if several changed at once
-        if(changedC) changedConcernDetail = `${changedC.Topic} — ${changedC.Status}`;
+        changed = true; // still silently refresh "Your Concern History" so a brand-new submission shows up right away
+        if(statusChangedId){
+          concernChanged = true; // only a genuine status change (never the employee's own new submission) is toast-worthy
+          const changedC = myConcerns.find(c=>(c.ID!==undefined?c.ID:c.id)===statusChangedId);
+          if(changedC) changedConcernDetail = `${changedC.Topic} — ${changedC.Status}`;
+        }
       }
     }
 
     let suggestionChanged = false;
     if(mySuggestions){
       const snap = mySuggestionsSnapshot(mySuggestions);
-      if(snap !== empSuggestionsBaseline){ empSuggestionsBaseline = snap; changed = true; suggestionChanged = true; }
+      const { anyDiff, statusChangedId } = diffIdStatusMap(snap, empSuggestionsBaseline);
+      if(anyDiff){
+        empSuggestionsBaseline = snap;
+        changed = true;
+        if(statusChangedId) suggestionChanged = true; // same reasoning — a brand-new suggestion of their own isn't an "update"
+      }
     }
 
     if(announcements && announcements.length !== empAnnouncementsBaseline){
