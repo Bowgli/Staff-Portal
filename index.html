@@ -1933,7 +1933,8 @@ function stopMgmtPolling(){
 }
 
 let empPollInterval = null;
-let empRequestsBaseline = null; // {requestId: status}, scoped to just this employee's own requests
+let empRequestsBaseline = null;
+let empSwapPartnerBaseline = null; // Map: request ID -> status, for Schedule Swap requests where I'm the OTHER employee (not the one who filed it)
 
 function myRequestsSnapshot(){
   const map = new Map();
@@ -2005,10 +2006,22 @@ async function startEmpPolling(){
   empAnnouncementsBaseline = ALL_ANNOUNCEMENTS.length;
   empConcernsBaseline = myConcernsSnapshot();
   empSuggestionsBaseline = mySuggestionsSnapshot();
+  empSwapPartnerBaseline = new Map();
   if(hasMgmtRequestsAccess()){
     // only count OTHER people's pending requests — her own
     // submissions shouldn't ping her own "new request to review" alert
     empPendingRequestsBaseline = new Set(ALL_REQUESTS.filter(r => r.Status === 'pending' && r.EmployeeName !== CURRENT_EMPLOYEE.name).map(r=>r.ID));
+    // hybrid accounts already have the full Requests list loaded —
+    // seed the swap-partner baseline straight from it
+    ALL_REQUESTS.forEach(r=>{ if(r.Type === 'Schedule Swap' && r.SwapWithName === CURRENT_EMPLOYEE.name) empSwapPartnerBaseline.set(r.ID, r.Status); });
+  } else {
+    // plain employees only ever fetch their OWN scoped requests —
+    // that scope now also includes swaps where she's the OTHER
+    // employee, so one small fetch here seeds an accurate starting
+    // point instead of treating an already-approved swap as "new"
+    // the moment the very first poll cycle runs.
+    const initialScoped = await safeApiGet('myRequestsScoped&name=' + encodeURIComponent(CURRENT_EMPLOYEE.name), []);
+    initialScoped.forEach(r=>{ if(r.Type === 'Schedule Swap' && r.SwapWithName === CURRENT_EMPLOYEE.name) empSwapPartnerBaseline.set(r.ID, r.Status); });
   }
   empPollInterval = setInterval(async ()=>{
     if(document.hidden) return; // skip while this tab isn't the active/visible one
@@ -2025,6 +2038,7 @@ async function startEmpPolling(){
     let changed = false;
     let requestStatusChanged = false, scheduleJustPublished = false, discChanged = false, newAnnouncements = 0, newPendingRequests = 0;
     let changedRequestDetail = '', newAnnouncementTitles = [], newPendingRequestNames = [];
+    let swapApproved = false, swapDetail = '';
 
     if(requests){
       const currentSnap = new Map();
@@ -2037,6 +2051,26 @@ async function startEmpPolling(){
           requestStatusChanged = true;
           const changedReq = requests.find(r=>r.ID===statusChangedId);
           if(changedReq) changedRequestDetail = `${changedReq.Type} — ${changedReq.Status}`;
+        }
+      }
+
+      // A Schedule Swap names TWO employees — the one who filed it,
+      // and the one in SwapWithName. Without this, only the filer
+      // ever found out their own request got approved; the other
+      // half of the swap never heard about it at all, and had no
+      // reason to reload her own schedule either.
+      const swapSnap = new Map();
+      requests.forEach(r=>{ if(r.Type === 'Schedule Swap' && r.SwapWithName === CURRENT_EMPLOYEE.name) swapSnap.set(r.ID, r.Status); });
+      const swapDiff = diffIdStatusMap(swapSnap, empSwapPartnerBaseline);
+      if(swapDiff.anyDiff){
+        empSwapPartnerBaseline = swapSnap;
+        changed = true; // reload either way, so her own schedule picks up the swap
+        if(swapDiff.statusChangedId){
+          const r = requests.find(x=>x.ID===swapDiff.statusChangedId);
+          if(r && r.Status === 'approved'){
+            swapApproved = true;
+            swapDetail = `Your ${fmtDayLabel(r.SwapDay)} shift was swapped with ${r.EmployeeName}`;
+          }
         }
       }
     }
@@ -2127,7 +2161,7 @@ async function startEmpPolling(){
     await loadRemoteData(); // picks up everything, including any Schedule change from an approved swap or a fresh publish
 
     // Let them know something new arrived, wherever they currently are.
-    const notifyWorthy = newAnnouncements > 0 || scheduleJustPublished || requestStatusChanged || discChanged || newPendingRequests > 0 || concernChanged || suggestionChanged;
+    const notifyWorthy = newAnnouncements > 0 || scheduleJustPublished || requestStatusChanged || discChanged || newPendingRequests > 0 || concernChanged || suggestionChanged || swapApproved;
     if(notifyWorthy) playAlertTone();
     if(newAnnouncements > 0){
       const title = newAnnouncementTitles.length===1 ? newAnnouncementTitles[0] : newAnnouncementTitles.join(', ');
@@ -2135,6 +2169,7 @@ async function startEmpPolling(){
     }
     if(scheduleJustPublished) showMgmtToast('📅', 'Schedule Published', 'Next week\'s schedule was just published — tap to view', 'schedule');
     if(requestStatusChanged) showMgmtToast('📝', 'Request Updated', `${changedRequestDetail || 'One of your requests was updated'} — tap to view`, 'requests');
+    if(swapApproved) showMgmtToast('🔁', 'Schedule Swap Approved', `${swapDetail || 'Your shift swap was approved'} — tap to view`, 'schedule');
     if(discChanged) showMgmtToast('📁', 'Record Updated', 'A disciplinary case naming you was updated — tap to view', 'my-disciplinary');
     if(concernChanged) showMgmtToast('⚠️', 'Concern Status Updated', `Your submitted concern has been updated${changedConcernDetail ? ' — '+changedConcernDetail : ''} — tap to view`, 'concern');
     if(suggestionChanged) showMgmtToast('💡', 'Suggestion Updated', 'One of your suggestions was updated — tap to view', 'suggestion');
