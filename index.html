@@ -1593,6 +1593,19 @@ async function refreshFormsOnly(){
   if(formsLibrary) ALL_FORMS = formsLibrary.slice().reverse();
 }
 
+/* Whether an announcement is targeted to the CURRENT employee —
+   shared by the display filter (MOCK.announcements) and the
+   notification check, so the two can never disagree about who an
+   announcement is actually for. */
+function isAnnouncementForMe(a){
+  if(!CURRENT_EMPLOYEE) return a.TargetType === 'All' || !a.TargetType;
+  if(!a.TargetType || a.TargetType === 'All') return true;
+  const list = (a.TargetValue||'').split(',').map(s=>s.trim()).filter(Boolean);
+  if(a.TargetType === 'Position') return list.includes(CURRENT_EMPLOYEE.position);
+  if(a.TargetType === 'Individual') return list.includes(CURRENT_EMPLOYEE.name);
+  return true;
+}
+
 async function loadRemoteData(){
   if(!USE_REMOTE()) return;
   try{
@@ -1606,9 +1619,10 @@ async function loadRemoteData(){
     // was pure waste, and the biggest, slowest-growing payloads in
     // the whole login sequence.
     const isMgmtCapable = !!(CURRENT_USER && (CURRENT_USER.role === 'management' || CURRENT_USER.mgmtRole));
-    const [roster, schedule, nextSchedule, attendance, announcements, recognition, requests, accountsStatus, concerns, suggestions, evaluations, myConcernsRaw, mySuggestionsRaw, myGivenEvaluationsRaw, disciplinaryRecords, myDisciplinaryRaw, formsLibrary, nominations, myNominationsRaw, myEvaluationsReceivedRaw, myRequestsScopedRaw] = await Promise.all([
+    const [roster, schedule, nextSchedule, attendance, announcements, recognition, requests, accountsStatus, concerns, suggestions, evaluations, myConcernsRaw, mySuggestionsRaw, myGivenEvaluationsRaw, disciplinaryRecords, myDisciplinaryRaw, formsLibrary, nominations, myNominationsRaw, myEvaluationsReceivedRaw, myRequestsScopedRaw, myRecognitionRaw] = await Promise.all([
       safeApiGet('roster', []), safeApiGet('schedule', {days:[],rows:[]}), safeApiGet('nextSchedule', {days:[],rows:[],published:false}), safeApiGet('attendance', []),
-      safeApiGet('announcements', []), safeApiGet('recognition', []),
+      safeApiGet('announcements', []),
+      isMgmtCapable ? safeApiGet('recognition', []) : Promise.resolve([]),
       isMgmtCapable ? safeApiGet('requests', []) : Promise.resolve([]),
       safeApiGet('accountsStatus', []),
       isMgmtCapable ? safeApiGet('concerns', []) : Promise.resolve([]),
@@ -1621,7 +1635,8 @@ async function loadRemoteData(){
       safeApiGet('formsLibrary', []),
       safeApiGet('nominations', []), safeApiGet('myNominations&name=' + encodeURIComponent(myName), []),
       !isMgmtCapable ? safeApiGet('myEvaluationsReceived&name=' + encodeURIComponent(myName), []) : Promise.resolve([]),
-      !isMgmtCapable ? safeApiGet('myRequestsScoped&name=' + encodeURIComponent(myName), []) : Promise.resolve([])
+      !isMgmtCapable ? safeApiGet('myRequestsScoped&name=' + encodeURIComponent(myName), []) : Promise.resolve([]),
+      !isMgmtCapable ? safeApiGet('myRecognition&name=' + encodeURIComponent(myName), []) : Promise.resolve([])
     ]);
     EMPLOYEE_ROSTER.length = 0;
     const acctByName = {};
@@ -1634,16 +1649,11 @@ async function loadRemoteData(){
     NEXT_SCHEDULE_PUBLISHED = !!nextSchedule.published;
     ATTENDANCE_LOG = attendance.map(a => ({name:a.EmployeeName, date:a.Day, time:a.Time, status:a.Status, remarks:a.Remarks, id:a.ID, loggedBy:a.LoggedBy}));
     ALL_ANNOUNCEMENTS = announcements.slice().reverse();
-    MOCK.announcements = ALL_ANNOUNCEMENTS.filter(a=>{
-      if(!CURRENT_EMPLOYEE) return a.TargetType === 'All' || !a.TargetType;
-      if(!a.TargetType || a.TargetType === 'All') return true;
-      const list = (a.TargetValue||'').split(',').map(s=>s.trim()).filter(Boolean);
-      if(a.TargetType === 'Position') return list.includes(CURRENT_EMPLOYEE.position);
-      if(a.TargetType === 'Individual') return list.includes(CURRENT_EMPLOYEE.name);
-      return true;
-    }).map(a => ({title:a.Title, body:a.Body, date:a.Date}));
+    MOCK.announcements = ALL_ANNOUNCEMENTS.filter(isAnnouncementForMe).map(a => ({title:a.Title, body:a.Body, date:a.Date, id:a.ID}));
     MOCK.recognition = recognition.map(r => ({medal:"🏆", name:r.AwardTitle, desc:r.Note, employeeName:r.EmployeeName, date:r.Date, id:r.ID})).reverse();
-    MY_RECOGNITION = MOCK.recognition.filter(r => CURRENT_EMPLOYEE && r.employeeName === CURRENT_EMPLOYEE.name);
+    MY_RECOGNITION = isMgmtCapable
+      ? MOCK.recognition.filter(r => CURRENT_EMPLOYEE && r.employeeName === CURRENT_EMPLOYEE.name)
+      : myRecognitionRaw.map(r => ({medal:"🏆", name:r.AwardTitle, desc:r.Note, employeeName:r.EmployeeName, date:r.Date, id:r.ID})).reverse();
     ALL_EVALUATIONS = evaluations.slice().reverse();
     MY_EVALUATIONS = isMgmtCapable
       ? ALL_EVALUATIONS.filter(e => CURRENT_EMPLOYEE && e.EmployeeName === CURRENT_EMPLOYEE.name)
@@ -1949,7 +1959,7 @@ function nextScheduleSnapshot(ns){
 let empNextScheduleBaseline = '';
 let empNextSchedulePublished = false; // tracks the published flag specifically, so we can tell a real "just published" moment apart from routine in-progress edits
 let empDiscBaseline = null;
-let empAnnouncementsBaseline = 0;
+let empAnnouncementsBaseline = null; // Set of announcement IDs already accounted for (only ones targeted to me)
 function myDisciplinarySnapshot(records){
   const list = records || MY_DISCIPLINARY_RECORDS;
   const map = new Map();
@@ -1964,6 +1974,7 @@ function myConcernsSnapshot(records){
   return map;
 }
 let empSuggestionsBaseline = null;
+let empRecognitionBaseline = null; // Set of recognition IDs already accounted for
 function mySuggestionsSnapshot(records){
   const list = records || MY_SUGGESTIONS;
   const map = new Map();
@@ -2003,9 +2014,10 @@ async function startEmpPolling(){
   empNextScheduleBaseline = nextScheduleSnapshot();
   empNextSchedulePublished = NEXT_SCHEDULE_PUBLISHED;
   empDiscBaseline = myDisciplinarySnapshot();
-  empAnnouncementsBaseline = ALL_ANNOUNCEMENTS.length;
+  empAnnouncementsBaseline = new Set(MOCK.announcements.map(a=>a.id));
   empConcernsBaseline = myConcernsSnapshot();
   empSuggestionsBaseline = mySuggestionsSnapshot();
+  empRecognitionBaseline = new Set(MY_RECOGNITION.map(r=>r.id));
   empSwapPartnerBaseline = new Map();
   if(hasMgmtRequestsAccess()){
     // only count OTHER people's pending requests — her own
@@ -2026,13 +2038,14 @@ async function startEmpPolling(){
   empPollInterval = setInterval(async ()=>{
     if(document.hidden) return; // skip while this tab isn't the active/visible one
     const needsFullRequests = hasMgmtRequestsAccess(); // hybrid roles also watch for new requests from OTHER employees — a plain employee only ever needs her own, via the scoped endpoint below
-    const [requests, nextSchedule, myDisc, announcements, myConcerns, mySuggestions] = await Promise.all([
+    const [requests, nextSchedule, myDisc, announcements, myConcerns, mySuggestions, myRecognition] = await Promise.all([
       needsFullRequests ? safeApiGet('requests', null) : safeApiGet('myRequestsScoped&name=' + encodeURIComponent(CURRENT_EMPLOYEE.name), null),
       safeApiGet('nextSchedule', null),
       safeApiGet('myDisciplinaryRecords&name=' + encodeURIComponent(CURRENT_EMPLOYEE.fullName), null),
       safeApiGet('announcements', null),
       safeApiGet('myConcerns&name=' + encodeURIComponent(CURRENT_EMPLOYEE.fullName), null),
-      safeApiGet('mySuggestions&name=' + encodeURIComponent(CURRENT_EMPLOYEE.fullName), null)
+      safeApiGet('mySuggestions&name=' + encodeURIComponent(CURRENT_EMPLOYEE.fullName), null),
+      safeApiGet('myRecognition&name=' + encodeURIComponent(CURRENT_EMPLOYEE.name), null)
     ]);
 
     let changed = false;
@@ -2125,15 +2138,28 @@ async function startEmpPolling(){
       }
     }
 
-    if(announcements && announcements.length !== empAnnouncementsBaseline){
-      newAnnouncements = Math.max(0, announcements.length - empAnnouncementsBaseline);
-      // the raw list comes back oldest-first (matching sheet row
-      // order) — the genuinely new ones are the LAST N, not the
-      // first N. Grabbing from the front was surfacing old,
-      // already-seen announcements as if they were new.
-      newAnnouncementTitles = newAnnouncements > 0 ? announcements.slice(-newAnnouncements).map(a=>a.Title) : [];
-      empAnnouncementsBaseline = announcements.length;
-      changed = true;
+    let newRecognitionRecords = [];
+    if(myRecognition){
+      const currentIds = new Set(myRecognition.map(r=>r.ID));
+      newRecognitionRecords = myRecognition.filter(r => !empRecognitionBaseline.has(r.ID));
+      if(newRecognitionRecords.length > 0 || currentIds.size !== empRecognitionBaseline.size){
+        empRecognitionBaseline = currentIds;
+        if(newRecognitionRecords.length > 0) changed = true;
+      }
+    }
+
+    if(announcements){
+      const forMe = announcements.filter(isAnnouncementForMe);
+      const currentIds = new Set(forMe.map(a=>a.ID));
+      const newOnes = forMe.filter(a => !empAnnouncementsBaseline.has(a.ID));
+      if(newOnes.length > 0 || currentIds.size !== empAnnouncementsBaseline.size){
+        empAnnouncementsBaseline = currentIds;
+        if(newOnes.length > 0){
+          newAnnouncements = newOnes.length;
+          newAnnouncementTitles = newOnes.map(a=>a.Title);
+          changed = true;
+        }
+      }
     }
 
     // Shift Manager (or any hybrid role with Manage Requests access):
@@ -2161,7 +2187,7 @@ async function startEmpPolling(){
     await loadRemoteData(); // picks up everything, including any Schedule change from an approved swap or a fresh publish
 
     // Let them know something new arrived, wherever they currently are.
-    const notifyWorthy = newAnnouncements > 0 || scheduleJustPublished || requestStatusChanged || discChanged || newPendingRequests > 0 || concernChanged || suggestionChanged || swapApproved;
+    const notifyWorthy = newAnnouncements > 0 || scheduleJustPublished || requestStatusChanged || discChanged || newPendingRequests > 0 || concernChanged || suggestionChanged || swapApproved || newRecognitionRecords.length > 0;
     if(notifyWorthy) playAlertTone();
     if(newAnnouncements > 0){
       const title = newAnnouncementTitles.length===1 ? newAnnouncementTitles[0] : newAnnouncementTitles.join(', ');
@@ -2173,12 +2199,16 @@ async function startEmpPolling(){
     if(discChanged) showMgmtToast('📁', 'Record Updated', 'A disciplinary case naming you was updated — tap to view', 'my-disciplinary');
     if(concernChanged) showMgmtToast('⚠️', 'Concern Status Updated', `Your submitted concern has been updated${changedConcernDetail ? ' — '+changedConcernDetail : ''} — tap to view`, 'concern');
     if(suggestionChanged) showMgmtToast('💡', 'Suggestion Updated', 'One of your suggestions was updated — tap to view', 'suggestion');
+    if(newRecognitionRecords.length > 0){
+      const detail = newRecognitionRecords.length===1 ? newRecognitionRecords[0].AwardTitle : `${newRecognitionRecords.length} new recognitions`;
+      showMgmtToast('🏆', 'You Received a Recognition!', `${detail} — tap to view`, 'recognition');
+    }
     if(newPendingRequests > 0){
       const detail = newPendingRequestNames.length===1 ? newPendingRequestNames[0] : newPendingRequestNames.join(', ');
       showMgmtToast('📝', newPendingRequests===1?'New Request':`${newPendingRequests} New Requests`, `${detail || 'A new request came in'} — tap to view`, 'mgmt-requests');
     }
 
-    if(['home','requests','schedule','my-disciplinary','announcements','mgmt-requests','concern','suggestion'].includes(activeView)) renderView(activeView);
+    if(['home','requests','schedule','my-disciplinary','announcements','mgmt-requests','concern','suggestion','recognition'].includes(activeView)) renderView(activeView);
   }, 45000); // check every 45 seconds
 }
 function stopEmpPolling(){
