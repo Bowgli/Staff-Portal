@@ -1196,7 +1196,7 @@ async function saveCellEdit(){
 
 function renderMyScheduleGrid(row, days){
   const useDays = days || SCHEDULE_DAYS;
-  if(!row) return `<p class="muted">No schedule row found for you this week — ask management to check the Schedule sheet.</p>`;
+  if(!row) return `<div class="empty"><div class="ic">📅</div><p style="font-weight:600; margin-bottom:4px;">Your schedule is not available yet.</p><p class="muted" style="font-size:13px;">Your weekly schedule has not been published. Please check again later or contact your supervisor.</p></div>`;
   return `<div class="grid grid-7">
     ${useDays.map((rawDay,i)=>{
       const day = fmtDayLabel(rawDay);
@@ -3663,6 +3663,16 @@ async function refreshRequestsOnNavigate(){
   if(activeView === 'mgmt-requests') document.getElementById('content').innerHTML = BUILDERS['mgmt-requests']();
 }
 
+/* Phase 1 UI/UX enhancement — a friendly, time-based greeting for
+   the Employee Home dashboard. Pure presentation: no new data
+   sources, just the browser's own clock. */
+function timeBasedGreeting(){
+  const h = new Date().getHours();
+  if(h < 12) return 'Good Morning';
+  if(h < 18) return 'Good Afternoon';
+  return 'Good Evening';
+}
+
 function fmtDayLabel(raw){
   if(!raw) return '';
   const str = String(raw).trim();
@@ -3788,7 +3798,7 @@ function attendanceConcernsSection(){
     </div>
     <div class="grid grid-2" style="margin-bottom:16px;">
       ${renderRankedEvalCard('🌟', 'Outstanding Staff', topOutstanding, 'var(--teal)', undefined, 'mgmt-performance')}
-      ${renderRankedEvalCard('📈', 'Staff for Improvement', needsImprovement, 'var(--red)', 'No staff currently scoring 1.00–2.49.', 'mgmt-performance')}
+      ${renderRankedEvalCard('📈', 'Staff for Improvement', needsImprovement, 'var(--red)', '🎉 Great News! No employees currently require performance improvement.', 'mgmt-performance')}
     </div>`;
 }
 
@@ -3814,7 +3824,7 @@ function topPerformersChart(latestByEmployee){
   return `
     <div class="grid grid-2" style="margin-bottom:16px;">
       ${renderRankedEvalCard('🏆', 'Performing Staff — All Evaluated', ranked, 'var(--teal)')}
-      ${renderRankedEvalCard('📈', 'Staff for Improvement', needsImprovement, 'var(--red)', 'No staff currently scoring 1.00–2.49.')}
+      ${renderRankedEvalCard('📈', 'Staff for Improvement', needsImprovement, 'var(--red)', '🎉 Great News! No employees currently require performance improvement.')}
     </div>`;
 }
 
@@ -3885,16 +3895,24 @@ const BUILDERS = {
     const pendingCount = MOCK.requests.filter(r=>r.status==='pending').length;
     const myAttendanceLog = ATTENDANCE_LOG.filter(a=>a.name===CURRENT_EMPLOYEE.name);
     const flaggedCount = myAttendanceLog.filter(a=>a.status==="Absent"||a.status==="Late"||a.status==="Undertime").length;
+    const firstName = (CURRENT_EMPLOYEE.name||'').split(' ')[0];
+    const latestAnn = MOCK.announcements[0];
+    const annPreview = latestAnn && latestAnn.body && latestAnn.body.length > 140 ? latestAnn.body.slice(0,140).trim() + '…' : (latestAnn ? latestAnn.body : '');
     return `
+    <div class="card" style="margin-bottom:20px; border-color:rgba(201,162,75,.35); background:linear-gradient(135deg, var(--panel), var(--panel-2));">
+      <h2 style="font-family:'Fraunces',serif; font-size:21px; font-weight:600; margin-bottom:4px;">👋 ${timeBasedGreeting()}, ${firstName}!</h2>
+      <p class="muted" style="font-size:13px; margin-bottom:6px;">${CURRENT_EMPLOYEE.position} • Saipan Vegas Resort</p>
+      <p class="muted" style="font-size:13px;">Have a great day and thank you for being part of the team!</p>
+    </div>
     <div class="section-title">This Week's Schedule</div>
     ${renderMyScheduleGrid(findMyScheduleRow(CURRENT_EMPLOYEE.name))}
     ${NEXT_SCHEDULE_ROWS.length && NEXT_SCHEDULE_PUBLISHED ? `
     <div class="section-title" style="margin-top:22px;">Next Week's Schedule <span class="pill info" style="margin-left:8px;">Preview</span></div>
     ${renderMyScheduleGrid(findRowInSchedule(NEXT_SCHEDULE_ROWS, CURRENT_EMPLOYEE.name), NEXT_SCHEDULE_DAYS)}` : ''}
     <div class="grid grid-3" style="margin-top:24px; margin-bottom:16px;">
-      <div class="card stat-card clickable" onclick="renderView('performance')"><div class="num">${MY_EVALUATIONS.length ? MY_EVALUATIONS[0].AverageScore : '—'}</div><div class="label">Performance score</div><div class="muted" style="margin-top:6px; font-size:11px;">${MY_EVALUATIONS.length ? MY_EVALUATIONS[0].Month+' '+MY_EVALUATIONS[0].Year : 'Not yet evaluated'}</div></div>
-      <div class="card stat-card clickable" onclick="renderView('requests')"><div class="num">${pendingCount}</div><div class="label">Pending request${pendingCount===1?'':'s'}</div></div>
-      <div class="card stat-card clickable" onclick="renderView('attendance')"><div class="num">${flaggedCount}</div><div class="label">Attendance issues logged</div></div>
+      <div class="card stat-card clickable" onclick="renderView('performance')"><div class="num">${MY_EVALUATIONS.length ? MY_EVALUATIONS[0].AverageScore : '⭐'}</div><div class="label">${MY_EVALUATIONS.length ? 'Performance Score' : 'Performance'}</div><div class="muted" style="margin-top:6px; font-size:11px;">${MY_EVALUATIONS.length ? MY_EVALUATIONS[0].Month+' '+MY_EVALUATIONS[0].Year : 'Evaluation pending — will appear here once completed'}</div></div>
+      <div class="card stat-card clickable" onclick="renderView('requests')"><div class="num">${pendingCount || '📝'}</div><div class="label">${pendingCount ? `Pending Request${pendingCount===1?'':'s'}` : 'My Requests'}</div>${!pendingCount ? `<div class="muted" style="margin-top:6px; font-size:11px;">Nothing pending right now</div>` : ''}</div>
+      <div class="card stat-card clickable" onclick="renderView('attendance')"><div class="num">${flaggedCount || '⏰'}</div><div class="label">${flaggedCount ? 'Attendance Item'+(flaggedCount===1?'':'s')+' Logged' : 'My Attendance'}</div>${!flaggedCount ? `<div class="muted" style="margin-top:6px; font-size:11px;">View your attendance records</div>` : ''}</div>
     </div>
     <div class="grid grid-3">
       <div class="card clickable" onclick="renderView('requests')">
@@ -3903,11 +3921,11 @@ const BUILDERS = {
       </div>
       <div class="card clickable" onclick="renderView('announcements')">
         <h3><span class="ic">📢</span> Latest Announcement</h3>
-        ${MOCK.announcements.length ? `<p class="feed-item" style="border:none; padding:0;"><span class="title" style="font-size:16px;">${MOCK.announcements[0].title}</span><br><span class="muted" style="font-size:14.5px; line-height:1.5;">${MOCK.announcements[0].body}</span></p>` : `<p class="muted">No announcements posted yet.</p>`}
+        ${latestAnn ? `<p class="feed-item" style="border:none; padding:0;"><span class="title" style="font-size:16px;">${latestAnn.title}</span><br><span class="muted" style="font-size:14px; line-height:1.5;">${annPreview}</span><br><span class="muted" style="font-size:11px;">${fmtDateTime(latestAnn.date)}</span></p><button class="btn ghost auto" style="margin-top:10px; padding:6px 12px; font-size:12.5px;" onclick="event.stopPropagation(); renderView('announcements')">Read Full Announcement</button>` : `<p class="muted">No announcements posted yet.</p>`}
       </div>
       <div class="card clickable" onclick="renderView('recognition')">
         <h3><span class="ic">🏆</span> Employee Recognition</h3>
-        ${MY_RECOGNITION.length ? MY_RECOGNITION.slice(0,3).map(r=>`<div class="badge-recog"><div class="medal">${r.medal}</div><div><div class="name">${r.name}</div><div class="desc">${r.desc}</div></div></div>`).join('') : `<p class="muted">No awards yet — keep up the good work!</p>`}
+        ${MY_RECOGNITION.length ? MY_RECOGNITION.slice(0,3).map(r=>`<div class="badge-recog"><div class="medal">${r.medal}</div><div><div class="name">${r.name}</div><div class="desc">${r.desc}</div></div></div>`).join('') : `<p style="font-weight:600; margin-bottom:4px;">🏆 Keep Going!</p><p class="muted" style="font-size:13px;">Great work deserves recognition. Keep showing dedication, teamwork, and excellent service!</p>`}
       </div>
     </div>
     ${MY_DISCIPLINARY_RECORDS.length ? `
@@ -3956,7 +3974,7 @@ const BUILDERS = {
       </div>
       <div class="card">
         <h3><span class="ic">🏆</span> Milestones</h3>
-        ${MY_RECOGNITION.length ? MY_RECOGNITION.map(r=>`<div class="badge-recog"><div class="medal">${r.medal}</div><div><div class="name">${r.name}</div><div class="desc">${r.desc}</div></div></div>`).join('') : `<p class="muted">No awards yet.</p>`}
+        ${MY_RECOGNITION.length ? MY_RECOGNITION.map(r=>`<div class="badge-recog"><div class="medal">${r.medal}</div><div><div class="name">${r.name}</div><div class="desc">${r.desc}</div></div></div>`).join('') : `<p style="font-weight:600; margin-bottom:4px;">🏆 Keep Going!</p><p class="muted" style="font-size:13px;">Great work deserves recognition. Keep showing dedication, teamwork, and excellent service!</p>`}
       </div>
     </div>`,
 
