@@ -3778,10 +3778,11 @@ function attendanceConcernsSection(){
   const needsImprovement = entries.filter(([,score])=>score>=1.00 && score<=2.49).sort((a,b)=>a[1]-b[1]).slice(0,5);
   return `
     <div class="section-title">Attendance & Concerns</div>
-    <div class="grid grid-3" style="margin-bottom:16px;">
+    <div class="grid grid-4" style="margin-bottom:16px;">
       ${topStatusChart(ATTENDANCE_LOG, '📊', 'Absent', 'Most Absences', 5, 'var(--red)', 'mgmt-attendance')}
       ${topStatusChart(ATTENDANCE_LOG, '⏰', 'Late', 'Most Late', 5, 'var(--gold)', 'mgmt-attendance')}
       ${topStatusChart(ATTENDANCE_LOG, '🕐', 'Undertime', 'Most Undertime', 5, 'var(--blue)', 'mgmt-attendance')}
+      ${topStatusChart(ATTENDANCE_LOG, '☕', 'Over Breaktime', 'Most Over Breaktime', 5, 'var(--gold)', 'mgmt-attendance')}
     </div>
     <div class="grid grid-2" style="margin-bottom:16px;">
       ${renderRankedEvalCard('🌟', 'Outstanding Staff', topOutstanding, 'var(--teal)', undefined, 'mgmt-performance')}
@@ -3863,10 +3864,11 @@ function topAttendanceCharts(){
         }
       </div>
     </div>
-    <div class="grid grid-3" style="margin-bottom:16px;">
+    <div class="grid grid-4" style="margin-bottom:16px;">
     ${topStatusChart(filteredLog, '📊', 'Absent', '20 – Most Absences', 20, 'var(--red)')}
     ${topStatusChart(filteredLog, '⏰', 'Late', '20 – Most Late', 20, 'var(--gold)')}
     ${topStatusChart(filteredLog, '🕐', 'Undertime', '20 – Most Undertime', 20, 'var(--blue)')}
+    ${topStatusChart(filteredLog, '☕', 'Over Breaktime', '20 – Most Over Breaktime', 20, 'var(--gold)')}
     </div>`;
 }
 
@@ -6298,6 +6300,7 @@ async function submitAttendanceLog(){
       editingAttendanceId = null;
       btn.innerHTML = `✓ Updated`;
     } else {
+      let newId;
       if(USE_REMOTE()){
         const r = await apiPostMinDelay('logAttendance', {employeeName:name, day:date, time, status, remarks, loggedBy});
         if(!r.ok){
@@ -6307,9 +6310,10 @@ async function submitAttendanceLog(){
           btn.innerHTML = 'Log Entry';
           return;
         }
+        newId = r.id;
       }
       ATTENDANCE_LOG = ATTENDANCE_LOG.filter(a => !(a.name===name && a.date===date));
-      ATTENDANCE_LOG.push({name, date, time, status, remarks, loggedBy});
+      ATTENDANCE_LOG.push({name, date, time, status, remarks, loggedBy, id: newId});
       btn.innerHTML = `✓ Sent`;
     }
     await new Promise(r=>setTimeout(r, 600));
