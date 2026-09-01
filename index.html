@@ -3898,60 +3898,6 @@ const BUILDERS = {
     const firstName = (CURRENT_EMPLOYEE.name||'').split(' ')[0];
     const latestAnn = MOCK.announcements[0];
     const annPreview = latestAnn && latestAnn.body && latestAnn.body.length > 140 ? latestAnn.body.slice(0,140).trim() + '…' : (latestAnn ? latestAnn.body : '');
-
-    // Phase 2 — role-based dashboard priority. Presentation only:
-    // these are navigation shortcuts to pages the account can
-    // already reach, and the snapshot numbers use only data each
-    // role's existing allowedViews already grants — no new
-    // permissions, no new routes.
-    const mgmtRole = CURRENT_USER.mgmtRole;
-    let teamSnapshotHtml = '';
-    const weekAgo = new Date(Date.now() - 7*86400000);
-    const recentFlags = a => { const dt = new Date(a.date); return dt >= weekAgo && (a.status==='Absent'||a.status==='Late'||a.status==='Undertime'); };
-    if(mgmtRole === 'supervisor'){
-      const teamPending = ALL_REQUESTS.filter(r=>r.Status==='pending').length;
-      const teamFlags = ATTENDANCE_LOG.filter(recentFlags).length;
-      teamSnapshotHtml = `
-      <div class="section-title" style="margin-top:24px;">👥 My Team Snapshot</div>
-      <div class="grid grid-2" style="margin-bottom:16px;">
-        <div class="card stat-card clickable" onclick="renderView('mgmt-requests')"><div class="num">${teamPending}</div><div class="label">Pending Requests</div></div>
-        <div class="card stat-card clickable" onclick="renderView('mgmt-attendance')"><div class="num">${teamFlags}</div><div class="label">Attendance Items This Week</div></div>
-      </div>
-      <div class="section-title">⚡ Leadership Quick Actions</div>
-      <div class="grid grid-4" style="margin-bottom:16px;">
-        <div class="card clickable" style="text-align:center; padding:16px 10px;" onclick="renderView('evaluate')"><div style="font-size:22px; margin-bottom:6px;">📋</div><div style="font-size:12.5px; font-weight:600;">Evaluate Staff</div></div>
-        <div class="card clickable" style="text-align:center; padding:16px 10px;" onclick="renderView('nominate')"><div style="font-size:22px; margin-bottom:6px;">🌟</div><div style="font-size:12.5px; font-weight:600;">Nominate for Award</div></div>
-        <div class="card clickable" style="text-align:center; padding:16px 10px;" onclick="renderView('mgmt-attendance')"><div style="font-size:22px; margin-bottom:6px;">🕐</div><div style="font-size:12.5px; font-weight:600;">Log Attendance</div></div>
-        <div class="card clickable" style="text-align:center; padding:16px 10px;" onclick="renderView('mgmt-requests')"><div style="font-size:22px; margin-bottom:6px;">📝</div><div style="font-size:12.5px; font-weight:600;">Manage Requests</div></div>
-      </div>`;
-    } else if(mgmtRole === 'shift-manager'){
-      const teamPending = ALL_REQUESTS.filter(r=>r.Status==='pending').length;
-      const openConcerns = MOCK.concernsLog.filter(c=>c.status==='Open').length;
-      const teamFlags = ATTENDANCE_LOG.filter(recentFlags).length;
-      teamSnapshotHtml = `
-      <div class="section-title" style="margin-top:24px;">👥 Shift Snapshot</div>
-      <div class="grid grid-3" style="margin-bottom:16px;">
-        <div class="card stat-card clickable" onclick="renderView('mgmt-requests')"><div class="num">${teamPending}</div><div class="label">Pending Requests</div></div>
-        <div class="card stat-card clickable" onclick="renderView('mgmt-concerns')"><div class="num">${openConcerns}</div><div class="label">Open Concerns</div></div>
-        <div class="card stat-card clickable" onclick="renderView('mgmt-attendance')"><div class="num">${teamFlags}</div><div class="label">Attendance Items This Week</div></div>
-      </div>
-      <div class="section-title">⚡ Management Quick Actions</div>
-      <div class="grid grid-4" style="margin-bottom:16px;">
-        <div class="card clickable" style="text-align:center; padding:16px 10px;" onclick="renderView('evaluate')"><div style="font-size:22px; margin-bottom:6px;">📋</div><div style="font-size:12.5px; font-weight:600;">Evaluate Staff</div></div>
-        <div class="card clickable" style="text-align:center; padding:16px 10px;" onclick="renderView('nominate')"><div style="font-size:22px; margin-bottom:6px;">🌟</div><div style="font-size:12.5px; font-weight:600;">Nominate for Award</div></div>
-        <div class="card clickable" style="text-align:center; padding:16px 10px;" onclick="renderView('mgmt-requests')"><div style="font-size:22px; margin-bottom:6px;">📝</div><div style="font-size:12.5px; font-weight:600;">Manage Requests</div></div>
-        <div class="card clickable" style="text-align:center; padding:16px 10px;" onclick="renderView('mgmt-attendance')"><div style="font-size:22px; margin-bottom:6px;">🕐</div><div style="font-size:12.5px; font-weight:600;">Log Absence</div></div>
-      </div>`;
-    }
-    const quickActionsHtml = `
-    <div class="section-title" style="margin-top:24px;">⚡ Quick Actions</div>
-    <div class="grid grid-4" style="margin-bottom:16px;">
-      <div class="card clickable" style="text-align:center; padding:16px 10px;" onclick="renderView('requests')"><div style="font-size:22px; margin-bottom:6px;">📝</div><div style="font-size:12.5px; font-weight:600;">My Requests</div></div>
-      <div class="card clickable" style="text-align:center; padding:16px 10px;" onclick="renderView('requests')"><div style="font-size:22px; margin-bottom:6px;">🔄</div><div style="font-size:12.5px; font-weight:600;">Schedule Swap</div></div>
-      <div class="card clickable" style="text-align:center; padding:16px 10px;" onclick="renderView('concern')"><div style="font-size:22px; margin-bottom:6px;">⚠️</div><div style="font-size:12.5px; font-weight:600;">Report a Concern</div></div>
-      <div class="card clickable" style="text-align:center; padding:16px 10px;" onclick="renderView('suggestion')"><div style="font-size:22px; margin-bottom:6px;">💡</div><div style="font-size:12.5px; font-weight:600;">Suggestion Box</div></div>
-    </div>`;
-
     return `
     <div class="card" style="margin-bottom:20px; border-color:rgba(201,162,75,.35); background:linear-gradient(135deg, var(--panel), var(--panel-2));">
       <h2 style="font-family:'Fraunces',serif; font-size:21px; font-weight:600; margin-bottom:4px;">👋 ${timeBasedGreeting()}, ${firstName}!</h2>
@@ -3968,8 +3914,6 @@ const BUILDERS = {
       <div class="card stat-card clickable" onclick="renderView('requests')"><div class="num">${pendingCount || '📝'}</div><div class="label">${pendingCount ? `Pending Request${pendingCount===1?'':'s'}` : 'My Requests'}</div>${!pendingCount ? `<div class="muted" style="margin-top:6px; font-size:11px;">Nothing pending right now</div>` : ''}</div>
       <div class="card stat-card clickable" onclick="renderView('attendance')"><div class="num">${flaggedCount || '⏰'}</div><div class="label">${flaggedCount ? 'Attendance Item'+(flaggedCount===1?'':'s')+' Logged' : 'My Attendance'}</div>${!flaggedCount ? `<div class="muted" style="margin-top:6px; font-size:11px;">View your attendance records</div>` : ''}</div>
     </div>
-    ${quickActionsHtml}
-    ${teamSnapshotHtml}
     <div class="grid grid-3">
       <div class="card clickable" onclick="renderView('requests')">
         <h3><span class="ic">📝</span> My Requests</h3>
