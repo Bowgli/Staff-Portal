@@ -456,13 +456,7 @@
     <input type="text" id="addEmpName" placeholder="e.g. Juan Dela Cruz">
     <label>Position</label>
     <select id="addEmpPosition">
-      <option>Shift Manager</option>
-      <option>Supervisor</option>
-      <option>Cashier</option>
-      <option>Slot Technician</option>
-      <option>Attendant</option>
-      <option>Membership Officer</option>
-      <option>Security</option>
+      ${EMPLOYEE_POSITIONS.map(p=>`<option>${p}</option>`).join('')}
     </select>
     <label>Status</label>
     <select id="addEmpStatus">
@@ -887,6 +881,14 @@ const EXTRA_POSITION_OPTIONS = ["Slot Tech", "Tech Supervisor"]; // always offer
    fixed shift Position/Task that should always be used for them on
    the Master Schedule — one less thing to pick, and no risk of
    picking the wrong one, when adding or editing their shift. */
+/* The single source of truth for employee positions — used by Add
+   Employee, the Employee Profile edit form, and anywhere else a
+   position needs to be picked from a fixed list. Defined once here
+   so every picker always stays in sync; two separate hardcoded
+   copies is exactly how a typo or a missed update creates duplicate
+   or inconsistent position options. */
+const EMPLOYEE_POSITIONS = ["Shift Manager","Supervisor","Technical Manager","Group Gaming Manager","Assistant Group Gaming Manager","Cashier","Slot Technician","Attendant","Membership Officer","Security"];
+
 const ROSTER_POSITION_TO_SCHEDULE_POSITION = {
   "Shift Manager": "Shift Manager",
   "Supervisor": "Supervisor",
@@ -4403,13 +4405,7 @@ const BUILDERS = {
           <input type="text" id="empProfileName" value="${e.name}">
           <label>Position</label>
           <select id="empProfilePosition">
-            <option ${e.position==='Shift Manager'?'selected':''}>Shift Manager</option>
-            <option ${e.position==='Supervisor'?'selected':''}>Supervisor</option>
-            <option ${e.position==='Cashier'?'selected':''}>Cashier</option>
-            <option ${e.position==='Slot Technician'?'selected':''}>Slot Technician</option>
-            <option ${e.position==='Attendant'?'selected':''}>Attendant</option>
-            <option ${e.position==='Membership Officer'?'selected':''}>Membership Officer</option>
-            <option ${e.position==='Security'?'selected':''}>Security</option>
+            ${EMPLOYEE_POSITIONS.map(p=>`<option ${e.position===p?'selected':''}>${p}</option>`).join('')}
           </select>
           <label>Employment Status</label>
           <select id="empProfileStatus">
@@ -5364,7 +5360,7 @@ const BUILDERS = {
       <div id="annTargetPositionWrap" style="display:none;">
         <label>Positions</label>
         <div class="check-list">
-          ${Object.keys(RESPONSIBILITIES).map(p=>`<div class="cl-row"><input type="checkbox" class="ann-pos-check" id="annPos_${p.replace(/\s+/g,'')}" value="${p}"><label for="annPos_${p.replace(/\s+/g,'')}">${p}</label></div>`).join('')}
+          ${EMPLOYEE_POSITIONS.map(p=>`<div class="cl-row"><input type="checkbox" class="ann-pos-check" id="annPos_${p.replace(/\s+/g,'')}" value="${p}"><label for="annPos_${p.replace(/\s+/g,'')}">${p}</label></div>`).join('')}
         </div>
       </div>
       <div id="annTargetEmployeeWrap" style="display:none;">
