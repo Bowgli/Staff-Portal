@@ -1738,25 +1738,22 @@ async function loadRemoteData(){
     // was pure waste, and the biggest, slowest-growing payloads in
     // the whole login sequence.
     const isMgmtCapable = !!(CURRENT_USER && (CURRENT_USER.role === 'management' || CURRENT_USER.mgmtRole));
-    const [roster, schedule, nextSchedule, attendance, announcements, recognition, requests, accountsStatus, concerns, suggestions, evaluations, myConcernsRaw, mySuggestionsRaw, myGivenEvaluationsRaw, disciplinaryRecords, myDisciplinaryRaw, formsLibrary, nominations, myNominationsRaw, myEvaluationsReceivedRaw, myRequestsScopedRaw, myRecognitionRaw] = await Promise.all([
-      safeApiGet('roster', []), safeApiGet('schedule', {days:[],rows:[]}), safeApiGet('nextSchedule', {days:[],rows:[],published:false}), safeApiGet('attendance', []),
-      safeApiGet('announcements', []),
-      isMgmtCapable ? safeApiGet('recognition', []) : Promise.resolve([]),
-      isMgmtCapable ? safeApiGet('requests', []) : Promise.resolve([]),
-      safeApiGet('accountsStatus', []),
-      isMgmtCapable ? safeApiGet('concerns', []) : Promise.resolve([]),
-      isMgmtCapable ? safeApiGet('suggestions', []) : Promise.resolve([]),
-      isMgmtCapable ? safeApiGet('evaluations', []) : Promise.resolve([]),
-      safeApiGet('myConcerns&name=' + encodeURIComponent(myName), []), safeApiGet('mySuggestions&name=' + encodeURIComponent(myName), []),
-      safeApiGet('myGivenEvaluations&name=' + encodeURIComponent(myName), []),
-      isMgmtCapable ? safeApiGet('disciplinaryRecords', []) : Promise.resolve([]),
-      safeApiGet('myDisciplinaryRecords&name=' + encodeURIComponent(myName), []),
-      safeApiGet('formsLibrary', []),
-      safeApiGet('nominations', []), safeApiGet('myNominations&name=' + encodeURIComponent(myName), []),
-      !isMgmtCapable ? safeApiGet('myEvaluationsReceived&name=' + encodeURIComponent(myName), []) : Promise.resolve([]),
-      !isMgmtCapable ? safeApiGet('myRequestsScoped&name=' + encodeURIComponent(myName), []) : Promise.resolve([]),
-      !isMgmtCapable ? safeApiGet('myRecognition&name=' + encodeURIComponent(myName), []) : Promise.resolve([])
-    ]);
+    // Single round-trip instead of ~21 parallel action= calls — each
+    // one used to be a separate Apps Script execution (spreadsheet
+    // open + sheet read) competing for the same per-user concurrency
+    // slot, which queued up and made first-login/loading feel slow.
+    // getBootstrapPayload_() on the backend now does every sheet read
+    // once and hands everything back together.
+    const bootstrapFallback = {roster:[], schedule:{days:[],rows:[]}, nextSchedule:{days:[],rows:[],published:false}, attendance:[], announcements:[], recognition:[], requests:[], accountsStatus:[], concerns:[], suggestions:[], evaluations:[], myConcerns:[], mySuggestions:[], myGivenEvaluations:[], disciplinaryRecords:[], myDisciplinaryRecords:[], formsLibrary:[], nominations:[], myNominations:[], myEvaluationsReceived:[], myRequestsScoped:[], myRecognition:[]};
+    const boot = await safeApiGet(`bootstrap&name=${encodeURIComponent(myName)}&mgmt=${isMgmtCapable}`, bootstrapFallback);
+    const {
+      roster = [], schedule = {days:[],rows:[]}, nextSchedule = {days:[],rows:[],published:false}, attendance = [],
+      announcements = [], recognition = [], requests = [], accountsStatus = [], concerns = [], suggestions = [], evaluations = [],
+      myConcerns: myConcernsRaw = [], mySuggestions: mySuggestionsRaw = [], myGivenEvaluations: myGivenEvaluationsRaw = [],
+      disciplinaryRecords = [], myDisciplinaryRecords: myDisciplinaryRaw = [], formsLibrary = [],
+      nominations = [], myNominations: myNominationsRaw = [],
+      myEvaluationsReceived: myEvaluationsReceivedRaw = [], myRequestsScoped: myRequestsScopedRaw = [], myRecognition: myRecognitionRaw = []
+    } = boot || bootstrapFallback;
     EMPLOYEE_ROSTER.length = 0;
     const acctByName = {};
     accountsStatus.forEach(a => { acctByName[a.employeeName] = a; });
