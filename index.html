@@ -876,6 +876,27 @@ function shiftsOverlap(timeA, timeB){
   if(!a || !b) return false;
   return a.start < b.end && b.start < a.end;
 }
+/* A brief overlap at a shift boundary (e.g. the last/first 30
+   minutes of adjacent shifts, kept for handoff) doesn't mean two
+   people are genuinely working together for the day — it just means
+   their shifts happen to touch. This requires the overlap to cover
+   at least half of whichever shift is shorter, so only employees
+   who are actually part of the SAME operational coverage period
+   show up, not just anyone whose shift happens to graze the edges
+   of the manager's. */
+function shiftOverlapMinutes(timeA, timeB){
+  const a = parseShiftMinutes(timeA);
+  const b = parseShiftMinutes(timeB);
+  if(!a || !b) return 0;
+  return Math.max(0, Math.min(a.end,b.end) - Math.max(a.start,b.start));
+}
+function isMeaningfulShiftOverlap(myTime, otherTime){
+  const overlap = shiftOverlapMinutes(myTime, otherTime);
+  if(overlap <= 0) return false;
+  const my = parseShiftMinutes(myTime), other = parseShiftMinutes(otherTime);
+  const threshold = 0.5 * Math.min(my.end-my.start, other.end-other.start);
+  return overlap >= threshold;
+}
 function fmtShiftTimeDisplay(t){
   if(!t) return '';
   return String(t).replace(/([AP]M)/gi, ' $1').replace('-', ' – ').replace(/\s+/g,' ').trim();
@@ -915,7 +936,7 @@ function renderTeamOnDuty(){
     const cell = parseScheduleCell(row.cells[todayIndex]);
     if(cell.type !== 'shift' || !cell.time) return;
     if(cell.venue !== myCell.venue) return; // same venue only — overlapping time at a DIFFERENT venue doesn't mean working together
-    if(!shiftsOverlap(myCell.time, cell.time)) return;
+    if(!isMeaningfulShiftOverlap(myCell.time, cell.time)) return;
     teamMembers.push({ name: row.name, position: (cell.position || row.role || 'Staff').trim(), time: cell.time });
   });
 
