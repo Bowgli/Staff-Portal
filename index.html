@@ -914,6 +914,7 @@ function renderTeamOnDuty(){
     if(row.name === myRow.name) return; // never list myself
     const cell = parseScheduleCell(row.cells[todayIndex]);
     if(cell.type !== 'shift' || !cell.time) return;
+    if(cell.venue !== myCell.venue) return; // same venue only — overlapping time at a DIFFERENT venue doesn't mean working together
     if(!shiftsOverlap(myCell.time, cell.time)) return;
     teamMembers.push({ name: row.name, position: (cell.position || row.role || 'Staff').trim(), time: cell.time });
   });
@@ -921,7 +922,7 @@ function renderTeamOnDuty(){
   if(!teamMembers.length){
     return `<div class="card" style="margin-bottom:16px;">
       <h3><span class="ic">👥</span> My Team on Duty</h3>
-      <div class="empty" style="padding:24px 20px;"><div class="ic">👥</div><p style="font-weight:600; margin-bottom:4px;">No team members found for this duty period.</p><p class="muted" style="font-size:13px;">There are currently no other staff members scheduled within your assigned shift.</p></div>
+      <div class="empty" style="padding:24px 20px;"><div class="ic">👥</div><p style="font-weight:600; margin-bottom:4px;">No team members found for this duty period.</p><p class="muted" style="font-size:13px;">There are currently no other staff members scheduled at ${myCell.venueFull || 'your venue'} within your assigned shift.</p></div>
     </div>`;
   }
 
@@ -934,7 +935,7 @@ function renderTeamOnDuty(){
 
   return `<div class="card" style="margin-bottom:16px;">
     <h3><span class="ic">👥</span> My Team on Duty</h3>
-    <p class="muted" style="font-size:13px; margin-bottom:14px;">See who is working with you today.</p>
+    <p class="muted" style="font-size:13px; margin-bottom:14px;">Working with you at ${myCell.venueFull || 'your venue'}.</p>
     ${sortedKeys.map(key=>`
       <div style="margin-bottom:14px;">
         <p class="muted" style="font-weight:600; font-size:12px; letter-spacing:.03em; margin-bottom:8px;">${TEAM_GROUP_ICONS[key]||'👤'} ${key.toUpperCase()}${groups[key].length>1?'S':''}</p>
