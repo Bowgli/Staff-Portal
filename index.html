@@ -958,16 +958,16 @@ function renderTeamOnDuty(){
     <h3><span class="ic">👥</span> My Team on Duty</h3>
     <p class="muted" style="font-size:13px; margin-bottom:14px;">Working with you at ${myCell.venueFull || 'your venue'}.</p>
     ${sortedKeys.map(key=>`
-      <div style="margin-bottom:14px;">
-        <p class="muted" style="font-weight:600; font-size:12px; letter-spacing:.03em; margin-bottom:8px;">${TEAM_GROUP_ICONS[key]||'👤'} ${key.toUpperCase()}${groups[key].length>1?'S':''}</p>
-        ${groups[key].map(m=>`
-          <div style="display:flex; align-items:center; gap:10px; padding:6px 0; border-bottom:0.5px solid var(--line);">
-            <div class="avatar" style="width:32px; height:32px; font-size:11px; flex-shrink:0;">${m.name.split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase()}</div>
-            <div>
-              <div style="font-size:13px; font-weight:600;">${m.name}</div>
-              <div class="muted" style="font-size:11.5px;">🕒 ${fmtShiftTimeDisplay(m.time)}</div>
-            </div>
-          </div>`).join('')}
+      <div style="margin-bottom:18px;">
+        <div class="section-title" style="font-size:12.5px; margin-bottom:10px;">${TEAM_GROUP_ICONS[key]||'👤'} ${key.toUpperCase()}${groups[key].length>1?'S':''}</div>
+        <div class="grid grid-7">
+          ${groups[key].map(m=>`
+            <div class="daycard ${shiftHighlightClass(m.time, m.position)}">
+              <div class="dname">${m.name}</div>
+              <div class="pos">${m.position}</div>
+              <div class="time">${fmtShiftTimeDisplay(m.time)}</div>
+            </div>`).join('')}
+        </div>
       </div>`).join('')}
   </div>`;
 }
