@@ -960,9 +960,9 @@ function renderTeamOnDuty(){
     ${sortedKeys.map(key=>`
       <div style="margin-bottom:18px;">
         <div class="section-title" style="font-size:12.5px; margin-bottom:10px;">${TEAM_GROUP_ICONS[key]||'👤'} ${key.toUpperCase()}${groups[key].length>1?'S':''}</div>
-        <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:12px;">
+        <div style="display:flex; flex-wrap:wrap; justify-content:center; align-items:flex-start; gap:12px;">
           ${groups[key].map(m=>`
-            <div class="daycard ${shiftHighlightClass(m.time, m.position)}" style="width:160px; flex:0 0 auto;">
+            <div class="daycard ${shiftHighlightClass(m.time, m.position)}" style="width:160px; flex:0 0 auto; text-align:center;">
               <div class="dname">${m.name}</div>
               <div class="pos">${m.position}</div>
               <div class="time">${fmtShiftTimeDisplay(m.time)}</div>
