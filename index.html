@@ -4010,11 +4010,12 @@ function topStatusChart(log, icon, status, title, limit, barColor, linkTo){
         </div>`).join('') : `<p class="muted">No ${status.toLowerCase()} entries logged yet.</p>`}
     </div>`;
 }
-function topAttendanceCharts(){
-  const now = new Date();
-  if(!attendanceStatsPeriod) attendanceStatsPeriod = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-
-  const filteredLog = ATTENDANCE_LOG.filter(a=>{
+// Shared period filter for the Attendance page's "currently selected
+// month/year" — was previously inlined only inside topAttendanceCharts().
+// Quick Attention (below) reuses this exact same filter/state instead
+// of introducing a second, possibly-conflicting period calculation.
+function filteredAttendanceForStatsPeriod(){
+  return ATTENDANCE_LOG.filter(a=>{
     if(!a.date) return false;
     const dt = new Date(a.date);
     if(isNaN(dt)) return false;
@@ -4022,6 +4023,12 @@ function topAttendanceCharts(){
     const [py, pm] = attendanceStatsPeriod.split('-').map(Number);
     return dt.getFullYear() === py && (dt.getMonth()+1) === pm;
   });
+}
+function topAttendanceCharts(){
+  const now = new Date();
+  if(!attendanceStatsPeriod) attendanceStatsPeriod = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
+  const filteredLog = filteredAttendanceForStatsPeriod();
 
   const years = Array.from(new Set(ATTENDANCE_LOG.map(a=>{ const dt = new Date(a.date); return isNaN(dt) ? null : dt.getFullYear(); }).filter(Boolean))).sort((a,b)=>b-a);
   if(!years.includes(attendanceStatsYear)) years.unshift(attendanceStatsYear);
@@ -4044,6 +4051,75 @@ function topAttendanceCharts(){
     ${topStatusChart(filteredLog, '⏰', 'Late', '20 – Most Late', 20, 'var(--gold)')}
     ${topStatusChart(filteredLog, '🕐', 'Undertime', '20 – Most Undertime', 20, 'var(--blue)')}
     ${topStatusChart(filteredLog, '☕', 'Over Breaktime', '20 – Most Over Breaktime', 20, 'var(--gold)')}
+    </div>`;
+}
+
+// Today's Attendance Summary — read-only counts for the current
+// calendar day, reusing the existing attendanceCounts() helper (the
+// same one behind Individual Employee Print Log) so there's only one
+// place that defines what counts as Absent/Late/Undertime/Over
+// Breaktime. Re-rendered automatically every time mgmt-attendance is
+// rendered, so it stays in sync after Log/Edit/Delete with no extra
+// wiring needed.
+function renderTodaysAttendanceSummary(counts){
+  const items = [
+    {icon:'🔴', label:'Absent', count:counts.Absent||0, color:'var(--red)'},
+    {icon:'🟡', label:'Late', count:counts.Late||0, color:'var(--gold)'},
+    {icon:'🔵', label:'Undertime', count:counts.Undertime||0, color:'var(--blue)'},
+    {icon:'🟠', label:'Over Breaktime', count:counts["Over Breaktime"]||0, color:'var(--teal)'}
+  ];
+  return `
+    <div class="card no-print">
+      <h3><span class="ic">📊</span> Today's Attendance Summary</h3>
+      <div class="grid grid-2">
+        ${items.map(it=>`
+          <div class="card stat-card" style="padding:14px;">
+            <div class="num" style="color:${it.color}; font-size:26px;">${it.icon} ${it.count}</div>
+            <div class="label">${it.label}</div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+// Quick Attention — dynamically generated insight, never hardcoded.
+// "Repeated late" / "multiple absences" reuse the SAME period the
+// Top Absences/Late/etc charts below already use (attendanceStatsMode/
+// Period/Year via filteredAttendanceForStatsPeriod()) rather than a
+// separate, possibly-conflicting calculation — there's no attendance
+// threshold defined in Performance Reports (those are evaluation
+// scores, unrelated), so this is the one place that logic lives.
+// "Highest issue today" reuses the same todayCounts passed in from
+// the Today's Attendance Summary above (todayCounts) — no re-query.
+function renderAttendanceQuickAttention(todayCounts){
+  const filteredLog = filteredAttendanceForStatsPeriod();
+  const lateCounts = {}, absentCounts = {};
+  filteredLog.forEach(a=>{
+    if(a.status==='Late') lateCounts[a.name] = (lateCounts[a.name]||0)+1;
+    if(a.status==='Absent') absentCounts[a.name] = (absentCounts[a.name]||0)+1;
+  });
+  const repeatedLateCount = Object.values(lateCounts).filter(c=>c>=2).length; // 2+ Late within the selected period
+  const multipleAbsenceCount = Object.values(absentCounts).filter(c=>c>=2).length; // 2+ Absent within the selected period
+
+  const todayEntries = Object.entries(todayCounts);
+  const maxToday = Math.max(...todayEntries.map(([,n])=>n));
+  const topStatuses = maxToday > 0 ? todayEntries.filter(([,n])=>n===maxToday).map(([s])=>s) : [];
+
+  const bullets = [];
+  if(repeatedLateCount > 0) bullets.push(`${repeatedLateCount} employee${repeatedLateCount===1?'':'s'} ${repeatedLateCount===1?'has':'have'} repeated late records`);
+  if(multipleAbsenceCount > 0) bullets.push(`${multipleAbsenceCount} employee${multipleAbsenceCount===1?'':'s'} ${multipleAbsenceCount===1?'has':'have'} multiple absences`);
+  if(topStatuses.length === 1) bullets.push(`Highest issue today: ${topStatuses[0]}`);
+  else if(topStatuses.length === 2) bullets.push(`Most common issues today: ${topStatuses.join(' and ')}`);
+  else if(topStatuses.length > 2) bullets.push(`Most common issues today: ${topStatuses.slice(0,-1).join(', ')} and ${topStatuses[topStatuses.length-1]}`);
+  else bullets.push(`No attendance issues logged today`);
+
+  const nothingAtAll = repeatedLateCount===0 && multipleAbsenceCount===0 && topStatuses.length===0;
+
+  return `
+    <div class="card no-print">
+      <h3><span class="ic">⚠️</span> Quick Attention</h3>
+      ${nothingAtAll
+        ? `<p class="muted">✅ No attendance concerns requiring attention at this time.</p>`
+        : `<ul style="margin:0; padding-left:18px; font-size:13px; line-height:1.9;">${bullets.map(b=>`<li>${b}</li>`).join('')}</ul>`}
     </div>`;
 }
 
@@ -4790,8 +4866,15 @@ const BUILDERS = {
     const localTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
     const printYears = Array.from(new Set(ATTENDANCE_LOG.map(a=>{ const dt = new Date(a.date); return isNaN(dt) ? null : dt.getFullYear(); }).filter(Boolean))).sort((a,b)=>b-a);
     if(!printYears.includes(now.getFullYear())) printYears.unshift(now.getFullYear());
+    if(!attendanceStatsPeriod) attendanceStatsPeriod = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`; // same default topAttendanceCharts() uses — moved up so Quick Attention (below) can rely on it too
+    // Read ATTENDANCE_LOG once here for "today" — both new read-only
+    // sections (Summary + Quick Attention's "highest issue" line)
+    // reuse this same pass instead of each re-filtering the log.
+    const todayRecords = ATTENDANCE_LOG.filter(a=>a.date===localDate);
+    const todayCounts = attendanceCounts(todayRecords); // existing helper — already used by Individual Employee Print Log
     return `
     <div class="grid grid-2" style="margin-bottom:16px;">
+      <div style="display:flex; flex-direction:column; gap:16px;">
       <div class="card no-print">
         <h3 id="logCardTitle"><span class="ic">🕐</span> Log an Entry</h3>
         <p class="muted">This is the equivalent of adding a row to the Attendance tab in the Sheet — the employee sees it on their own dashboard right away.</p>
@@ -4810,6 +4893,9 @@ const BUILDERS = {
           <button class="btn" id="logSubmitBtn" onclick="submitAttendanceLog()">Log Entry</button>
           <button class="btn ghost auto" id="logCancelBtn" style="display:none;" onclick="cancelEditAttendance()">Cancel</button>
         </div>
+      </div>
+      ${renderTodaysAttendanceSummary(todayCounts)}
+      ${renderAttendanceQuickAttention(todayCounts)}
       </div>
       <div class="card table-scroll print-doc">
         <h3 class="no-print">Current Log <span class="muted" style="font-weight:400; font-size:13px;">— latest 10, search for more</span></h3>
