@@ -1546,7 +1546,20 @@ const LAST_VIEW_KEY = "sv_staff_portal_last_view";
 
 async function doLoginWithCredentials(u, p){
   if(USE_REMOTE()){
-    const r = await apiPost('login', {username:u, password:p});
+    // Same transient-congestion issue as safeApiGet — the login call
+    // itself can hit the same busy Apps Script and time out, forcing
+    // the person to notice the error and click Log In again by hand.
+    // One silent retry here covers that without changing what an
+    // actually-wrong password does (that still comes back as a
+    // normal {ok:false} response, not a thrown error, so it's not
+    // retried).
+    let r;
+    try{
+      r = await apiPost('login', {username:u, password:p});
+    } catch(e){
+      await new Promise(res => setTimeout(res, 1200));
+      r = await apiPost('login', {username:u, password:p});
+    }
     if(!r.ok) return {success:false, error: r.error || "Incorrect username or password."};
     if(r.role === 'management'){
       CURRENT_USER = {role:'management', displayName:r.displayName, username:r.username, accessLevel: r.accessLevel || 'full', mgmtRole: r.mgmtRole || 'full'};
@@ -1582,6 +1595,51 @@ async function doLoginWithCredentials(u, p){
     };
   }
   return {success:true};
+}
+
+// Small, non-blocking status pill — shown only when loadRemoteData()
+// still has failed endpoints after its own retries, while finishLogin()
+// (below) does one more full reload in the background. Deliberately NOT
+// the mgmtToastContainer/backdrop pattern used for real notifications —
+// this shouldn't block clicks or require dismissing.
+function showDataRecoveryBanner(){
+  if(document.getElementById('dataRecoveryBanner')) return;
+  const el = document.createElement('div');
+  el.id = 'dataRecoveryBanner';
+  el.style.cssText = 'position:fixed; top:14px; left:50%; transform:translateX(-50%); z-index:210; background:var(--gold-soft); border:1px solid rgba(201,162,75,.4); color:#F0D9A0; padding:8px 16px; border-radius:20px; font-size:12.5px; font-weight:600; box-shadow:0 4px 16px rgba(0,0,0,.35); display:flex; align-items:center; gap:8px;';
+  el.innerHTML = `<span class="btn-spinner" style="width:12px; height:12px; border-color:rgba(240,217,160,0.35); border-top-color:#F0D9A0;"></span> Finishing up — some data is still loading...`;
+  document.body.appendChild(el);
+}
+function hideDataRecoveryBanner(){
+  const el = document.getElementById('dataRecoveryBanner');
+  if(el) el.remove();
+}
+
+// Runs after every successful login (fresh login or restored
+// session) — shows the dashboard right away via setRole() as before,
+// then, ONLY if loadRemoteData() came back with something still
+// missing after its own retries, quietly does exactly what a manual
+// page refresh used to be needed for: reload once more and re-render
+// — automatically, without the person having to notice and do it
+// themselves. Polling baselines are (re-)seeded AFTER this, so they
+// are never built from a load known to be incomplete — this is what
+// actually stops the delayed burst of notification pop-ups, since
+// that burst was always the poller comparing fresh data against a
+// baseline that had silently missed some of it.
+async function finishLogin(){
+  setRole(CURRENT_USER.role);
+  if(!lastLoadHadFailures) return;
+  showDataRecoveryBanner();
+  await new Promise(r => setTimeout(r, 2500)); // let the earlier burst of concurrent Apps Script executions clear
+  await loadRemoteData();
+  hideDataRecoveryBanner();
+  renderView(activeView); // re-render whatever's currently on screen with the now-complete data
+  renderNav();
+  // startEmpPolling()/startMgmtPolling() already ran once inside
+  // setRole() above and won't run again while their interval is
+  // active — re-seed the baseline directly instead.
+  if(CURRENT_USER.role === 'employee') await seedEmpPollingBaseline();
+  else await seedMgmtPollingBaseline();
 }
 
 async function attemptLogin(){
@@ -1620,7 +1678,7 @@ async function attemptLogin(){
 
   document.getElementById('loginGate').classList.remove('active');
   document.getElementById('appRoot').style.display = 'flex';
-  setRole(CURRENT_USER.role);
+  await finishLogin();
 }
 
 async function restoreSession(){
@@ -1639,7 +1697,7 @@ async function restoreSession(){
     if(result.success){
       document.getElementById('loadingGate').classList.remove('active');
       document.getElementById('appRoot').style.display = 'flex';
-      setRole(CURRENT_USER.role);
+      await finishLogin();
       return;
     }
     if(!networkFailure) localStorage.removeItem(SESSION_KEY); // saved password no longer valid
@@ -1652,7 +1710,23 @@ async function restoreSession(){
 /* Pulls live Roster/Schedule/Attendance/Announcements from the
    Sheet once logged in, replacing the mock constants in place so
    the rest of the UI code doesn't need to change. No-op locally. */
-async function safeApiGet(action, fallback){
+// Root-cause fix for the "dashboard loads empty, then a burst of
+// notifications appears, refresh fixes it" bug: under concurrent
+// login load, Apps Script can take longer than API_TIMEOUT_MS (20s)
+// to answer one or two of the ~15-21 parallel calls in
+// loadRemoteData(). That single slow call used to be silently
+// swallowed and replaced with an EMPTY fallback — permanently, with
+// no retry — which (a) rendered that dashboard section as if it
+// were genuinely empty, and (b) got baked into the notification
+// polling baseline, so the NEXT successful poll saw a huge false
+// "diff" and fired a stack of toasts for things that were never
+// actually new. Retrying transient failures here, and tracking
+// which action(s) still failed after retries, lets loadRemoteData's
+// callers know the load was incomplete instead of pretending it
+// wasn't.
+let lastLoadFailedActions = [];
+async function safeApiGet(action, fallback, _attempt){
+  _attempt = _attempt || 0;
   try{
     const result = await apiGet(action);
     if(Array.isArray(fallback) && !Array.isArray(result)){
@@ -1661,13 +1735,27 @@ async function safeApiGet(action, fallback){
       // recognize this action yet (returns {error:"..."} instead of
       // a list). Falling back here stops that one bad response from
       // crashing the rest of loadRemoteData() and corrupting
-      // unrelated data that already loaded fine.
+      // unrelated data that already loaded fine. Retrying wouldn't
+      // help a deployment mismatch, so this one isn't retried.
       console.warn(`safeApiGet('${action}') expected an array but got:`, result);
       return fallback;
     }
     return result;
   }
-  catch(e){ return fallback; }
+  catch(e){
+    if(_attempt < 2){
+      // Short backoff — enough time for the burst of concurrent
+      // Apps Script executions from this same login to clear before
+      // trying again. 2 retries (3 attempts total) covers the
+      // transient-congestion case this bug report described without
+      // adding a lot of extra wait when something is genuinely down.
+      await new Promise(r => setTimeout(r, 1200 * (_attempt + 1)));
+      return safeApiGet(action, fallback, _attempt + 1);
+    }
+    console.warn(`safeApiGet('${action}') failed after retries:`, e);
+    lastLoadFailedActions.push(action);
+    return fallback;
+  }
 }
 
 /* Lightweight refreshes for an employee's own submit/edit/delete on
@@ -1737,8 +1825,10 @@ function isAnnouncementForMe(a){
   return true;
 }
 
+let lastLoadHadFailures = false; // true if loadRemoteData() finished with one or more endpoints still failed after retries — callers use this to know the load was incomplete
 async function loadRemoteData(){
   if(!USE_REMOTE()) return;
+  lastLoadFailedActions = [];
   try{
     const myName = (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.fullName) || '';
     // Management (full/limited) and any hybrid role (Shift Manager,
@@ -1805,7 +1895,8 @@ async function loadRemoteData(){
     MY_SUGGESTIONS = mySuggestionsRaw.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID})).reverse();
     ALL_NOMINATIONS = nominations.slice().reverse();
     MY_NOMINATIONS = myNominationsRaw.slice().reverse();
-  } catch(e){ /* keep whatever was already loaded if a fetch fails */ }
+    lastLoadHadFailures = lastLoadFailedActions.length > 0;
+  } catch(e){ lastLoadHadFailures = true; /* keep whatever was already loaded if a fetch fails */ }
 }
 /* ============================================================
    MANAGEMENT ALERT TONE — plays a 5-second attention tone at 90%
@@ -1938,8 +2029,10 @@ function showMgmtToast(icon, title, body, targetView){
   requestAnimationFrame(()=> el.classList.add('show'));
 }
 
-async function startMgmtPolling(){
-  if(mgmtPollInterval || !USE_REMOTE()) return;
+// Baseline seeding split out from startMgmtPolling() so it can be
+// re-run by the post-login recovery flow (see finishLogin() below)
+// without restarting the poll interval itself.
+async function seedMgmtPollingBaseline(){
   // Use the same server-fresh source the comparison loop below uses
   // — capturing the baseline from local arrays instead could
   // slightly disagree with the server (especially on a slow mobile
@@ -1956,6 +2049,10 @@ async function startMgmtPolling(){
   mgmtDiscResponseSnapshot = new Map(ALL_DISCIPLINARY_RECORDS.map(d=>[d.ID, !!d.EmployeeResponse]));
   mgmtEvaluationsSnapshot = new Set(ALL_EVALUATIONS.map(e=>e.ID));
   mgmtNominationsSnapshot = new Set(ALL_NOMINATIONS.map(n=>n.ID));
+}
+async function startMgmtPolling(){
+  if(mgmtPollInterval || !USE_REMOTE()) return;
+  await seedMgmtPollingBaseline();
 
   mgmtPollInterval = setInterval(async ()=>{
     if(document.hidden) return; // skip while this tab isn't the active/visible one — avoids piling up requests across multiple open tabs
@@ -2139,8 +2236,10 @@ let empPendingRequestsBaseline = new Set(); // set of request IDs already accoun
 function hasMgmtRequestsAccess(){
   return !!(CURRENT_USER && CURRENT_USER.mgmtRole && isViewAllowedForRole('mgmt-requests'));
 }
-async function startEmpPolling(){
-  if(empPollInterval || !USE_REMOTE()) return;
+// Baseline seeding split out from startEmpPolling() so it can be
+// re-run by the post-login recovery flow (see finishLogin() below)
+// without restarting the poll interval itself.
+async function seedEmpPollingBaseline(){
   empRequestsBaseline = myRequestsSnapshot();
   empNextScheduleBaseline = nextScheduleSnapshot();
   empNextSchedulePublished = NEXT_SCHEDULE_PUBLISHED;
@@ -2166,6 +2265,10 @@ async function startEmpPolling(){
     const initialScoped = await safeApiGet('myRequestsScoped&name=' + encodeURIComponent(CURRENT_EMPLOYEE.name), []);
     initialScoped.forEach(r=>{ if(r.Type === 'Schedule Swap' && r.SwapWithName === CURRENT_EMPLOYEE.name) empSwapPartnerBaseline.set(r.ID, r.Status); });
   }
+}
+async function startEmpPolling(){
+  if(empPollInterval || !USE_REMOTE()) return;
+  await seedEmpPollingBaseline();
   empPollInterval = setInterval(async ()=>{
     if(document.hidden) return; // skip while this tab isn't the active/visible one
     const needsFullRequests = hasMgmtRequestsAccess(); // hybrid roles also watch for new requests from OTHER employees — a plain employee only ever needs her own, via the scoped endpoint below
