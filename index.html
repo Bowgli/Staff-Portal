@@ -4081,45 +4081,62 @@ function renderTodaysAttendanceSummary(counts){
     </div>`;
 }
 
-// Quick Attention — dynamically generated insight, never hardcoded.
-// "Repeated late" / "multiple absences" reuse the SAME period the
-// Top Absences/Late/etc charts below already use (attendanceStatsMode/
-// Period/Year via filteredAttendanceForStatsPeriod()) rather than a
-// separate, possibly-conflicting calculation — there's no attendance
-// threshold defined in Performance Reports (those are evaluation
-// scores, unrelated), so this is the one place that logic lives.
-// "Highest issue today" reuses the same todayCounts passed in from
-// the Today's Attendance Summary above (todayCounts) — no re-query.
-function renderAttendanceQuickAttention(todayCounts){
-  const filteredLog = filteredAttendanceForStatsPeriod();
+// Quick Attention — dynamically generated insight, never hardcoded,
+// split into two clearly-labeled data scopes per management's
+// clarification:
+//  - TODAY: today's records only (same todayCounts already computed
+//    for Today's Attendance Summary above — no re-query).
+//  - THIS MONTH: the actual current calendar month (thisMonthRecords,
+//    computed once in the mgmt-attendance builder) — intentionally
+//    NOT the adjustable Top-Charts period selector below, so this
+//    always answers "this month" regardless of what an admin has
+//    that filter set to.
+// There's no attendance threshold defined in Performance Reports
+// (those are evaluation scores, unrelated), so the 2+ threshold here
+// is the one place that logic lives.
+function renderAttendanceQuickAttention(todayCounts, thisMonthRecords){
+  // ---- TODAY ----
+  const todayEntries = Object.entries(todayCounts);
+  const todayTotal = todayEntries.reduce((sum,[,n])=>sum+n, 0);
+  const maxToday = todayTotal > 0 ? Math.max(...todayEntries.map(([,n])=>n)) : 0;
+  const topStatuses = maxToday > 0 ? todayEntries.filter(([,n])=>n===maxToday).map(([s])=>s) : [];
+  let todayBlock;
+  if(todayTotal > 0){
+    const issueLine = topStatuses.length === 1 ? `Most common issue today: ${topStatuses[0]}`
+      : topStatuses.length === 2 ? `Most common issues today: ${topStatuses.join(' and ')}`
+      : `Most common issues today: ${topStatuses.slice(0,-1).join(', ')} and ${topStatuses[topStatuses.length-1]}`;
+    todayBlock = `<p style="margin:0 0 4px;">📌 ${issueLine}</p><p class="muted" style="margin:0; font-size:12.5px;">${todayTotal} attendance issue${todayTotal===1?'':'s'} logged today.</p>`;
+  } else {
+    todayBlock = `<p class="muted" style="margin:0;">✅ No attendance issues logged today.</p>`;
+  }
+
+  // ---- THIS MONTH ----
   const lateCounts = {}, absentCounts = {};
-  filteredLog.forEach(a=>{
+  thisMonthRecords.forEach(a=>{
     if(a.status==='Late') lateCounts[a.name] = (lateCounts[a.name]||0)+1;
     if(a.status==='Absent') absentCounts[a.name] = (absentCounts[a.name]||0)+1;
   });
-  const repeatedLateCount = Object.values(lateCounts).filter(c=>c>=2).length; // 2+ Late within the selected period
-  const multipleAbsenceCount = Object.values(absentCounts).filter(c=>c>=2).length; // 2+ Absent within the selected period
+  const repeatedLateCount = Object.values(lateCounts).filter(c=>c>=2).length; // 2+ Late this month
+  const multipleAbsenceCount = Object.values(absentCounts).filter(c=>c>=2).length; // 2+ Absent this month
 
-  const todayEntries = Object.entries(todayCounts);
-  const maxToday = Math.max(...todayEntries.map(([,n])=>n));
-  const topStatuses = maxToday > 0 ? todayEntries.filter(([,n])=>n===maxToday).map(([s])=>s) : [];
-
-  const bullets = [];
-  if(repeatedLateCount > 0) bullets.push(`${repeatedLateCount} employee${repeatedLateCount===1?'':'s'} ${repeatedLateCount===1?'has':'have'} repeated late records`);
-  if(multipleAbsenceCount > 0) bullets.push(`${multipleAbsenceCount} employee${multipleAbsenceCount===1?'':'s'} ${multipleAbsenceCount===1?'has':'have'} multiple absences`);
-  if(topStatuses.length === 1) bullets.push(`Highest issue today: ${topStatuses[0]}`);
-  else if(topStatuses.length === 2) bullets.push(`Most common issues today: ${topStatuses.join(' and ')}`);
-  else if(topStatuses.length > 2) bullets.push(`Most common issues today: ${topStatuses.slice(0,-1).join(', ')} and ${topStatuses[topStatuses.length-1]}`);
-  else bullets.push(`No attendance issues logged today`);
-
-  const nothingAtAll = repeatedLateCount===0 && multipleAbsenceCount===0 && topStatuses.length===0;
+  const monthLines = [];
+  if(repeatedLateCount > 0) monthLines.push(`🟡 ${repeatedLateCount} employee${repeatedLateCount===1?'':'s'} ${repeatedLateCount===1?'has':'have'} repeated late records this month.`);
+  if(multipleAbsenceCount > 0) monthLines.push(`🔴 ${multipleAbsenceCount} employee${multipleAbsenceCount===1?'':'s'} ${multipleAbsenceCount===1?'has':'have'} multiple absences this month.`);
+  const monthBlock = monthLines.length
+    ? monthLines.map(l=>`<p style="margin:0 0 4px;">${l}</p>`).join('')
+    : `<p class="muted" style="margin:0;">✅ No repeated attendance patterns this month.</p>`;
 
   return `
     <div class="card no-print">
       <h3><span class="ic">⚠️</span> Quick Attention</h3>
-      ${nothingAtAll
-        ? `<p class="muted">✅ No attendance concerns requiring attention at this time.</p>`
-        : `<ul style="margin:0; padding-left:18px; font-size:13px; line-height:1.9;">${bullets.map(b=>`<li>${b}</li>`).join('')}</ul>`}
+      <div style="margin-bottom:14px;">
+        <div class="muted" style="font-size:11px; font-weight:700; letter-spacing:0.5px; margin-bottom:6px;">TODAY</div>
+        ${todayBlock}
+      </div>
+      <div>
+        <div class="muted" style="font-size:11px; font-weight:700; letter-spacing:0.5px; margin-bottom:6px;">THIS MONTH</div>
+        ${monthBlock}
+      </div>
     </div>`;
 }
 
@@ -4872,6 +4889,16 @@ const BUILDERS = {
     // reuse this same pass instead of each re-filtering the log.
     const todayRecords = ATTENDANCE_LOG.filter(a=>a.date===localDate);
     const todayCounts = attendanceCounts(todayRecords); // existing helper — already used by Individual Employee Print Log
+    // "THIS MONTH" in Quick Attention is always the actual current
+    // calendar month — intentionally separate from attendanceStatsPeriod
+    // (the adjustable filter the Top Absences/Late/etc charts below use),
+    // since an admin could have that set to a past month while browsing.
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const thisMonthRecords = ATTENDANCE_LOG.filter(a=>{
+      if(!a.date) return false;
+      const dt = new Date(a.date);
+      return !isNaN(dt) && `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}` === currentMonthKey;
+    });
     return `
     <div class="grid grid-2" style="margin-bottom:16px;">
       <div style="display:flex; flex-direction:column; gap:16px;">
@@ -4895,7 +4922,7 @@ const BUILDERS = {
         </div>
       </div>
       ${renderTodaysAttendanceSummary(todayCounts)}
-      ${renderAttendanceQuickAttention(todayCounts)}
+      ${renderAttendanceQuickAttention(todayCounts, thisMonthRecords)}
       </div>
       <div class="card table-scroll print-doc">
         <h3 class="no-print">Current Log <span class="muted" style="font-weight:400; font-size:13px;">— latest 10, search for more</span></h3>
