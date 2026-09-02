@@ -364,6 +364,16 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="annViewModal">
+  <div class="modal-box" style="max-width:560px;">
+    <h3><span class="ic">📢</span> Announcement Details</h3>
+    <div id="annViewModalBody"></div>
+    <div class="modal-btns">
+      <button class="btn ghost" onclick="closeAnnouncementDetailModal()">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== LOGIN GATE ===== -->
 <div class="login-gate" id="loginGate">
   <div class="login-card">
@@ -653,6 +663,8 @@ let ALL_FORMS = []; // Forms Library entries
 let ALL_NOMINATIONS = []; // Award Nominations — full list, for management
 let MY_NOMINATIONS = []; // Award Nominations this employee submitted, so they can edit their own
 let editingNominationId = null;
+let expandedAnnouncement = null; // ID of the announcement currently expanded (click-to-view), employee-facing
+let editingAnnouncementId = null; // ID of the announcement being edited, management "Post Announcements"
 let MY_DISCIPLINARY_RECORDS = []; // scoped to the current employee, excludes Drafts and internal-only fields
 let discFilter = { employee:'', department:'All', position:'All', violation:'All', level:'All', status:'All', dateFrom:'', dateTo:'' };
 let discSummaryPeriod = ''; // "YYYY-MM", defaults to current month on first view
@@ -1768,7 +1780,7 @@ async function loadRemoteData(){
     NEXT_SCHEDULE_PUBLISHED = !!nextSchedule.published;
     ATTENDANCE_LOG = attendance.map(a => ({name:a.EmployeeName, date:a.Day, time:a.Time, status:a.Status, remarks:a.Remarks, id:a.ID, loggedBy:a.LoggedBy}));
     ALL_ANNOUNCEMENTS = announcements.slice().reverse();
-    MOCK.announcements = ALL_ANNOUNCEMENTS.filter(isAnnouncementForMe).map(a => ({title:a.Title, body:a.Body, date:a.Date, id:a.ID}));
+    MOCK.announcements = ALL_ANNOUNCEMENTS.filter(isAnnouncementForMe).map(a => ({title:a.Title, body:a.Body, date:a.Date, id:a.ID, by:a.PostedBy}));
     MOCK.recognition = recognition.map(r => ({medal:"🏆", name:r.AwardTitle, desc:r.Note, employeeName:r.EmployeeName, date:r.Date, id:r.ID})).reverse();
     MY_RECOGNITION = isMgmtCapable
       ? MOCK.recognition.filter(r => CURRENT_EMPLOYEE && r.employeeName === CURRENT_EMPLOYEE.name)
@@ -2743,6 +2755,16 @@ function togglePolicyDoc(title){
   renderView('policies');
 }
 
+// Click-to-view for the employee-facing Announcements list — same
+// expand/collapse interaction as togglePolicyDoc() above, kept
+// consistent per the UI/UX request. Also used by Notifications'
+// "View" action to jump straight to a specific announcement already
+// expanded (see openNotificationItem()).
+function toggleAnnouncementView(id){
+  expandedAnnouncement = (expandedAnnouncement === id) ? null : id;
+  renderView('announcements');
+}
+
 let expandedResponsibility = null;
 function toggleResponsibility(pos){
   expandedResponsibility = (expandedResponsibility === pos) ? null : pos;
@@ -2808,21 +2830,21 @@ function computeRecentActivity(){
   const items = [];
   MOCK.requests.forEach(r=>{
     if(r.status==='approved' || r.status==='declined'){
-      items.push({title:`Your ${r.type} request was ${r.status}`, time:fmtDateTime(r.date), rawDate:r.date});
+      items.push({title:`Your ${r.type} request was ${r.status}`, time:fmtDateTime(r.date), rawDate:r.date, navType:'request', refId:r.id});
     }
   });
   MY_CONCERNS.forEach(c=>{
     if(c.status==='Resolved' || c.status==='No Action Needed'){
-      items.push({title:`Your concern "${c.topic}" was marked ${c.status.toLowerCase()}`, time:fmtDateTime(c.date), rawDate:c.date});
+      items.push({title:`Your concern "${c.topic}" was marked ${c.status.toLowerCase()}`, time:fmtDateTime(c.date), rawDate:c.date, navType:'concern', refId:c.id});
     }
   });
   MOCK.recognition.forEach(r=>{
     if(r.employeeName === CURRENT_EMPLOYEE.name){
-      items.push({title:`You received an award: ${r.name}`, time:fmtDateTime(r.date), rawDate:r.date});
+      items.push({title:`You received an award: ${r.name}`, time:fmtDateTime(r.date), rawDate:r.date, navType:'recognition', refId:r.id});
     }
   });
   MOCK.announcements.forEach(a=>{
-    items.push({title:`New announcement: ${a.title}`, time:fmtDateTime(a.date), rawDate:a.date});
+    items.push({title:`New announcement: ${a.title}`, time:fmtDateTime(a.date), rawDate:a.date, navType:'announcement', refId:a.id});
   });
   // Each source (requests, concerns, recognition, announcements) was
   // simply appended one after another — never actually interleaved
@@ -2835,6 +2857,20 @@ function computeRecentActivity(){
     return (isNaN(tb)?0:tb) - (isNaN(ta)?0:ta);
   });
   return items;
+}
+
+// Routes a clicked notification to its related existing content —
+// reuses the same tabs/views and (for announcements) the same
+// click-to-view expand already used elsewhere, per the "reuse
+// existing routing logic, don't build a parallel system" request.
+// Requests/Concerns don't have a dedicated single-record detail view
+// today, so routing opens the tab that already lists that record in
+// full (Your Request History / your concern list).
+function openNotificationItem(navType, refId){
+  if(navType==='announcement'){ expandedAnnouncement = refId; renderView('announcements'); return; }
+  if(navType==='request'){ renderView('requests'); return; }
+  if(navType==='concern'){ renderView('concern'); return; }
+  if(navType==='recognition'){ renderView('recognition'); return; }
 }
 
 function avatarHtml(emp){
@@ -4208,7 +4244,17 @@ const BUILDERS = {
   announcements: ()=>`
     <div class="card">
       <h3><span class="ic">📢</span> Company Updates</h3>
-      ${MOCK.announcements.length ? MOCK.announcements.map(a=>`<div class="feed-item"><div class="title" style="font-size:16px;">${a.title}</div><div class="muted" style="margin-top:6px; font-size:14.5px; line-height:1.5;">${a.body}</div><div class="meta" style="margin-top:6px;">${fmtDateTime(a.date)}</div></div>`).join('') : `<p class="muted">No announcements posted yet.</p>`}
+      ${MOCK.announcements.length ? MOCK.announcements.map(a=>{
+        const isOpen = expandedAnnouncement === a.id;
+        return `<div class="feed-item" style="cursor:pointer;" onclick="toggleAnnouncementView('${a.id}')">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div class="title" style="font-size:16px;">${a.title}</div>
+            <span class="muted">${isOpen?'Hide ↑':'View Announcement →'}</span>
+          </div>
+          <div class="meta" style="margin-top:6px;">Posted: ${fmtDateTime(a.date)}${a.by?` · By: ${a.by}`:''}</div>
+          ${isOpen ? `<div style="margin-top:14px; white-space:pre-line; font-size:14.5px; line-height:1.5;" onclick="event.stopPropagation()">${a.body}</div>` : ''}
+        </div>`;
+      }).join('') : `<p class="muted">No announcements posted yet.</p>`}
     </div>`,
 
   recognition: ()=>`
@@ -4451,7 +4497,7 @@ const BUILDERS = {
     </div>
     <div class="card">
       <h3><span class="ic">🔔</span> Recent Activity</h3>
-      ${activity.length ? activity.map(n=>`<div class="feed-item" style="display:flex; justify-content:space-between;"><span>${n.title}</span><span class="meta">${n.time}</span></div>`).join('') : `<p class="muted">Nothing new yet.</p>`}
+      ${activity.length ? activity.map(n=>`<div class="feed-item" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="openNotificationItem('${n.navType}','${n.refId}')"><span>${n.title}</span><span style="display:flex; align-items:center; gap:10px;"><span class="meta">${n.time}</span><span class="muted" style="font-size:12px;">View →</span></span></div>`).join('') : `<p class="muted">Nothing new yet.</p>`}
     </div>`;
   },
 
@@ -5492,7 +5538,7 @@ const BUILDERS = {
 
   "mgmt-announcements": ()=>`
     <div class="card" style="max-width:560px; margin-bottom:16px;">
-      <h3><span class="ic">📢</span> Post an Announcement</h3>
+      <h3 id="annCardTitle"><span class="ic">📢</span> Post an Announcement</h3>
       <label>Title</label>
       <input type="text" id="annTitle" placeholder="Announcement headline">
       <label>Message</label>
@@ -5516,6 +5562,7 @@ const BUILDERS = {
         </div>
       </div>
       <button class="btn" id="annPostBtn" onclick="postAnnouncement()">Post</button>
+      <button class="btn ghost auto" id="annCancelBtn" style="display:none; margin-left:8px;" onclick="cancelEditAnnouncement()">✖ Cancel</button>
       <p class="login-err" id="annErr"></p>
       <p class="login-ok" id="annOk">Posted${USE_REMOTE()?' and sent to Telegram subscribers.':' (local demo — connect the backend to actually broadcast).'}</p>
     </div>
@@ -5524,7 +5571,11 @@ const BUILDERS = {
       <table>
         <tr><th>Title</th><th>Sent to</th><th>Date</th><th></th></tr>
         ${ALL_ANNOUNCEMENTS.map(a=>`<tr><td>${a.Title}</td><td class="muted">${a.TargetType==='All'?'All Staff':a.TargetType==='Position'?a.TargetValue:a.TargetValue}</td><td>${fmtDateTime(a.Date)}</td>
-          <td><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteAnnouncementEntry('${a.ID}', this)">Delete</button></td></tr>`).join('') || `<tr><td colspan="4" class="muted">No announcements posted yet.</td></tr>`}
+          <td style="white-space:nowrap;">
+            <button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="viewAnnouncementDetail('${a.ID}')">👁️ View</button>
+            <button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditAnnouncement('${a.ID}')">✏️ Edit</button>
+            <button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteAnnouncementEntry('${a.ID}', this)">🗑️ Delete</button>
+          </td></tr>`).join('') || `<tr><td colspan="4" class="muted">No announcements posted yet.</td></tr>`}
       </table>
     </div>`,
 };
@@ -6216,9 +6267,27 @@ async function postAnnouncement(){
 
   if(TargetType!=='All' && !TargetValue){ err.textContent="Pick at least one " + (TargetType==='Position'?'position':'employee') + "."; err.style.display='block'; return; }
 
+  const isEditing = !!editingAnnouncementId;
   const btn = document.getElementById('annPostBtn');
   btn.disabled = true;
-  btn.innerHTML = `<span class="btn-spinner"></span>Sending...`;
+  btn.innerHTML = `<span class="btn-spinner"></span>${isEditing ? 'Saving...' : 'Sending...'}`;
+
+  if(isEditing){
+    // editAnnouncement only updates the row in place — it does NOT
+    // re-broadcast to Telegram or touch notification/unread state,
+    // per the "don't send duplicate notifications on edit" requirement.
+    if(USE_REMOTE()){
+      const r = await apiPostMinDelay('editAnnouncement', {id: editingAnnouncementId, Title, Body, TargetType, TargetValue});
+      if(!r.ok){ err.textContent = r.error || "Couldn't save changes."; err.style.display='block'; btn.disabled=false; btn.innerHTML='💾 Save Changes'; return; }
+    }
+    const a = ALL_ANNOUNCEMENTS.find(x=>x.ID===editingAnnouncementId);
+    if(a){ a.Title = Title; a.Body = Body; a.TargetType = TargetType; a.TargetValue = TargetValue; }
+    editingAnnouncementId = null;
+    btn.innerHTML = `✓ Saved`;
+    await new Promise(r=>setTimeout(r, 600));
+    renderView('mgmt-announcements');
+    return;
+  }
 
   if(USE_REMOTE()){
     const r = await apiPostMinDelay('postAnnouncement', {Title, Body, PostedBy: CURRENT_USER.displayName, TargetType, TargetValue});
@@ -6229,6 +6298,56 @@ async function postAnnouncement(){
   await new Promise(r=>setTimeout(r, 600));
   renderView('mgmt-announcements');
   document.getElementById('annOk').style.display='block';
+}
+
+// "View" — read-only lookup in a modal, same modal-overlay pattern
+// used elsewhere (e.g. Edit Week), separate from Edit mode.
+function viewAnnouncementDetail(id){
+  const a = ALL_ANNOUNCEMENTS.find(x=>x.ID===id);
+  if(!a) return;
+  const sentTo = a.TargetType==='All' ? 'All Staff' : (a.TargetValue || '—');
+  document.getElementById('annViewModalBody').innerHTML = `
+    <table>
+      <tr><td class="muted">Title</td><td>${a.Title}</td></tr>
+      <tr><td class="muted" style="vertical-align:top;">Message</td><td style="white-space:pre-wrap;">${a.Body}</td></tr>
+      <tr><td class="muted">Target Audience</td><td>${sentTo}</td></tr>
+      <tr><td class="muted">Posted Date</td><td>${fmtDateTime(a.Date)}</td></tr>
+      <tr><td class="muted">Posted By</td><td>${a.PostedBy || '—'}</td></tr>
+    </table>`;
+  document.getElementById('annViewModal').classList.add('active');
+}
+function closeAnnouncementDetailModal(){
+  document.getElementById('annViewModal').classList.remove('active');
+}
+
+// Edit — reuses the same "Post an Announcement" form fields in
+// place (title/button swap, Cancel button shown), same pattern as
+// startEditNomination()/cancelEditNomination() for consistency.
+function startEditAnnouncement(id){
+  const a = ALL_ANNOUNCEMENTS.find(x=>x.ID===id);
+  if(!a) return;
+  editingAnnouncementId = id;
+  document.getElementById('annTitle').value = a.Title || '';
+  document.getElementById('annBody').value = a.Body || '';
+  document.getElementById('annTargetType').value = a.TargetType || 'All';
+  toggleAnnTarget();
+  if(a.TargetType==='Position'){
+    const picked = (a.TargetValue||'').split(',').map(s=>s.trim()).filter(Boolean);
+    document.querySelectorAll('.ann-pos-check').forEach(c=>{ c.checked = picked.includes(c.value); });
+  } else if(a.TargetType==='Individual'){
+    const picked = (a.TargetValue||'').split(',').map(s=>s.trim()).filter(Boolean);
+    document.querySelectorAll('.ann-emp-check').forEach(c=>{ c.checked = picked.includes(c.value); });
+  }
+  document.getElementById('annCardTitle').innerHTML = '<span class="ic">📢</span> Edit Announcement';
+  document.getElementById('annPostBtn').textContent = '💾 Save Changes';
+  document.getElementById('annCancelBtn').style.display = '';
+  document.getElementById('annErr').style.display = 'none';
+  document.getElementById('annOk').style.display = 'none';
+  document.getElementById('annTitle').scrollIntoView({behavior:'smooth', block:'center'});
+}
+function cancelEditAnnouncement(){
+  editingAnnouncementId = null;
+  renderView('mgmt-announcements');
 }
 
 async function deleteAnnouncementEntry(id, el){
