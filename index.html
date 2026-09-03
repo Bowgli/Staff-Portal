@@ -681,6 +681,7 @@ let discCaseAttachments = []; // [{fileId, fileName}] staged during the New Case
 let discIncidentEditAttachments = []; // same idea, but for editing an EXISTING case's Incident Information — kept separate so the two flows never bleed into each other
 let discNewCaseEmployee = ''; // selected employee name in the New Case form, drives the auto-filled Position/Department
 let attendanceSearchQuery = '';
+const ATTENDANCE_ARCHIVE_DAYS_CLIENT = 90; // mirrors ATTENDANCE_ARCHIVE_DAYS in Code.gs — display text only, the actual cutoff is enforced server-side
 let perfFilterMonth = 'All';
 let perfFilterYear = 'All';
 let perfSearchQuery = '';
@@ -5166,6 +5167,12 @@ const BUILDERS = {
       </div>
       <div id="attendancePrintPreview"></div>
     </div>
+    <div class="card no-print" style="margin-bottom:16px;">
+      <h3><span class="ic">🗄️</span> Attendance Archiving</h3>
+      <p class="muted" style="margin-bottom:12px;">Records older than ${ATTENDANCE_ARCHIVE_DAYS_CLIENT} days move to a separate Archive tab automatically once a month, so logging in stays fast as the log grows. Nothing is deleted — Individual Employee Print Log above still finds archived records too. You can also run it manually right now instead of waiting for the schedule.</p>
+      <button class="btn ghost auto" id="archiveNowBtn" onclick="runAttendanceArchiveNow()">Archive Old Records Now</button>
+      <p id="archiveNowMsg" class="muted" style="margin-top:10px; display:none;"></p>
+    </div>
     <div class="no-print">${topAttendanceCharts()}</div>`;
   },
 
@@ -6718,7 +6725,32 @@ function attendanceCounts(records){
   records.forEach(r=>{ if(counts[r.status] !== undefined) counts[r.status]++; });
   return counts;
 }
-function searchEmployeePrintLog(){
+// Individual Employee Print Log can be asked for any past year, but
+// only the last ~90 days live in ATTENDANCE_LOG (already loaded at
+// login) — older entries move to the AttendanceArchive tab (see
+// archiveOldAttendance_() in Code.gs) so every login stays fast as
+// the log grows. This merges the fast in-memory recent records with
+// an on-demand fetch of just this one employee's archived rows, so a
+// search/print for an older year still finds everything. The extra
+// request only happens when this specific feature is actually used —
+// never at login, and never for every employee at once.
+async function employeeYearAttendanceWithArchive(name, year){
+  const local = employeeYearAttendance(name, year);
+  const archived = await safeApiGet('attendanceArchiveByEmployee&name=' + encodeURIComponent(name), []);
+  const fromArchive = archived
+    .filter(a => !isNaN(new Date(a.Day)) && new Date(a.Day).getFullYear() === year)
+    .map((a, idx) => ({name:a.EmployeeName, date:a.Day, time:a.Time, status:a.Status, remarks:a.Remarks, id:a.ID, loggedBy:a.LoggedBy, _idx: idx}));
+  const seen = new Set();
+  return [...local, ...fromArchive]
+    .filter(r => { if(seen.has(r.id)) return false; seen.add(r.id); return true; }) // in case a record got archived between page load and this search
+    .sort((a,b)=>{
+      const ak = (a.date||'') + ' ' + (a.time||'');
+      const bk = (b.date||'') + ' ' + (b.time||'');
+      if(ak !== bk) return bk.localeCompare(ak);
+      return (b._idx||0) - (a._idx||0);
+    });
+}
+async function searchEmployeePrintLog(){
   const err = document.getElementById('attendancePrintErr');
   err.style.display = 'none';
   const preview = document.getElementById('attendancePrintPreview');
@@ -6726,7 +6758,8 @@ function searchEmployeePrintLog(){
   if(!name){ err.textContent = "Type an employee name and pick a real match from the suggestions."; err.style.display='block'; preview.innerHTML=''; return; }
   const year = Number(document.getElementById('attendancePrintYear').value);
 
-  const records = employeeYearAttendance(name, year);
+  preview.innerHTML = `<p class="muted" style="margin-top:12px;">Searching...</p>`;
+  const records = await employeeYearAttendanceWithArchive(name, year);
   if(!records.length){
     preview.innerHTML = `<p class="muted" style="margin-top:12px;">No attendance entries found for ${name} in ${year}.</p>`;
     return;
@@ -6744,14 +6777,14 @@ function searchEmployeePrintLog(){
       </div>
     </div>`;
 }
-function printEmployeeLog(){
+async function printEmployeeLog(){
   const err = document.getElementById('attendancePrintErr');
   err.style.display = 'none';
   const name = readEmployeePicker('attendancePrintEmp');
   if(!name){ err.textContent = "Type an employee name and pick a real match from the suggestions."; err.style.display='block'; return; }
   const year = Number(document.getElementById('attendancePrintYear').value);
 
-  const records = employeeYearAttendance(name, year);
+  const records = await employeeYearAttendanceWithArchive(name, year);
   const counts = attendanceCounts(records);
   document.getElementById('attendancePrintTitle').textContent = `Attendance Log — ${name} — ${year}`;
   document.getElementById('attendancePrintTable').innerHTML = `
@@ -6820,6 +6853,33 @@ async function deleteAttendanceEntry(id, el){
     ATTENDANCE_LOG = ATTENDANCE_LOG.filter(a=>a.id!==id);
     renderView('mgmt-attendance');
   });
+}
+
+async function runAttendanceArchiveNow(){
+  if(!confirm(`Move all attendance records older than ${ATTENDANCE_ARCHIVE_DAYS_CLIENT} days into the Archive tab? They'll still be searchable in Individual Employee Print Log — nothing is deleted.`)) return;
+  const btn = document.getElementById('archiveNowBtn');
+  const msg = document.getElementById('archiveNowMsg');
+  btnLoadingEl(btn, 'Archiving...');
+  msg.style.display = 'none';
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPost('archiveAttendanceNow', {});
+      if(!r.ok){ msg.textContent = r.error || "Couldn't archive right now — please try again."; msg.style.display = 'block'; btnResetEl(btn); return; }
+      msg.textContent = r.archived > 0
+        ? `Moved ${r.archived} record${r.archived===1?'':'s'} to the Archive tab. ${r.kept} recent record${r.kept===1?'':'s'} kept.`
+        : `Nothing to archive yet — no records are older than ${ATTENDANCE_ARCHIVE_DAYS_CLIENT} days.`;
+      msg.style.display = 'block';
+      // The just-archived records were already older than 90 days, so
+      // they weren't part of ATTENDANCE_LOG's "recent" load anyway —
+      // no local state to update here, Current Log/Summary are unaffected.
+    }
+    btnResetEl(btn);
+    btn.textContent = 'Archive Old Records Now';
+  } catch(e){
+    msg.textContent = e.message || "Couldn't archive right now — please try again.";
+    msg.style.display = 'block';
+    btnResetEl(btn);
+  }
 }
 
 let editingAttendanceId = null;
