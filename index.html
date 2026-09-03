@@ -536,9 +536,32 @@ async function fetchWithTimeout(url, options){
   }
 }
 
+// Both apiGet and apiPost expect JSON back — but the server they're
+// hitting isn't only "our script": Google's own infrastructure can
+// return an HTML page instead (an authorization prompt, a quota
+// error, a temporary outage page, or a deployment that's still
+// propagating right after a redeploy), and Cloudflare could too. When
+// that happens res.json() throws the browser's raw parse error —
+// "Unexpected token '<', "<!DOCTYPE "... is not valid JSON" — which
+// used to leak straight through to whoever called apiGet/apiPost,
+// including all the way up to the login screen. Reading the response
+// as text first and parsing it ourselves lets us catch that case and
+// throw one clear, friendly message instead — and since safeApiGet
+// already retries on any thrown error, this also means an HTML
+// response for a regular data fetch is now retried automatically
+// instead of being a raw, uncaught failure.
+async function parseApiResponse_(res){
+  const text = await res.text();
+  try{
+    return JSON.parse(text);
+  } catch(e){
+    console.warn("Non-JSON response from server:", text.slice(0, 300));
+    throw new Error("The server sent back an unexpected response. This is usually temporary — please try again in a moment.");
+  }
+}
 async function apiGet(action){
   const res = await fetchWithTimeout(`${SHEET_API_URL}?action=${action}`);
-  return res.json();
+  return parseApiResponse_(res);
 }
 /* Forces a fresh fetch instead of a possibly-stale cached one — use
    this for any GET that runs right after a save/update on the same
@@ -553,7 +576,7 @@ async function apiPost(action, payload){
     method: "POST",
     body: JSON.stringify(Object.assign({action}, payload))
   });
-  return res.json();
+  return parseApiResponse_(res);
 }
 /* Same as apiPost, but guarantees the loading spinner stays visible
    for at least minMs — on a fast connection a request can finish in
@@ -1690,14 +1713,23 @@ async function doLoginWithCredentials(u, p){
 // still has failed endpoints after its own retries, while finishLogin()
 // (below) does one more full reload in the background. Deliberately NOT
 // the mgmtToastContainer/backdrop pattern used for real notifications —
-// this shouldn't block clicks or require dismissing.
-function showDataRecoveryBanner(){
-  if(document.getElementById('dataRecoveryBanner')) return;
-  const el = document.createElement('div');
-  el.id = 'dataRecoveryBanner';
-  el.style.cssText = 'position:fixed; top:14px; left:50%; transform:translateX(-50%); z-index:210; background:var(--gold-soft); border:1px solid rgba(201,162,75,.4); color:#F0D9A0; padding:8px 16px; border-radius:20px; font-size:12.5px; font-weight:600; box-shadow:0 4px 16px rgba(0,0,0,.35); display:flex; align-items:center; gap:8px;';
-  el.innerHTML = `<span class="btn-spinner" style="width:12px; height:12px; border-color:rgba(240,217,160,0.35); border-top-color:#F0D9A0;"></span> Finishing up — some data is still loading...`;
-  document.body.appendChild(el);
+// this shouldn't block clicks or require dismissing. Pass isFinal=true
+// for the "we tried and it's still not loading" message, styled as a
+// warning instead of the neutral "still working on it" tone.
+function showDataRecoveryBanner(message, isFinal){
+  let el = document.getElementById('dataRecoveryBanner');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'dataRecoveryBanner';
+    document.body.appendChild(el);
+  }
+  const color = isFinal ? '#E0A45C' : '#F0D9A0';
+  const bg = isFinal ? 'rgba(193,91,74,0.18)' : 'var(--gold-soft)';
+  const border = isFinal ? 'rgba(224,164,92,0.4)' : 'rgba(201,162,75,.4)';
+  el.style.cssText = `position:fixed; top:14px; left:50%; transform:translateX(-50%); z-index:210; background:${bg}; border:1px solid ${border}; color:${color}; padding:8px 16px; border-radius:20px; font-size:12.5px; font-weight:600; box-shadow:0 4px 16px rgba(0,0,0,.35); display:flex; align-items:center; gap:8px;`;
+  el.innerHTML = isFinal
+    ? `⚠️ ${message}`
+    : `<span class="btn-spinner" style="width:12px; height:12px; border-color:rgba(240,217,160,0.35); border-top-color:#F0D9A0;"></span> ${message || 'Finishing up — some data is still loading...'}`;
 }
 function hideDataRecoveryBanner(){
   const el = document.getElementById('dataRecoveryBanner');
@@ -1708,9 +1740,15 @@ function hideDataRecoveryBanner(){
 // session) — shows the dashboard right away via setRole() as before,
 // then, ONLY if loadRemoteData() came back with something still
 // missing after its own retries, quietly does exactly what a manual
-// page refresh used to be needed for: reload once more and re-render
-// — automatically, without the person having to notice and do it
-// themselves. Polling baselines are (re-)seeded AFTER this, so they
+// page refresh used to be needed for: reload again and re-render —
+// automatically, without the person having to notice and do it
+// themselves. Tries up to 3 times with increasing backoff (5s, 10s,
+// 15s) instead of just once — a single 2.5s-then-retry used to give
+// up too quickly for a longer-than-usual Apps Script slowdown (e.g.
+// right after a redeploy, or a burst of heavy activity), leaving the
+// person stuck with an empty dashboard and no further automatic
+// attempt, exactly what manually refreshing used to be needed for.
+// Polling baselines are (re-)seeded only once this finishes, so they
 // are never built from a load known to be incomplete — this is what
 // actually stops the delayed burst of notification pop-ups, since
 // that burst was always the poller comparing fresh data against a
@@ -1719,11 +1757,21 @@ async function finishLogin(){
   setRole(CURRENT_USER.role);
   if(!lastLoadHadFailures) return;
   showDataRecoveryBanner();
-  await new Promise(r => setTimeout(r, 2500)); // let the earlier burst of concurrent Apps Script executions clear
-  await loadRemoteData();
+  const backoffs = [5000, 10000, 15000];
+  for(let i = 0; i < backoffs.length; i++){
+    await new Promise(r => setTimeout(r, backoffs[i]));
+    await loadRemoteData();
+    if(!lastLoadHadFailures) break; // recovered — no need for the remaining attempts
+  }
   hideDataRecoveryBanner();
-  renderView(activeView); // re-render whatever's currently on screen with the now-complete data
+  renderView(activeView); // re-render whatever's currently on screen with whatever data ultimately came back
   renderNav();
+  if(lastLoadHadFailures){
+    // Every attempt still came back incomplete — something more than
+    // a brief blip. Say so plainly instead of pretending it's fixed;
+    // a manual refresh is still the person's fastest path at this point.
+    showDataRecoveryBanner("Some data still isn't loading — try refreshing the page in a moment.", true);
+  }
   // startEmpPolling()/startMgmtPolling() already ran once inside
   // setRole() above and won't run again while their interval is
   // active — re-seed the baseline directly instead.
@@ -5170,6 +5218,7 @@ const BUILDERS = {
     <div class="card no-print" style="margin-bottom:16px;">
       <h3><span class="ic">🗄️</span> Attendance Archiving</h3>
       <p class="muted" style="margin-bottom:12px;">Records older than ${ATTENDANCE_ARCHIVE_DAYS_CLIENT} days move to a separate Archive tab automatically once a month, so logging in stays fast as the log grows. Nothing is deleted — Individual Employee Print Log above still finds archived records too. You can also run it manually right now instead of waiting for the schedule.</p>
+      <p style="margin-bottom:12px; font-size:12.5px; color:var(--gold);">⚠️ This rewrites the whole Attendance sheet, so it's best run when few or no one else is using the portal (e.g. late at night) — running it during busy hours can briefly slow down everyone else's logins and requests.</p>
       <button class="btn ghost auto" id="archiveNowBtn" onclick="runAttendanceArchiveNow()">Archive Old Records Now</button>
       <p id="archiveNowMsg" class="muted" style="margin-top:10px; display:none;"></p>
     </div>
@@ -6856,7 +6905,7 @@ async function deleteAttendanceEntry(id, el){
 }
 
 async function runAttendanceArchiveNow(){
-  if(!confirm(`Move all attendance records older than ${ATTENDANCE_ARCHIVE_DAYS_CLIENT} days into the Archive tab? They'll still be searchable in Individual Employee Print Log — nothing is deleted.`)) return;
+  if(!confirm(`Move all attendance records older than ${ATTENDANCE_ARCHIVE_DAYS_CLIENT} days into the Archive tab? They'll still be searchable in Individual Employee Print Log — nothing is deleted.\n\nBest run when few people are using the portal — it briefly rewrites the whole Attendance sheet, which can slow down everyone else's requests while it's working.`)) return;
   const btn = document.getElementById('archiveNowBtn');
   const msg = document.getElementById('archiveNowMsg');
   btnLoadingEl(btn, 'Archiving...');
