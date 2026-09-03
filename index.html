@@ -986,9 +986,89 @@ function renderTeamOnDuty(){
    so the list of options grows naturally as real shifts get added.
    ============================================================ */
 let scheduleFilterDept = 'All';
-function setScheduleFilter(dept){
-  scheduleFilterDept = dept;
-  renderView('mgmt-schedule');
+let scheduleSearchQuery = '';
+let scheduleFilterVenue = 'All';
+let scheduleFilterShift = 'All';
+let scheduleFilterStatus = 'All'; // 'All' | 'Working' | 'Off' | 'Leave'
+const SCHEDULE_DEPTS = ["CLUB 88","SAIPAN VEGAS","SLOT TECHNICIAN","SECURITY"];
+
+// Whether an employee's row should show, given the current filter
+// state. Department + Search are per-employee attributes (checked
+// directly). Venue/Shift/Status describe one shift instance, so the
+// row matches if there's at least one day this week where all three
+// hold together — e.g. Venue=Club 88 + Shift=3:00PM-11:30PM only
+// matches a row that has THAT combination on some day, not a row
+// that merely has Club 88 on Monday and that shift time on Thursday.
+function scheduleRowMatchesFilters(r){
+  if(scheduleFilterDept !== 'All' && (r.department||'').toUpperCase() !== scheduleFilterDept) return false;
+  if(scheduleSearchQuery && !r.name.toLowerCase().includes(scheduleSearchQuery.trim().toLowerCase())) return false;
+  if(scheduleFilterVenue === 'All' && scheduleFilterShift === 'All' && scheduleFilterStatus === 'All') return true;
+  return r.cells.some(c=>{
+    const p = parseScheduleCell(c);
+    if(scheduleFilterStatus !== 'All'){
+      const statusLabel = p.type==='shift' ? 'Working' : p.type==='off' ? 'Off' : p.type==='leave' ? 'Leave' : null;
+      if(statusLabel !== scheduleFilterStatus) return false;
+    }
+    if(scheduleFilterVenue !== 'All' && p.venueFull !== scheduleFilterVenue) return false;
+    if(scheduleFilterShift !== 'All' && p.time !== scheduleFilterShift) return false;
+    return true;
+  });
+}
+
+// Renders just the <tr> rows — reads SCHEDULE_ROWS/NEXT_SCHEDULE_ROWS
+// (already loaded once at login) and filters/sorts them in memory,
+// with no network request. Every filter control below calls
+// applyScheduleFilters(), which replaces ONLY this <tbody>'s
+// innerHTML — never the whole mgmt-schedule view — so typing in
+// Search Employee or changing a dropdown never re-renders the filter
+// bar, the This Week/Next Week header, or anything else on the page.
+function renderScheduleRows(){
+  const isNext = scheduleViewMode === 'next';
+  const days = isNext ? NEXT_SCHEDULE_DAYS : SCHEDULE_DAYS;
+  const rows = isNext ? NEXT_SCHEDULE_ROWS : SCHEDULE_ROWS;
+  const sheetName = isNext ? 'NextSchedule' : 'Schedule';
+  const filtered = sortScheduleRows(rows.filter(scheduleRowMatchesFilters));
+  const filtersActive = scheduleSearchQuery || scheduleFilterDept!=='All' || scheduleFilterVenue!=='All' || scheduleFilterShift!=='All' || scheduleFilterStatus!=='All';
+  return filtered.map(r=>`<tr>
+          <td class="print-hide-col">
+            <select onchange="updateScheduleDept('${r.name.replace(/'/g,"\\'")}', this.value, '${sheetName}')">
+              ${SCHEDULE_DEPTS.map(d=>`<option value="${d}" ${((r.department||'').toUpperCase()===d)?'selected':''}>${d.charAt(0)+d.slice(1).toLowerCase()}</option>`).join('')}
+            </select>
+          </td>
+          <td class="sched-name">${r.name}<br><button class="btn ghost auto no-print" style="padding:2px 8px; font-size:10px; margin-top:3px;" onclick="openWeekModal('${r.name.replace(/'/g,"\\'")}', '${sheetName}')">Edit Week</button></td><td class="muted print-hide-col">${r.role||''}</td>
+          ${r.cells.map((c,i)=>{
+            const p = parseScheduleCell(c);
+            const cellArg = `'${r.name.replace(/'/g,"\\'")}', ${i}, ${JSON.stringify(c||"").replace(/"/g,'&quot;')}, '${sheetName}'`;
+            let inner;
+            let colorClass = '';
+            if(p.type==='off') inner = `<span class="muted">Off</span>`;
+            else if(p.type==='leave') inner = `<span class="muted">Leave</span>`;
+            else if(p.type==='blocked' || p.type==='empty') inner = `<span class="muted">—</span>`;
+            else { inner = `<span class="cell-time">${p.time}</span><br><span class="cell-venue">${p.venueFull||''}</span><span class="cell-pos muted">${p.venueFull && p.position ? ' · ' : ''}${p.position}</span>`; colorClass = shiftHighlightClass(p.time, p.position); }
+            return `<td class="${colorClass}" style="cursor:pointer;" onclick="openCellModal(${cellArg})">${inner}</td>`;
+          }).join('')}
+        </tr>`).join('') || `<tr><td colspan="10" class="muted">${filtersActive ? 'No employees match the selected filters.' : (isNext ? 'Nothing prepped yet — paste next week into the NextSchedule tab in your Sheet.' : 'No schedule loaded yet — paste it into the Schedule tab in your Sheet.')}</td></tr>`;
+}
+// All filter interactions funnel through here — one shared place
+// that updates only the table body, so Search/Department/Venue/
+// Shift/Status behave identically and stay cheap even with many
+// employees and many weeks of schedule rows loaded.
+function applyScheduleFilters(){
+  const tbody = document.getElementById('scheduleTableRows');
+  if(tbody) tbody.innerHTML = renderScheduleRows();
+}
+function setScheduleSearch(val){ scheduleSearchQuery = val; applyScheduleFilters(); }
+function setScheduleFilterDept(val){ scheduleFilterDept = val; applyScheduleFilters(); }
+function setScheduleFilterVenue(val){ scheduleFilterVenue = val; applyScheduleFilters(); }
+function setScheduleFilterShift(val){ scheduleFilterShift = val; applyScheduleFilters(); }
+function setScheduleFilterStatus(val){ scheduleFilterStatus = val; applyScheduleFilters(); }
+function resetScheduleFilters(){
+  scheduleFilterDept = 'All';
+  scheduleSearchQuery = '';
+  scheduleFilterVenue = 'All';
+  scheduleFilterShift = 'All';
+  scheduleFilterStatus = 'All';
+  renderView('mgmt-schedule'); // full re-render is fine here — resetting also needs the dropdowns/search box themselves to visually reset, and this only happens on a deliberate click, not per keystroke
 }
 let scheduleViewMode = 'current'; // 'current' | 'next'
 function setScheduleViewMode(mode){
@@ -996,8 +1076,17 @@ function setScheduleViewMode(mode){
   renderView('mgmt-schedule');
 }
 
+// Always-offered shift times, even before they've been used anywhere
+// in the schedule yet — same pattern as EXTRA_POSITION_OPTIONS below.
+// Without this, a brand-new shift time has no way to ever get
+// selected in the first place: the Time dropdown (single-cell editor
+// and the Edit Week editor) is built entirely from whatever times
+// already appear somewhere in SCHEDULE_ROWS/NEXT_SCHEDULE_ROWS, so a
+// genuinely new shift could never be picked for the very first
+// employee assigned to it.
+const EXTRA_TIME_OPTIONS = ["3:00PM-11:30PM"];
 function getUniqueScheduleTimes(){
-  const set = new Set();
+  const set = new Set(EXTRA_TIME_OPTIONS);
   [...SCHEDULE_ROWS, ...NEXT_SCHEDULE_ROWS].forEach(r => r.cells.forEach(c => {
     const p = parseScheduleCell(c);
     if(p.type === 'shift' && p.time) set.add(p.time);
@@ -4913,12 +5002,8 @@ const BUILDERS = {
   },
 
   "mgmt-schedule": ()=>{
-    const DEPTS = ["CLUB 88","SAIPAN VEGAS","SLOT TECHNICIAN","SECURITY"];
     const isNext = scheduleViewMode === 'next';
     const days = isNext ? NEXT_SCHEDULE_DAYS : SCHEDULE_DAYS;
-    const rows = isNext ? NEXT_SCHEDULE_ROWS : SCHEDULE_ROWS;
-    const sheetName = isNext ? 'NextSchedule' : 'Schedule';
-    const filtered = sortScheduleRows(scheduleFilterDept === 'All' ? rows : rows.filter(r => (r.department||'').toUpperCase() === scheduleFilterDept));
     return `
     <div class="no-print" style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; justify-content:space-between; align-items:center;">
       <div style="display:flex; gap:8px;">
@@ -4949,33 +5034,32 @@ const BUILDERS = {
         <button class="btn ghost auto" onclick="openAddSchedEmpModal()">+ Add New Employee</button>
       </div>
     </div>` : ''}
-    <div class="no-print" style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
-      ${['All', ...DEPTS].map(d=>`<button class="btn ${scheduleFilterDept===d?'':'ghost'} auto" style="padding:8px 14px;" onclick="setScheduleFilter('${d}')">${d==='All'?'View All':d.charAt(0)+d.slice(1).toLowerCase()}</button>`).join('')}
+    <div class="card no-print" style="padding:14px 16px; margin-bottom:16px;">
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <input type="text" id="scheduleSearchInput" placeholder="🔍 Search employee..." value="${scheduleSearchQuery}" oninput="setScheduleSearch(this.value)" style="max-width:170px; margin-bottom:0;">
+        <select onchange="setScheduleFilterDept(this.value)" style="max-width:160px; margin-bottom:0;">
+          ${['All', ...SCHEDULE_DEPTS].map(d=>`<option value="${d}" ${scheduleFilterDept===d?'selected':''}>${d==='All'?'All Departments':d.charAt(0)+d.slice(1).toLowerCase()}</option>`).join('')}
+        </select>
+        <select onchange="setScheduleFilterVenue(this.value)" style="max-width:140px; margin-bottom:0;">
+          <option value="All" ${scheduleFilterVenue==='All'?'selected':''}>All Venues</option>
+          ${Object.values(VENUE_NAMES).map(v=>`<option value="${v}" ${scheduleFilterVenue===v?'selected':''}>${v}</option>`).join('')}
+        </select>
+        <select onchange="setScheduleFilterShift(this.value)" style="max-width:160px; margin-bottom:0;">
+          <option value="All" ${scheduleFilterShift==='All'?'selected':''}>All Shifts</option>
+          ${getUniqueScheduleTimes().map(t=>`<option value="${t}" ${scheduleFilterShift===t?'selected':''}>${t}</option>`).join('')}
+        </select>
+        <select onchange="setScheduleFilterStatus(this.value)" style="max-width:130px; margin-bottom:0;">
+          ${['All','Working','Off','Leave'].map(s=>`<option value="${s}" ${scheduleFilterStatus===s?'selected':''}>${s==='All'?'All Status':s}</option>`).join('')}
+        </select>
+        <button class="btn ghost auto" style="padding:8px 14px;" onclick="resetScheduleFilters()">Reset Filters</button>
+      </div>
     </div>
     <div class="card table-scroll">
       <h3><span class="ic">📅</span> ${isNext ? 'Next Week Schedule' : 'Master Schedule'}</h3>
       <p class="muted no-print" style="margin-bottom:12px;">Click any shift cell to edit it. Department is a dropdown — use it if someone transfers between venues.</p>
       <table>
         <tr><th class="print-hide-col">Department</th><th>Employee</th><th class="print-hide-col">Role</th>${days.map(d=>`<th>${fmtDayLabel(d)}</th>`).join('')}</tr>
-        ${filtered.map(r=>`<tr>
-          <td class="print-hide-col">
-            <select onchange="updateScheduleDept('${r.name.replace(/'/g,"\\'")}', this.value, '${sheetName}')">
-              ${DEPTS.map(d=>`<option value="${d}" ${((r.department||'').toUpperCase()===d)?'selected':''}>${d.charAt(0)+d.slice(1).toLowerCase()}</option>`).join('')}
-            </select>
-          </td>
-          <td class="sched-name">${r.name}<br><button class="btn ghost auto no-print" style="padding:2px 8px; font-size:10px; margin-top:3px;" onclick="openWeekModal('${r.name.replace(/'/g,"\\'")}', '${sheetName}')">Edit Week</button></td><td class="muted print-hide-col">${r.role||''}</td>
-          ${r.cells.map((c,i)=>{
-            const p = parseScheduleCell(c);
-            const cellArg = `'${r.name.replace(/'/g,"\\'")}', ${i}, ${JSON.stringify(c||"").replace(/"/g,'&quot;')}, '${sheetName}'`;
-            let inner;
-            let colorClass = '';
-            if(p.type==='off') inner = `<span class="muted">Off</span>`;
-            else if(p.type==='leave') inner = `<span class="muted">Leave</span>`;
-            else if(p.type==='blocked' || p.type==='empty') inner = `<span class="muted">—</span>`;
-            else { inner = `<span class="cell-time">${p.time}</span><br><span class="cell-venue">${p.venueFull||''}</span><span class="cell-pos muted">${p.venueFull && p.position ? ' · ' : ''}${p.position}</span>`; colorClass = shiftHighlightClass(p.time, p.position); }
-            return `<td class="${colorClass}" style="cursor:pointer;" onclick="openCellModal(${cellArg})">${inner}</td>`;
-          }).join('')}
-        </tr>`).join('') || `<tr><td colspan="10" class="muted">${isNext ? 'Nothing prepped yet — paste next week into the NextSchedule tab in your Sheet.' : 'No schedule loaded yet — paste it into the Schedule tab in your Sheet.'}</td></tr>`}
+        <tbody id="scheduleTableRows">${renderScheduleRows()}</tbody>
       </table>
     </div>`;
   },
