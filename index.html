@@ -1635,20 +1635,19 @@ const LAST_VIEW_KEY = "sv_staff_portal_last_view";
 
 async function doLoginWithCredentials(u, p){
   if(USE_REMOTE()){
-    // Same transient-congestion issue as safeApiGet — the login call
-    // itself can hit the same busy Apps Script and time out, forcing
-    // the person to notice the error and click Log In again by hand.
-    // One silent retry here covers that without changing what an
-    // actually-wrong password does (that still comes back as a
-    // normal {ok:false} response, not a thrown error, so it's not
-    // retried).
-    let r;
-    try{
-      r = await apiPost('login', {username:u, password:p});
-    } catch(e){
-      await new Promise(res => setTimeout(res, 1200));
-      r = await apiPost('login', {username:u, password:p});
-    }
+    // NOTE: a previous change here added one silent retry-on-timeout
+    // for the login call, meaning to cover the same transient
+    // congestion safeApiGet retries for. In practice that DOUBLED the
+    // worst-case wait before showing an error — 20s timeout, then a
+    // second full 20s timeout on retry — which is almost exactly the
+    // "~38 seconds, then a timeout error" this was reported as. A
+    // retry only helps if the retry attempt is more likely to
+    // succeed than the first one; with 16-19 competing calls all
+    // firing at once during login (see loadRemoteData below), a
+    // retry 1.2s later was hitting the exact same congestion, not a
+    // cleared one — so it only added wait time. Reverted to a single
+    // attempt; the real fix is the reduced call count below.
+    const r = await apiPost('login', {username:u, password:p});
     if(!r.ok) return {success:false, error: r.error || "Incorrect username or password."};
     if(r.role === 'management'){
       CURRENT_USER = {role:'management', displayName:r.displayName, username:r.username, accessLevel: r.accessLevel || 'full', mgmtRole: r.mgmtRole || 'full'};
@@ -1832,13 +1831,17 @@ async function safeApiGet(action, fallback, _attempt){
     return result;
   }
   catch(e){
-    if(_attempt < 2){
-      // Short backoff — enough time for the burst of concurrent
-      // Apps Script executions from this same login to clear before
-      // trying again. 2 retries (3 attempts total) covers the
-      // transient-congestion case this bug report described without
-      // adding a lot of extra wait when something is genuinely down.
-      await new Promise(r => setTimeout(r, 1200 * (_attempt + 1)));
+    if(_attempt < 1){
+      // Reduced from 2 retries to 1 (last session's 2-retry version
+      // meant a single failed call could block login for up to
+      // 20s + 1.2s + 20s + 2.4s + 20s ≈ 64s in the worst case, all of
+      // it BEFORE the dashboard is even shown, since loadRemoteData()
+      // is awaited before login finishes). One short retry still
+      // catches the common transient blip; anything that fails twice
+      // is handled by finishLogin()'s post-login recovery instead —
+      // which runs AFTER the dashboard is already visible, so the
+      // person isn't stuck staring at a login spinner for it.
+      await new Promise(r => setTimeout(r, 1000));
       return safeApiGet(action, fallback, _attempt + 1);
     }
     console.warn(`safeApiGet('${action}') failed after retries:`, e);
@@ -1929,25 +1932,34 @@ async function loadRemoteData(){
     // was pure waste, and the biggest, slowest-growing payloads in
     // the whole login sequence.
     const isMgmtCapable = !!(CURRENT_USER && (CURRENT_USER.role === 'management' || CURRENT_USER.mgmtRole));
-    const [roster, schedule, nextSchedule, attendance, announcements, recognition, requests, accountsStatus, concerns, suggestions, evaluations, myConcernsRaw, mySuggestionsRaw, myGivenEvaluationsRaw, disciplinaryRecords, myDisciplinaryRaw, formsLibrary, nominations, myNominationsRaw, myEvaluationsReceivedRaw, myRequestsScopedRaw, myRecognitionRaw] = await Promise.all([
-      safeApiGet('roster', []), safeApiGet('schedule', {days:[],rows:[]}), safeApiGet('nextSchedule', {days:[],rows:[],published:false}), safeApiGet('attendance', []),
-      safeApiGet('announcements', []),
-      isMgmtCapable ? safeApiGet('recognition', []) : Promise.resolve([]),
-      isMgmtCapable ? safeApiGet('requests', []) : Promise.resolve([]),
-      safeApiGet('accountsStatus', []),
-      isMgmtCapable ? safeApiGet('concerns', []) : Promise.resolve([]),
-      isMgmtCapable ? safeApiGet('suggestions', []) : Promise.resolve([]),
-      isMgmtCapable ? safeApiGet('evaluations', []) : Promise.resolve([]),
-      safeApiGet('myConcerns&name=' + encodeURIComponent(myName), []), safeApiGet('mySuggestions&name=' + encodeURIComponent(myName), []),
-      safeApiGet('myGivenEvaluations&name=' + encodeURIComponent(myName), []),
-      isMgmtCapable ? safeApiGet('disciplinaryRecords', []) : Promise.resolve([]),
-      safeApiGet('myDisciplinaryRecords&name=' + encodeURIComponent(myName), []),
-      safeApiGet('formsLibrary', []),
-      safeApiGet('nominations', []), safeApiGet('myNominations&name=' + encodeURIComponent(myName), []),
-      !isMgmtCapable ? safeApiGet('myEvaluationsReceived&name=' + encodeURIComponent(myName), []) : Promise.resolve([]),
-      !isMgmtCapable ? safeApiGet('myRequestsScoped&name=' + encodeURIComponent(myName), []) : Promise.resolve([]),
-      !isMgmtCapable ? safeApiGet('myRecognition&name=' + encodeURIComponent(myName), []) : Promise.resolve([])
+    // Grouped into a handful of round-trips instead of ~16-19
+    // individual ones (see the matching comment on the "Grouped
+    // login-time endpoints" in Code.gs for why: fewer round-trips
+    // eases pressure on Apps Script's shared concurrent-execution
+    // cap, without repeating the earlier mistake of bundling
+    // everything into ONE call, which just turned parallel reads
+    // into sequential ones). Each group's own fallback shape mirrors
+    // exactly what its fields were defaulting to before.
+    const emptyScheduleGroup = {roster:[], schedule:{days:[],rows:[]}, nextSchedule:{days:[],rows:[],published:false}, accountsStatus:[]};
+    const emptyGeneralGroup = {attendance:[], announcements:[], formsLibrary:[], nominations:[]};
+    const emptyMgmtBulkA = {recognition:[], requests:[], concerns:[]};
+    const emptyMgmtBulkB = {suggestions:[], evaluations:[], disciplinaryRecords:[]};
+    const emptyMyPersonalGroup = {myConcerns:[], mySuggestions:[], myGivenEvaluations:[], myDisciplinaryRecords:[]};
+    const emptyMyEmployeeScopedGroup = {myEvaluationsReceived:[], myRequestsScoped:[], myRecognition:[]};
+    const [scheduleGroup, generalGroup, myPersonalGroup, mgmtBulkA, mgmtBulkB, myEmpScopedGroup] = await Promise.all([
+      safeApiGet('scheduleGroup', emptyScheduleGroup),
+      safeApiGet('generalGroup', emptyGeneralGroup),
+      safeApiGet('myPersonalGroup&name=' + encodeURIComponent(myName), emptyMyPersonalGroup),
+      isMgmtCapable ? safeApiGet('mgmtBulkGroupA', emptyMgmtBulkA) : Promise.resolve(emptyMgmtBulkA),
+      isMgmtCapable ? safeApiGet('mgmtBulkGroupB', emptyMgmtBulkB) : Promise.resolve(emptyMgmtBulkB),
+      !isMgmtCapable ? safeApiGet('myEmployeeScopedGroup&name=' + encodeURIComponent(myName), emptyMyEmployeeScopedGroup) : Promise.resolve(emptyMyEmployeeScopedGroup)
     ]);
+    const roster = scheduleGroup.roster, schedule = scheduleGroup.schedule, nextSchedule = scheduleGroup.nextSchedule, accountsStatus = scheduleGroup.accountsStatus;
+    const attendance = generalGroup.attendance, announcements = generalGroup.announcements, formsLibrary = generalGroup.formsLibrary, nominations = generalGroup.nominations;
+    const myConcernsRaw = myPersonalGroup.myConcerns, mySuggestionsRaw = myPersonalGroup.mySuggestions, myGivenEvaluationsRaw = myPersonalGroup.myGivenEvaluations, myDisciplinaryRaw = myPersonalGroup.myDisciplinaryRecords;
+    const recognition = mgmtBulkA.recognition, requests = mgmtBulkA.requests, concerns = mgmtBulkA.concerns;
+    const suggestions = mgmtBulkB.suggestions, evaluations = mgmtBulkB.evaluations, disciplinaryRecords = mgmtBulkB.disciplinaryRecords;
+    const myEvaluationsReceivedRaw = myEmpScopedGroup.myEvaluationsReceived, myRequestsScopedRaw = myEmpScopedGroup.myRequestsScoped, myRecognitionRaw = myEmpScopedGroup.myRecognition;
     EMPLOYEE_ROSTER.length = 0;
     const acctByName = {};
     accountsStatus.forEach(a => { acctByName[a.employeeName] = a; });
@@ -1983,7 +1995,13 @@ async function loadRemoteData(){
     MOCK.suggestionsLog = suggestions.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID})).reverse();
     MY_SUGGESTIONS = mySuggestionsRaw.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID})).reverse();
     ALL_NOMINATIONS = nominations.slice().reverse();
-    MY_NOMINATIONS = myNominationsRaw.slice().reverse();
+    // Derived client-side instead of a separate myNominations network
+    // call — the nominations list isn't stripped/anonymized (unlike
+    // Concerns/Suggestions/Evaluations), so filtering the already-
+    // fetched full list to "my own" here is exactly equivalent to
+    // what the server-side myNominations endpoint computed, at zero
+    // extra round-trips.
+    MY_NOMINATIONS = nominations.filter(n => n.NominatorName === myName).slice().reverse();
     lastLoadHadFailures = lastLoadFailedActions.length > 0;
   } catch(e){ lastLoadHadFailures = true; /* keep whatever was already loaded if a fetch fails */ }
 }
