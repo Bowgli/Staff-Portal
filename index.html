@@ -270,6 +270,18 @@
     .print-doc th, .print-doc td{ font-size:11.5px !important; padding:6px 8px !important; line-height:1.4 !important; word-break:normal !important; overflow-wrap:break-word !important; white-space:normal !important; }
     .print-doc h3{ font-size:15px !important; margin:16px 0 8px !important; }
     .print-doc .card{ margin-bottom:4px !important; page-break-inside:avoid; }
+    /* Multi-page tabular reports (e.g. Individual Employee Print Log)
+       need the OPPOSITE of the rule above — forcing the whole card to
+       avoid breaking was making the browser shove the entire table
+       onto the next page rather than let it flow, leaving a large
+       blank gap at the bottom of page 1 and only a handful of rows
+       on page 2. .print-flow overrides that so the table breaks
+       naturally, page to page, while the per-row rule below still
+       keeps any ONE row from being split awkwardly in half. */
+    .print-flow{ page-break-inside:auto !important; break-inside:auto !important; }
+    .print-flow table thead{ display:table-header-group; } /* repeats the Date/Time/Status/Remarks/Logged By header on every new page */
+    .print-flow table tr{ page-break-inside:avoid !important; break-inside:avoid !important; }
+    .print-flow table th, .print-flow table td{ padding:4px 7px !important; } /* a bit tighter than the general .print-doc padding above — more rows fit per page without feeling cramped */
     /* every label cell across these tables consistently uses
        class="muted" — giving it a fixed proportion here keeps every
        report's label column the same readable width instead of the
@@ -5368,9 +5380,10 @@ const BUILDERS = {
       ${renderTodaysAttendanceSummary(todayCounts)}
       ${renderAttendanceQuickAttention(todayCounts, thisMonthRecords)}
       </div>
-      <div class="card table-scroll print-doc">
+      <div class="card table-scroll print-doc print-flow">
         <h3 class="no-print">Current Log <span class="muted" style="font-weight:400; font-size:13px;">— latest 10, search for more</span></h3>
         <h3 class="print-only" style="display:none;" id="attendancePrintTitle">Attendance / Log Absence</h3>
+        <p class="print-only" style="display:none;" id="attendancePrintSummary"></p>
         <div class="no-print" style="margin-bottom:12px;">
           <input type="text" id="attendanceSearch" placeholder="Search employee name..." value="${attendanceSearchQuery}" oninput="filterAttendanceLog(this.value)" style="margin-bottom:0;">
         </div>
@@ -5379,7 +5392,8 @@ const BUILDERS = {
           <tbody id="attendanceLogRows">${renderAttendanceLogRows()}</tbody>
         </table>
         <table class="print-only" style="display:none;" id="attendancePrintTable">
-          <tr><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th><th>Logged By</th></tr>
+          <thead><tr><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th><th>Logged By</th></tr></thead>
+          <tbody id="attendancePrintTableBody"></tbody>
         </table>
       </div>
     </div>
@@ -5402,6 +5416,7 @@ const BUILDERS = {
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <button class="btn ghost auto" onclick="searchEmployeePrintLog()">Search / View Records</button>
         <button class="btn ghost auto" onclick="printEmployeeLog()">🖨️ Print Employee Log</button>
+        <button class="btn ghost auto" onclick="clearEmployeePrintLog()">Clear / Reset</button>
       </div>
       <div id="attendancePrintPreview"></div>
     </div>
@@ -6989,6 +7004,17 @@ async function employeeYearAttendanceWithArchive(name, year){
       return (b._idx||0) - (a._idx||0);
     });
 }
+// Resets the Employee/Year selection and clears whatever's currently
+// shown, so starting a new search doesn't require manually clearing
+// the previous one first.
+function clearEmployeePrintLog(){
+  document.getElementById('attendancePrintEmp').value = '';
+  const yearSelect = document.getElementById('attendancePrintYear');
+  const currentYear = new Date().getFullYear();
+  for(const opt of yearSelect.options){ if(Number(opt.value) === currentYear){ opt.selected = true; break; } }
+  document.getElementById('attendancePrintErr').style.display = 'none';
+  document.getElementById('attendancePrintPreview').innerHTML = '';
+}
 async function searchEmployeePrintLog(){
   const err = document.getElementById('attendancePrintErr');
   err.style.display = 'none';
@@ -7026,11 +7052,13 @@ async function printEmployeeLog(){
   const records = await employeeYearAttendanceWithArchive(name, year);
   const counts = attendanceCounts(records);
   document.getElementById('attendancePrintTitle').textContent = `Attendance Log — ${name} — ${year}`;
-  document.getElementById('attendancePrintTable').innerHTML = `
-    <tr><th colspan="5" style="text-align:left;">Summary — Absences: ${counts.Absent} · Late: ${counts.Late} · Undertime: ${counts.Undertime} · Over Breaktime: ${counts["Over Breaktime"]} · Total entries: ${records.length}</th></tr>
-    <tr><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th><th>Logged By</th></tr>
-    ${records.map(a=>`<tr><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td>${a.remarks||'—'}</td><td>${a.loggedBy||'—'}</td></tr>`).join('') || `<tr><td colspan="5">No entries logged for this year.</td></tr>`}
-  `;
+  // Summary lives OUTSIDE the table now (a plain paragraph, not a
+  // table row) — it only needs to appear once, not repeat on every
+  // page the way the actual column header does.
+  document.getElementById('attendancePrintSummary').textContent =
+    `Summary — Absences: ${counts.Absent} · Late: ${counts.Late} · Undertime: ${counts.Undertime} · Over Breaktime: ${counts["Over Breaktime"]} · Total entries: ${records.length}`;
+  document.getElementById('attendancePrintTableBody').innerHTML =
+    records.map(a=>`<tr><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td>${a.remarks||'—'}</td><td>${a.loggedBy||'—'}</td></tr>`).join('') || `<tr><td colspan="5">No entries logged for this year.</td></tr>`;
   printWithPageSettings('letter','portrait','0.75in');
 }
 function printRequestsLog(){
