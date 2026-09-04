@@ -1068,29 +1068,59 @@ let scheduleSearchQuery = '';
 let scheduleFilterVenue = 'All';
 let scheduleFilterShift = 'All';
 let scheduleFilterStatus = 'All'; // 'All' | 'Working' | 'Off' | 'Leave'
-const SCHEDULE_DEPTS = ["CLUB 88","SAIPAN VEGAS","SLOT TECHNICIAN","SECURITY"];
+const SCHEDULE_DEPTS = ["CLUB 88","SAIPAN VEGAS","SLOT TECHNICIAN","SECURITY"]; // used ONLY by the per-row department-reassignment dropdown (transferring someone between venues/teams) — unrelated to the Department FILTER below
 
-// Whether an employee's row should show, given the current filter
-// state. Department + Search are per-employee attributes (checked
-// directly). Venue/Shift/Status describe one shift instance, so the
-// row matches if there's at least one day this week where all three
-// hold together — e.g. Venue=Club 88 + Shift=3:00PM-11:30PM only
-// matches a row that has THAT combination on some day, not a row
-// that merely has Club 88 on Monday and that shift time on Thursday.
-function scheduleRowMatchesFilters(r){
-  if(scheduleFilterDept !== 'All' && (r.department||'').toUpperCase() !== scheduleFilterDept) return false;
-  if(scheduleSearchQuery && !r.name.toLowerCase().includes(scheduleSearchQuery.trim().toLowerCase())) return false;
+// Department FILTER options — deliberately derived from whatever
+// role values actually exist in the schedule (Shift Manager,
+// Supervisor, Cashier, Attendant, Membership, Technical Supervisor,
+// Slot Technician, Security, etc.), the same way getUniqueScheduleTimes()
+// derives shift times from real data. A hardcoded list (like
+// SCHEDULE_DEPTS above) can silently go stale as roles change; this
+// can't, since it's read fresh from the data every time — "All
+// Department" was never actually missing anyone (that check already
+// bypasses department entirely), but this makes sure every individual
+// department option in the dropdown genuinely covers everyone.
+function getUniqueScheduleRoles(){
+  const set = new Set();
+  [...SCHEDULE_ROWS, ...NEXT_SCHEDULE_ROWS].forEach(r => { if(r.role) set.add(r.role); });
+  return Array.from(set).sort();
+}
+
+// Whether ONE DAY's cell (not the whole row) satisfies the active
+// Venue/Shift/Status filters. Used two ways below: (1) to decide row
+// visibility — a row shows if at least one day matches — and (2),
+// separately, to decide whether that day's shift actually gets
+// DISPLAYED or blanked out. Without part 2, a Security/Technical
+// employee who works both venues would still show their OTHER
+// venue's shifts on a day that didn't match, just because some OTHER
+// day in their week did — that was the reported bug: filtering by
+// Club 88 still revealed Saipan Vegas shifts for mixed-venue staff.
+function scheduleCellMatchesFilters(c){
   if(scheduleFilterVenue === 'All' && scheduleFilterShift === 'All' && scheduleFilterStatus === 'All') return true;
-  return r.cells.some(c=>{
-    const p = parseScheduleCell(c);
-    if(scheduleFilterStatus !== 'All'){
-      const statusLabel = p.type==='shift' ? 'Working' : p.type==='off' ? 'Off' : p.type==='leave' ? 'Leave' : null;
-      if(statusLabel !== scheduleFilterStatus) return false;
-    }
-    if(scheduleFilterVenue !== 'All' && p.venueFull !== scheduleFilterVenue) return false;
-    if(scheduleFilterShift !== 'All' && p.time !== scheduleFilterShift) return false;
-    return true;
-  });
+  const p = parseScheduleCell(c);
+  if(scheduleFilterStatus !== 'All'){
+    const statusLabel = p.type==='shift' ? 'Working' : p.type==='off' ? 'Off' : p.type==='leave' ? 'Leave' : null;
+    if(statusLabel !== scheduleFilterStatus) return false;
+  }
+  if(scheduleFilterVenue !== 'All' && p.venueFull !== scheduleFilterVenue) return false;
+  if(scheduleFilterShift !== 'All' && p.time !== scheduleFilterShift) return false;
+  return true;
+}
+
+// Whether an employee's row should show at all, given the current
+// filter state. Department (role) + Search are per-employee
+// attributes (checked directly). Venue/Shift/Status describe one
+// shift instance, so the row is included if there's at least one day
+// this week where all three hold together for that SAME day — e.g.
+// Venue=Club 88 + Shift=3:00PM-11:30PM only matches a row that has
+// THAT combination on some day, not a row that merely has Club 88 on
+// Monday and that shift time on Thursday. Which SPECIFIC days get
+// shown vs. blanked once a row is included is handled separately in
+// renderScheduleRows(), via scheduleCellMatchesFilters() above.
+function scheduleRowMatchesFilters(r){
+  if(scheduleFilterDept !== 'All' && (r.role||'') !== scheduleFilterDept) return false;
+  if(scheduleSearchQuery && !r.name.toLowerCase().includes(scheduleSearchQuery.trim().toLowerCase())) return false;
+  return r.cells.some(scheduleCellMatchesFilters);
 }
 
 // Renders just the <tr> rows — reads SCHEDULE_ROWS/NEXT_SCHEDULE_ROWS
@@ -1119,7 +1149,15 @@ function renderScheduleRows(){
             const cellArg = `'${r.name.replace(/'/g,"\\'")}', ${i}, ${JSON.stringify(c||"").replace(/"/g,'&quot;')}, '${sheetName}'`;
             let inner;
             let colorClass = '';
-            if(p.type==='off') inner = `<span class="muted">Off</span>`;
+            if(!scheduleCellMatchesFilters(c)){
+              // This particular day doesn't match the active Venue/Shift/Status
+              // filter — the ROW is shown because some OTHER day matched, but
+              // this day's (non-matching) shift stays hidden, e.g. so a Club 88
+              // filter never reveals a mixed-venue employee's Saipan Vegas shift.
+              // Still clickable — it's a real cell, just not one that matches.
+              inner = `<span class="muted">—</span>`;
+            }
+            else if(p.type==='off') inner = `<span class="muted">Off</span>`;
             else if(p.type==='leave') inner = `<span class="muted">Leave</span>`;
             else if(p.type==='blocked' || p.type==='empty') inner = `<span class="muted">—</span>`;
             else { inner = `<span class="cell-time">${p.time}</span><br><span class="cell-venue">${p.venueFull||''}</span><span class="cell-pos muted">${p.venueFull && p.position ? ' · ' : ''}${p.position}</span>`; colorClass = shiftHighlightClass(p.time, p.position); }
@@ -1162,15 +1200,71 @@ function setScheduleViewMode(mode){
 // already appear somewhere in SCHEDULE_ROWS/NEXT_SCHEDULE_ROWS, so a
 // genuinely new shift could never be picked for the very first
 // employee assigned to it.
-const EXTRA_TIME_OPTIONS = ["3:00PM-11:30PM"];
+const EXTRA_TIME_OPTIONS = ["3:00PM-11:30PM", "11:30AM-8:00PM"];
+let MANAGED_SHIFT_TIMES = []; // [{id, time}] — populated from the "ShiftTimes" sheet via generalGroup at login; admin-managed via the Shift Time Management card on the Master Schedule page
 function getUniqueScheduleTimes(){
   const set = new Set(EXTRA_TIME_OPTIONS);
+  MANAGED_SHIFT_TIMES.forEach(t => set.add(t.time));
   [...SCHEDULE_ROWS, ...NEXT_SCHEDULE_ROWS].forEach(r => r.cells.forEach(c => {
     const p = parseScheduleCell(c);
     if(p.type === 'shift' && p.time) set.add(p.time);
   }));
   return Array.from(set).sort();
 }
+
+// Shift Time Management CRUD — see the card on the Master Schedule
+// page. Deleting/editing here only changes what's OFFERED going
+// forward; it can never reach into Schedule/NextSchedule and never
+// touches an existing cell, since those live in a completely
+// different sheet and are never referenced by ID from here.
+function normalizeShiftTimeInput_(raw){
+  const s = String(raw||'').replace(/\s+/g,'').toUpperCase();
+  const m = s.match(/^(\d{1,2}):(\d{2})(AM|PM)-(\d{1,2}):(\d{2})(AM|PM)$/);
+  if(!m) return null;
+  return `${m[1]}:${m[2]}${m[3]}-${m[4]}:${m[5]}${m[6]}`;
+}
+async function addShiftTimeEntry(){
+  const err = document.getElementById('shiftTimeErr');
+  err.style.display = 'none';
+  const input = document.getElementById('newShiftTimeInput');
+  const normalized = normalizeShiftTimeInput_(input.value);
+  if(!normalized){ err.textContent = 'Use the format H:MMAM-H:MMPM, e.g. 10:00AM-6:00PM.'; err.style.display='block'; return; }
+  if(MANAGED_SHIFT_TIMES.some(t=>t.time===normalized) || EXTRA_TIME_OPTIONS.includes(normalized)){ err.textContent = 'That shift time already exists.'; err.style.display='block'; return; }
+  if(USE_REMOTE()){
+    const r = await apiPost('addShiftTime', {time: normalized});
+    if(!r.ok){ err.textContent = r.error || "Couldn't add that shift time."; err.style.display='block'; return; }
+  }
+  MANAGED_SHIFT_TIMES.push({id: 'local-' + Date.now(), time: normalized}); // gets its real ID next time loadRemoteData() runs
+  input.value = '';
+  renderView('mgmt-schedule');
+}
+function startEditShiftTime(id, currentTime){
+  const next = prompt('Edit shift time (format: H:MMAM-H:MMPM):', currentTime);
+  if(next === null) return; // cancelled
+  editShiftTimeEntry(id, next);
+}
+async function editShiftTimeEntry(id, raw){
+  const normalized = normalizeShiftTimeInput_(raw);
+  if(!normalized){ alert('Use the format H:MMAM-H:MMPM, e.g. 10:00AM-6:00PM.'); return; }
+  if(USE_REMOTE()){
+    const r = await apiPost('editShiftTime', {id, time: normalized});
+    if(!r.ok){ alert(r.error || "Couldn't update that shift time."); return; }
+  }
+  const t = MANAGED_SHIFT_TIMES.find(x=>x.id===id);
+  if(t) t.time = normalized;
+  renderView('mgmt-schedule');
+}
+async function deleteShiftTimeEntry(id, timeLabel, el){
+  await confirmAndDelete(el, `Remove "${timeLabel}" from the shift time list? Existing schedule entries that already use it are not affected — they keep working exactly as before.`, async ()=>{
+    if(USE_REMOTE()){
+      const r = await apiPost('deleteShiftTime', {id});
+      if(!r.ok){ alert(r.error || "Couldn't remove that shift time."); return; }
+    }
+    MANAGED_SHIFT_TIMES = MANAGED_SHIFT_TIMES.filter(t=>t.id!==id);
+    renderView('mgmt-schedule');
+  });
+}
+
 const HIDDEN_POSITION_OPTIONS = new Set(["Drop/Main", "Drop/Supervise", "Maint/Drop", "Supervise/Maint", "Drop/Maint"]);
 const EXTRA_POSITION_OPTIONS = ["Slot Tech", "Tech Supervisor"]; // always offered, even if not yet used anywhere in the schedule
 /* Maps an employee's All-Employees Position (their job title) to the
@@ -2043,7 +2137,7 @@ async function loadRemoteData(){
     // into sequential ones). Each group's own fallback shape mirrors
     // exactly what its fields were defaulting to before.
     const emptyScheduleGroup = {roster:[], schedule:{days:[],rows:[]}, nextSchedule:{days:[],rows:[],published:false}, accountsStatus:[]};
-    const emptyGeneralGroup = {attendance:[], announcements:[], formsLibrary:[], nominations:[]};
+    const emptyGeneralGroup = {attendance:[], announcements:[], formsLibrary:[], nominations:[], shiftTimes:[]};
     const emptyMgmtBulkA = {recognition:[], requests:[], concerns:[]};
     const emptyMgmtBulkB = {suggestions:[], evaluations:[], disciplinaryRecords:[]};
     const emptyMyPersonalGroup = {myConcerns:[], mySuggestions:[], myGivenEvaluations:[], myDisciplinaryRecords:[]};
@@ -2058,6 +2152,7 @@ async function loadRemoteData(){
     ]);
     const roster = scheduleGroup.roster, schedule = scheduleGroup.schedule, nextSchedule = scheduleGroup.nextSchedule, accountsStatus = scheduleGroup.accountsStatus;
     const attendance = generalGroup.attendance, announcements = generalGroup.announcements, formsLibrary = generalGroup.formsLibrary, nominations = generalGroup.nominations;
+    MANAGED_SHIFT_TIMES = (generalGroup.shiftTimes || []).map(t => ({id: t.ID, time: t.Time}));
     const myConcernsRaw = myPersonalGroup.myConcerns, mySuggestionsRaw = myPersonalGroup.mySuggestions, myGivenEvaluationsRaw = myPersonalGroup.myGivenEvaluations, myDisciplinaryRaw = myPersonalGroup.myDisciplinaryRecords;
     const recognition = mgmtBulkA.recognition, requests = mgmtBulkA.requests, concerns = mgmtBulkA.concerns;
     const suggestions = mgmtBulkB.suggestions, evaluations = mgmtBulkB.evaluations, disciplinaryRecords = mgmtBulkB.disciplinaryRecords;
@@ -5157,8 +5252,8 @@ const BUILDERS = {
     <div class="card no-print" style="padding:14px 16px; margin-bottom:16px;">
       <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
         <input type="text" id="scheduleSearchInput" placeholder="🔍 Search employee..." value="${scheduleSearchQuery}" oninput="setScheduleSearch(this.value)" style="max-width:170px; margin-bottom:0;">
-        <select onchange="setScheduleFilterDept(this.value)" style="max-width:160px; margin-bottom:0;">
-          ${['All', ...SCHEDULE_DEPTS].map(d=>`<option value="${d}" ${scheduleFilterDept===d?'selected':''}>${d==='All'?'All Departments':d.charAt(0)+d.slice(1).toLowerCase()}</option>`).join('')}
+        <select onchange="setScheduleFilterDept(this.value)" style="max-width:170px; margin-bottom:0;">
+          ${['All', ...getUniqueScheduleRoles()].map(d=>`<option value="${d}" ${scheduleFilterDept===d?'selected':''}>${d==='All'?'All Departments':d}</option>`).join('')}
         </select>
         <select onchange="setScheduleFilterVenue(this.value)" style="max-width:140px; margin-bottom:0;">
           <option value="All" ${scheduleFilterVenue==='All'?'selected':''}>All Venues</option>
@@ -5173,6 +5268,21 @@ const BUILDERS = {
         </select>
         <button class="btn ghost auto" style="padding:8px 14px;" onclick="resetScheduleFilters()">Reset Filters</button>
       </div>
+    </div>
+    <div class="card no-print" style="padding:14px 16px; margin-bottom:16px;">
+      <h3 style="font-size:14px; margin-bottom:6px;"><span class="ic">🕐</span> Shift Time Management</h3>
+      <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Add, rename, or remove the shift times offered in the Time dropdown and the Shift filter above. Removing one here only takes it off this list — any schedule entries that already use it keep working exactly as before, and it'll still show up as an option automatically as long as it's still in use somewhere.</p>
+      <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+        ${MANAGED_SHIFT_TIMES.length ? MANAGED_SHIFT_TIMES.map(t=>`<span class="pill" style="display:inline-flex; align-items:center; gap:6px; padding:5px 6px 5px 10px;">${t.time}
+          <button class="btn ghost auto" style="padding:2px 6px; font-size:10px;" onclick="startEditShiftTime('${t.id}','${t.time}')">✏️</button>
+          <button class="btn ghost auto" style="padding:2px 6px; font-size:10px;" onclick="deleteShiftTimeEntry('${t.id}','${t.time}', this)">🗑️</button>
+        </span>`).join('') : `<span class="muted" style="font-size:12.5px;">No custom shift times added yet — the defaults (like ${EXTRA_TIME_OPTIONS.join(', ')}) are always available regardless.</span>`}
+      </div>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <input type="text" id="newShiftTimeInput" placeholder="e.g. 10:00AM-6:00PM" style="max-width:200px; margin-bottom:0;">
+        <button class="btn ghost auto" onclick="addShiftTimeEntry()">+ Add Shift Time</button>
+      </div>
+      <p class="login-err" id="shiftTimeErr" style="display:none; margin-top:8px;"></p>
     </div>
     <div class="card table-scroll">
       <h3><span class="ic">📅</span> ${isNext ? 'Next Week Schedule' : 'Master Schedule'}</h3>
