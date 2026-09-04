@@ -14,6 +14,7 @@
     --bg:#12141B; --panel:#1B1F2A; --panel-2:#222735; --line:#2C3141;
     --gold:#C9A24B; --gold-soft:#3A331F; --teal:#4FA79C; --teal-soft:#1B3230;
     --red:#C15B4A; --red-soft:#3A2420; --blue:#5B8FC7; --blue-soft:#1E2E40;
+    --orange:#D9863C; --orange-soft:#3A2C18;
     --text:#EDEEF2; --text-mute:#8A93A6; --text-faint:#5B6478; --radius:14px;
   }
   *{box-sizing:border-box; margin:0; padding:0;}
@@ -167,13 +168,24 @@
   textarea{resize:vertical; min-height:90px;}
   label{font-size:11.5px; color:var(--text-mute); font-weight:600; display:block; margin-bottom:6px; margin-top:14px;}
   label:first-child{margin-top:0;}
-  .btn{background:var(--gold); color:#1b1305; border:none; padding:10px 18px; border-radius:9px; font-weight:700; font-size:12.5px; cursor:pointer; margin-top:16px; font-family:'Inter',sans-serif; width:100%;}
+  .btn{background:var(--gold); color:#1b1305; border:none; padding:10px 18px; border-radius:9px; font-weight:700; font-size:12.5px; cursor:pointer; margin-top:16px; font-family:'Inter',sans-serif; width:100%; transition:filter .15s ease, opacity .15s ease;}
   .btn:hover{filter:brightness(1.08);}
   .btn:disabled{opacity:0.8; cursor:default;}
   .btn-spinner{display:inline-block; width:13px; height:13px; border:2px solid rgba(27,19,5,0.35); border-top-color:#1b1305; border-radius:50%; animation:btnspin .6s linear infinite; vertical-align:-2px; margin-right:7px;}
   @keyframes btnspin{to{transform:rotate(360deg);}}
   .btn.ghost{background:transparent; border:1px solid var(--line); color:var(--text-mute);}
   .btn.auto{width:auto;}
+  /* ===== Standard Action Button System =====
+     Gold (default .btn) = primary/important actions (Save, Publish,
+     Promote, Add). Same base sizing/shape/typography as the default
+     gold button — these are additive color variants, not a
+     different button, so every button in the app keeps a consistent
+     height, radius, padding, and font regardless of its color. */
+  .btn.danger{background:var(--red); color:#fff;} /* destructive: delete, remove */
+  .btn.reset{background:var(--orange); color:#1b1305;} /* clear/reset filters or forms */
+  .btn.info{background:var(--blue); color:#fff;} /* account/system: password, permissions, settings */
+  .btn.danger:hover, .btn.reset:hover, .btn.info:hover{filter:brightness(1.1);}
+  .btn.danger:disabled, .btn.reset:disabled, .btn.info:disabled{opacity:0.8; cursor:default; filter:none;}
   .checkbox-row{display:flex; align-items:center; gap:8px; margin-top:14px;}
   .checkbox-row input{width:auto;}
   .checkbox-row label{margin:0; color:var(--text-mute); font-weight:500;}
@@ -542,7 +554,7 @@
     <p class="login-err" id="removeSchedEmpErr" style="display:none;"></p>
     <div class="modal-btns">
       <button class="btn ghost" onclick="closeRemoveSchedEmpModal()">Cancel</button>
-      <button class="btn" id="removeSchedEmpBtn" onclick="confirmRemoveSchedEmp()">Remove from Schedule</button>
+      <button class="btn danger" id="removeSchedEmpBtn" onclick="confirmRemoveSchedEmp()">🗑️ Remove from Schedule</button>
     </div>
   </div>
 </div>
@@ -811,10 +823,22 @@ function setPerfFilter(type, val){
   else perfFilterYear = val;
   renderView('mgmt-performance');
 }
+function resetPerfFilter(){
+  perfFilterMonth = 'All';
+  perfFilterYear = 'All';
+  perfSearchQuery = '';
+  renderView('mgmt-performance');
+}
 function setNomFilter(type, val){
   if(type==='month') nomFilterMonth = val;
   else if(type==='year') nomFilterYear = val;
   else nomFilterCategory = val;
+  renderView('mgmt-nominations');
+}
+function resetNomFilter(){
+  nomFilterCategory = 'All';
+  nomFilterMonth = 'All';
+  nomFilterYear = 'All';
   renderView('mgmt-nominations');
 }
 
@@ -4685,7 +4709,7 @@ const BUILDERS = {
         <input type="password" id="newPass1" placeholder="At least 4 characters">
         <label>Confirm new password</label>
         <input type="password" id="newPass2" placeholder="Re-enter password">
-        <button class="btn auto" id="pwChangeBtn" style="margin-top:10px;" onclick="changeOwnPassword()">Update Password</button>
+        <button class="btn info auto" id="pwChangeBtn" style="margin-top:10px;" onclick="changeOwnPassword()">🔑 Update Password</button>
         <p class="login-err" id="pwChangeErr"></p>
         <p class="login-ok" id="pwChangeOk">Password updated.</p>
       </div>
@@ -4858,7 +4882,7 @@ const BUILDERS = {
       <table>
         <tr><th>Employee</th><th>Period</th><th>Score</th><th>Rating</th><th></th></tr>
         ${MY_GIVEN_EVALUATIONS.map(e=>`<tr><td>${e.EmployeeName}</td><td>${e.Month} ${e.Year}</td><td class="mono">${e.AverageScore}</td><td>${ratingStars(e.AverageScore)} ${e.RatingLabel}</td>
-          <td><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditEvaluation('${e.ID}')">Edit</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteMyEvaluation('${e.ID}', this)">Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">You haven't evaluated anyone yet.</td></tr>`}
+          <td><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditEvaluation('${e.ID}')">Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyEvaluation('${e.ID}', this)">🗑️ Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">You haven't evaluated anyone yet.</td></tr>`}
       </table>
     </div>`,
 
@@ -4938,7 +4962,7 @@ const BUILDERS = {
             <td>${(()=>{
               const canEdit = r.status==='pending' || (r.status==='needs-clarification' && isNotice);
               const canDelete = r.status==='pending';
-              return `${canEdit ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditRequest('${r.id}')">Edit</button>` : ''}${canDelete ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteMyRequest('${r.id}', this)">Delete</button>` : ''}`;
+              return `${canEdit ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditRequest('${r.id}')">Edit</button>` : ''}${canDelete ? `<button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyRequest('${r.id}', this)">🗑️ Delete</button>` : ''}`;
             })()}</td></tr>`;
           }).join('') || `<tr><td colspan="4" class="muted">No requests yet.</td></tr>`}
         </table>
@@ -4994,7 +5018,7 @@ const BUILDERS = {
         <table>
           <tr><th>Topic</th><th>Date</th><th>Status</th><th></th></tr>
           ${MY_CONCERNS.map(c=>`<tr><td>${c.topic}</td><td>${fmtDateTime(c.date)}</td><td>${statusPill(c.status)}</td>
-            <td>${c.status==='Open' ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditConcern('${c.id}')">Edit</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteMyConcern('${c.id}', this)">Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No concerns submitted yet.</td></tr>`}
+            <td>${c.status==='Open' ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditConcern('${c.id}')">Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyConcern('${c.id}', this)">🗑️ Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No concerns submitted yet.</td></tr>`}
         </table>
       </div>
     </div>`,
@@ -5016,7 +5040,7 @@ const BUILDERS = {
         <table>
           <tr><th>Idea</th><th>Date</th><th>Status</th><th></th></tr>
           ${MY_SUGGESTIONS.map(s=>`<tr><td>${s.idea}</td><td>${fmtDateTime(s.date)}</td><td><span class="pill ${s.status==='new'?'warn':'ok'}">${s.status==='new'?'New':'Reviewed'}</span></td>
-            <td>${s.status==='new' ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditSuggestion('${s.id}')">Edit</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteMySuggestion('${s.id}', this)">Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No suggestions submitted yet.</td></tr>`}
+            <td>${s.status==='new' ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditSuggestion('${s.id}')">Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMySuggestion('${s.id}', this)">🗑️ Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No suggestions submitted yet.</td></tr>`}
         </table>
       </div>
     </div>`,
@@ -5074,7 +5098,7 @@ const BUILDERS = {
       <input type="password" id="adminNewPass1" placeholder="At least 4 characters">
       <label>Confirm new password</label>
       <input type="password" id="adminNewPass2" placeholder="Re-enter password">
-      <button class="btn auto" id="adminPwChangeBtn" style="margin-top:10px;" onclick="changeAdminPassword()">Update Password</button>
+      <button class="btn info auto" id="adminPwChangeBtn" style="margin-top:10px;" onclick="changeAdminPassword()">🔑 Update Password</button>
       <p class="login-err" id="adminPwChangeErr"></p>
       <p class="login-ok" id="adminPwChangeOk">Password updated.</p>
     </div>`,
@@ -5107,7 +5131,7 @@ const BUILDERS = {
           <td class="muted">${e.phone || '—'}</td>
           <td class="muted">${e.email || '—'}</td>
           <td class="muted">${e.dateHired ? fmtDiscDate(e.dateHired) : '—'}</td>
-          <td><button class="btn ghost auto" style="padding:4px 10px;" onclick="deleteEmployeeConfirm('${e.name.replace(/'/g,"\\'")}', this)">Delete</button></td>
+          <td><button class="btn danger auto" style="padding:4px 10px;" onclick="deleteEmployeeConfirm('${e.name.replace(/'/g,"\\'")}', this)">🗑️ Delete</button></td>
         </tr>`).join('') || `<tr><td colspan="7" class="muted">No matches.</td></tr>`}
       </table>
     </div>`;
@@ -5300,7 +5324,7 @@ const BUILDERS = {
           : `<button class="btn auto" id="publishNextBtn" onclick="publishNextWeek()">Publish to Employees</button>`}
         <button class="btn auto" id="promoteNextBtn" onclick="promoteNextWeek()">Promote to Current Week</button>
         <button class="btn ghost auto" onclick="openAddSchedEmpModal()">+ Add New Employee</button>
-        <button class="btn ghost auto" onclick="openRemoveSchedEmpModal()">🗑️ Remove Employee</button>
+        <button class="btn danger auto" onclick="openRemoveSchedEmpModal()">🗑️ Remove Employee</button>
       </div>
     </div>` : ''}
     <div class="card no-print" style="padding:14px 16px; margin-bottom:16px;">
@@ -5320,7 +5344,7 @@ const BUILDERS = {
         <select onchange="setScheduleFilterStatus(this.value)" style="max-width:130px; margin-bottom:0;">
           ${['All','Working','Off','Leave'].map(s=>`<option value="${s}" ${scheduleFilterStatus===s?'selected':''}>${s==='All'?'All Status':s}</option>`).join('')}
         </select>
-        <button class="btn ghost auto" style="padding:8px 14px;" onclick="resetScheduleFilters()">Reset Filters</button>
+        <button class="btn reset auto" style="padding:8px 14px;" onclick="resetScheduleFilters()">↻ Reset Filters</button>
       </div>
     </div>
     <div class="card table-scroll">
@@ -5416,7 +5440,7 @@ const BUILDERS = {
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <button class="btn ghost auto" onclick="searchEmployeePrintLog()">Search / View Records</button>
         <button class="btn ghost auto" onclick="printEmployeeLog()">🖨️ Print Employee Log</button>
-        <button class="btn ghost auto" onclick="clearEmployeePrintLog()">Clear / Reset</button>
+        <button class="btn reset auto" onclick="clearEmployeePrintLog()">↻ Clear / Reset</button>
       </div>
       <div id="attendancePrintPreview"></div>
     </div>
@@ -5461,7 +5485,7 @@ const BUILDERS = {
     ${topPerformersChart(latestByEmployee)}
     <div class="card" style="margin-bottom:16px;">
       <h3>Filter by Period</h3>
-      <div class="grid grid-2">
+      <div class="grid grid-3">
         <div>
           <label>Month</label>
           <select onchange="setPerfFilter('month', this.value)">
@@ -5475,6 +5499,9 @@ const BUILDERS = {
             <option value="All" ${perfFilterYear==='All'?'selected':''}>All Years</option>
             ${years.map(y=>`<option ${perfFilterYear===y?'selected':''}>${y}</option>`).join('')}
           </select>
+        </div>
+        <div style="display:flex; align-items:flex-end;">
+          <button class="btn reset auto" style="margin-top:16px;" onclick="resetPerfFilter()">↻ Clear / Reset Filters</button>
         </div>
       </div>
     </div>
@@ -5515,7 +5542,7 @@ const BUILDERS = {
       <table>
         <tr><th>Form Name</th><th>Category</th><th>Uploaded</th><th></th></tr>
         ${ALL_FORMS.map(f=>`<tr><td>${f.FormName}</td><td class="muted">${f.Category||'—'}</td><td>${fmtDateTime(f.DateUploaded)}</td>
-          <td><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="openLibraryForm('${f.FileId}','${(f.FileName||'').replace(/'/g,"\\'")}')">Download</button>${canManageForms ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteLibraryForm('${f.ID}', this)">Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No forms uploaded yet.</td></tr>`}
+          <td><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="openLibraryForm('${f.FileId}','${(f.FileName||'').replace(/'/g,"\\'")}')">Download</button>${canManageForms ? `<button class="btn danger auto" style="padding:5px 10px;" onclick="deleteLibraryForm('${f.ID}', this)">🗑️ Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No forms uploaded yet.</td></tr>`}
       </table>
     </div>`;
   },
@@ -5886,7 +5913,7 @@ const BUILDERS = {
           <input type="date" value="${reqFilter.dateTo}" onchange="setReqFilter('dateTo', this.value)">
         </div>
       </div>
-      <button class="btn ghost auto" style="margin-top:8px;" onclick="resetReqFilter()">Reset Filters</button>
+      <button class="btn reset auto" style="margin-top:8px;" onclick="resetReqFilter()">↻ Reset Filters</button>
     </div>
     <div class="card print-doc">
       <div class="no-print" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:4px;">
@@ -5970,7 +5997,7 @@ const BUILDERS = {
           <input type="date" value="${concernFilter.dateTo}" onchange="setConcernFilter('dateTo', this.value)">
         </div>
       </div>
-      <button class="btn ghost auto" style="margin-top:8px;" onclick="resetConcernFilter()">Reset Filters</button>
+      <button class="btn reset auto" style="margin-top:8px;" onclick="resetConcernFilter()">↻ Reset Filters</button>
     </div>
     <div class="card">
       <h3><span class="ic">⚠️</span> All Reported Concerns</h3>
@@ -6061,7 +6088,7 @@ const BUILDERS = {
       <table>
         <tr><th>Employee</th><th>Award</th><th>Note</th><th>Date</th><th></th></tr>
         ${MOCK.recognition.map(r=>`<tr><td>${r.employeeName||''}</td><td>${r.name}</td><td class="muted">${r.desc}</td><td>${fmtDateTime(r.date)}</td>
-          <td><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteRecognitionEntry('${r.id}', this)">Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">No awards issued yet.</td></tr>`}
+          <td><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteRecognitionEntry('${r.id}', this)">🗑️ Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">No awards issued yet.</td></tr>`}
       </table>
     </div>`,
 
@@ -6081,7 +6108,7 @@ const BUILDERS = {
     ${topNominatedChart(filtered)}
     <div class="card" style="margin-bottom:16px;">
       <h3>Filter by Category &amp; Period</h3>
-      <div class="grid grid-3">
+      <div class="grid grid-4">
         <div>
           <label>Award Category</label>
           <select onchange="setNomFilter('category', this.value)">
@@ -6102,6 +6129,9 @@ const BUILDERS = {
             <option value="All" ${nomFilterYear==='All'?'selected':''}>All Years</option>
             ${years.map(y=>`<option ${nomFilterYear===y?'selected':''}>${y}</option>`).join('')}
           </select>
+        </div>
+        <div style="display:flex; align-items:flex-end;">
+          <button class="btn reset auto" style="margin-top:16px;" onclick="resetNomFilter()">↻ Clear / Reset Filters</button>
         </div>
       </div>
     </div>
@@ -6153,7 +6183,7 @@ const BUILDERS = {
           <td style="white-space:nowrap;">
             <button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="viewAnnouncementDetail('${a.ID}')">👁️ View</button>
             <button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditAnnouncement('${a.ID}')">✏️ Edit</button>
-            <button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteAnnouncementEntry('${a.ID}', this)">🗑️ Delete</button>
+            <button class="btn danger auto" style="padding:5px 10px;" onclick="deleteAnnouncementEntry('${a.ID}', this)">🗑️ Delete</button>
           </td></tr>`).join('') || `<tr><td colspan="4" class="muted">No announcements posted yet.</td></tr>`}
       </table>
     </div>`,
@@ -6956,7 +6986,7 @@ function renderAttendanceLogRows(){
   let filtered = sortedAttendanceLog();
   const q = attendanceSearchQuery.toLowerCase();
   if(!q) filtered = filtered.slice(0, 10); // keep the default view short — search shows everything that matches
-  return filtered.map(a=>`<tr><td>${a.name}</td><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td><td class="muted">${a.loggedBy||'—'}</td><td><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditAttendance('${a.id}')">Edit</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="deleteAttendanceEntry('${a.id}', this)">Delete</button></td></tr>`).join('')
+  return filtered.map(a=>`<tr><td>${a.name}</td><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td><td class="muted">${a.loggedBy||'—'}</td><td><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditAttendance('${a.id}')">Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteAttendanceEntry('${a.id}', this)">🗑️ Delete</button></td></tr>`).join('')
     || `<tr><td colspan="7" class="muted">${attendanceSearchQuery ? 'No entries match that search.' : 'No entries logged yet.'}</td></tr>`;
 }
 /* Individual Employee Print Log — search shows an on-screen preview
