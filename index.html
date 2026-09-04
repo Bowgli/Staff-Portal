@@ -1251,7 +1251,7 @@ function getUniqueScheduleTimes(){
 }
 
 const HIDDEN_POSITION_OPTIONS = new Set(["Drop/Main", "Drop/Supervise", "Maint/Drop", "Supervise/Maint", "Drop/Maint"]);
-const EXTRA_POSITION_OPTIONS = ["Slot Tech", "Tech Supervisor"]; // always offered, even if not yet used anywhere in the schedule
+const EXTRA_POSITION_OPTIONS = ["Slot Tech", "Tech Supervisor", "Membership"]; // always offered, even if not yet used anywhere in the schedule
 /* Maps an employee's All-Employees Position (their job title) to the
    fixed shift Position/Task that should always be used for them on
    the Master Schedule — one less thing to pick, and no risk of
