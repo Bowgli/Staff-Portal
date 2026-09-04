@@ -521,11 +521,23 @@
 const SHEET_API_URL = "https://staff-portal-cache.techsupport-saipanvegas.workers.dev"; // Cloudflare Worker cache layer in front of the Apps Script Web App
 const USE_REMOTE = () => SHEET_API_URL.trim().length > 0;
 
-const API_TIMEOUT_MS = 20000; // if the server doesn't respond in 20s, give up rather than hang forever
+// Pilot: a second Worker that reads the Sheet directly via the
+// Google Sheets API (service-account auth) instead of proxying
+// through Apps Script, for the 7 highest-traffic login/dashboard-read
+// actions specifically. See fastOrFallback()/fastLogin() below — this
+// is purely additive: if it's ever unreachable or misconfigured,
+// everything transparently falls back to the proven Apps Script path,
+// so turning it on can only make things faster/more reliable, never
+// worse. Set to "" to disable the pilot entirely and always use the
+// Apps Script path, with no code changes needed elsewhere.
+const SHEETS_API_WORKER_URL = "https://staff-portal-sheets-api.techsupport-saipanvegas.workers.dev";
 
-async function fetchWithTimeout(url, options){
+const API_TIMEOUT_MS = 20000; // if the server doesn't respond in 20s, give up rather than hang forever
+const FAST_PATH_TIMEOUT_MS = 8000; // shorter timeout for the pilot Worker specifically — if it's not back well within this, falling back to the proven path beats waiting it out
+
+async function fetchWithTimeout(url, options, timeoutMs){
   const controller = new AbortController();
-  const timer = setTimeout(()=>controller.abort(), API_TIMEOUT_MS);
+  const timer = setTimeout(()=>controller.abort(), timeoutMs || API_TIMEOUT_MS);
   try{
     return await fetch(url, Object.assign({}, options, {signal: controller.signal}));
   } catch(e){
@@ -534,6 +546,48 @@ async function fetchWithTimeout(url, options){
   } finally {
     clearTimeout(timer);
   }
+}
+
+// Tries the fast, direct-Sheets-API Worker first for one of its 7
+// supported actions; falls back to the proven Apps Script path (via
+// safeApiGet, with its own retries) on ANY problem — a network
+// error, a timeout, an {error:...} response, or the pilot Worker
+// simply being turned off (SHEETS_API_WORKER_URL === ""). The
+// fallback is invisible to the rest of the app: callers just get
+// data back, the same shape either way.
+async function fastOrFallback(action, fallback, extraQuery){
+  const fullAction = action + (extraQuery ? '&' + extraQuery : '');
+  if(SHEETS_API_WORKER_URL){
+    try{
+      const res = await fetchWithTimeout(`${SHEETS_API_WORKER_URL}/?action=${fullAction}`, undefined, FAST_PATH_TIMEOUT_MS);
+      const data = await parseApiResponse_(res);
+      if(data && !data.error) return data;
+      console.warn(`Fast path for '${action}' returned an error, falling back to Apps Script:`, data && data.error);
+    } catch(e){
+      console.warn(`Fast path for '${action}' failed, falling back to Apps Script:`, e.message);
+    }
+  }
+  return safeApiGet(fullAction, fallback);
+}
+
+// Same fallback principle as fastOrFallback(), but for login
+// specifically — POST only (see the Worker's own comment on this),
+// so it can't share fastOrFallback()'s GET-based plumbing.
+async function fastLogin(username, password){
+  if(SHEETS_API_WORKER_URL){
+    try{
+      const res = await fetchWithTimeout(SHEETS_API_WORKER_URL, {
+        method: "POST",
+        body: JSON.stringify({action:"login", username, password}),
+      }, FAST_PATH_TIMEOUT_MS);
+      const data = await parseApiResponse_(res);
+      if(data && data.ok !== undefined) return data; // any well-formed {ok:true,...} or {ok:false,...} response — both are valid outcomes, not failures
+      console.warn("Fast login returned something unexpected, falling back to Apps Script:", data);
+    } catch(e){
+      console.warn("Fast login failed, falling back to Apps Script:", e.message);
+    }
+  }
+  return apiPost('login', {username, password});
 }
 
 // Both apiGet and apiPost expect JSON back — but the server they're
@@ -1659,19 +1713,18 @@ const LAST_VIEW_KEY = "sv_staff_portal_last_view";
 
 async function doLoginWithCredentials(u, p){
   if(USE_REMOTE()){
-    // NOTE: a previous change here added one silent retry-on-timeout
-    // for the login call, meaning to cover the same transient
-    // congestion safeApiGet retries for. In practice that DOUBLED the
-    // worst-case wait before showing an error — 20s timeout, then a
-    // second full 20s timeout on retry — which is almost exactly the
-    // "~38 seconds, then a timeout error" this was reported as. A
-    // retry only helps if the retry attempt is more likely to
-    // succeed than the first one; with 16-19 competing calls all
-    // firing at once during login (see loadRemoteData below), a
-    // retry 1.2s later was hitting the exact same congestion, not a
-    // cleared one — so it only added wait time. Reverted to a single
-    // attempt; the real fix is the reduced call count below.
-    const r = await apiPost('login', {username:u, password:p});
+    // fastLogin() tries the direct-Sheets-API pilot Worker first
+    // (see fastLogin() near the top of this file) with its own short
+    // timeout, and falls back to the proven Apps Script path if that
+    // fails for any reason — so this is never worse than the old
+    // single-attempt behavior, only potentially faster. (An earlier
+    // version of this added a blind retry-on-timeout instead, which
+    // just doubled the worst-case wait — 20s, then another 20s — for
+    // no benefit when the real cause was concurrency congestion that
+    // hadn't cleared 1.2s later. That's what the fast-path/fallback
+    // approach actually fixes at the root, instead of retrying into
+    // the same wall.)
+    const r = await fastLogin(u, p);
     if(!r.ok) return {success:false, error: r.error || "Incorrect username or password."};
     if(r.role === 'management'){
       CURRENT_USER = {role:'management', displayName:r.displayName, username:r.username, accessLevel: r.accessLevel || 'full', mgmtRole: r.mgmtRole || 'full'};
@@ -1996,12 +2049,12 @@ async function loadRemoteData(){
     const emptyMyPersonalGroup = {myConcerns:[], mySuggestions:[], myGivenEvaluations:[], myDisciplinaryRecords:[]};
     const emptyMyEmployeeScopedGroup = {myEvaluationsReceived:[], myRequestsScoped:[], myRecognition:[]};
     const [scheduleGroup, generalGroup, myPersonalGroup, mgmtBulkA, mgmtBulkB, myEmpScopedGroup] = await Promise.all([
-      safeApiGet('scheduleGroup', emptyScheduleGroup),
-      safeApiGet('generalGroup', emptyGeneralGroup),
-      safeApiGet('myPersonalGroup&name=' + encodeURIComponent(myName), emptyMyPersonalGroup),
-      isMgmtCapable ? safeApiGet('mgmtBulkGroupA', emptyMgmtBulkA) : Promise.resolve(emptyMgmtBulkA),
-      isMgmtCapable ? safeApiGet('mgmtBulkGroupB', emptyMgmtBulkB) : Promise.resolve(emptyMgmtBulkB),
-      !isMgmtCapable ? safeApiGet('myEmployeeScopedGroup&name=' + encodeURIComponent(myName), emptyMyEmployeeScopedGroup) : Promise.resolve(emptyMyEmployeeScopedGroup)
+      fastOrFallback('scheduleGroup', emptyScheduleGroup),
+      fastOrFallback('generalGroup', emptyGeneralGroup),
+      fastOrFallback('myPersonalGroup', emptyMyPersonalGroup, 'name=' + encodeURIComponent(myName)),
+      isMgmtCapable ? fastOrFallback('mgmtBulkGroupA', emptyMgmtBulkA) : Promise.resolve(emptyMgmtBulkA),
+      isMgmtCapable ? fastOrFallback('mgmtBulkGroupB', emptyMgmtBulkB) : Promise.resolve(emptyMgmtBulkB),
+      !isMgmtCapable ? fastOrFallback('myEmployeeScopedGroup', emptyMyEmployeeScopedGroup, 'name=' + encodeURIComponent(myName)) : Promise.resolve(emptyMyEmployeeScopedGroup)
     ]);
     const roster = scheduleGroup.roster, schedule = scheduleGroup.schedule, nextSchedule = scheduleGroup.nextSchedule, accountsStatus = scheduleGroup.accountsStatus;
     const attendance = generalGroup.attendance, announcements = generalGroup.announcements, formsLibrary = generalGroup.formsLibrary, nominations = generalGroup.nominations;
