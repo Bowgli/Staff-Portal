@@ -5323,7 +5323,7 @@ const BUILDERS = {
           ? `<button class="btn ghost auto" id="unpublishNextBtn" onclick="unpublishNextWeek()">Unpublish (back to draft)</button>`
           : `<button class="btn auto" id="publishNextBtn" onclick="publishNextWeek()">Publish to Employees</button>`}
         <button class="btn auto" id="promoteNextBtn" onclick="promoteNextWeek()">Promote to Current Week</button>
-        <button class="btn ghost auto" onclick="openAddSchedEmpModal()">+ Add New Employee</button>
+        <button class="btn info auto" onclick="openAddSchedEmpModal()">+ Add New Employee</button>
         <button class="btn danger auto" onclick="openRemoveSchedEmpModal()">🗑️ Remove Employee</button>
       </div>
     </div>` : ''}
@@ -5438,8 +5438,8 @@ const BUILDERS = {
       </div>
       <p id="attendancePrintErr" class="login-err" style="display:none;"></p>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <button class="btn ghost auto" onclick="searchEmployeePrintLog()">Search / View Records</button>
-        <button class="btn ghost auto" onclick="printEmployeeLog()">🖨️ Print Employee Log</button>
+        <button class="btn info auto" onclick="searchEmployeePrintLog()">🔍 Search / View Records</button>
+        <button class="btn auto" onclick="printEmployeeLog()">🖨️ Print Employee Log</button>
         <button class="btn reset auto" onclick="clearEmployeePrintLog()">↻ Clear / Reset</button>
       </div>
       <div id="attendancePrintPreview"></div>
@@ -5542,7 +5542,7 @@ const BUILDERS = {
       <table>
         <tr><th>Form Name</th><th>Category</th><th>Uploaded</th><th></th></tr>
         ${ALL_FORMS.map(f=>`<tr><td>${f.FormName}</td><td class="muted">${f.Category||'—'}</td><td>${fmtDateTime(f.DateUploaded)}</td>
-          <td><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="openLibraryForm('${f.FileId}','${(f.FileName||'').replace(/'/g,"\\'")}')">Download</button>${canManageForms ? `<button class="btn danger auto" style="padding:5px 10px;" onclick="deleteLibraryForm('${f.ID}', this)">🗑️ Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No forms uploaded yet.</td></tr>`}
+          <td><button class="btn info auto" style="padding:5px 10px; margin-right:6px;" onclick="openLibraryForm('${f.FileId}','${(f.FileName||'').replace(/'/g,"\\'")}')">⬇️ Download</button>${canManageForms ? `<button class="btn danger auto" style="padding:5px 10px;" onclick="deleteLibraryForm('${f.ID}', this)">🗑️ Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No forms uploaded yet.</td></tr>`}
       </table>
     </div>`;
   },
@@ -5550,7 +5550,7 @@ const BUILDERS = {
   "mgmt-disciplinary": ()=>{
     return `
     <div class="no-print" style="display:flex; justify-content:flex-end; margin-bottom:16px;">
-      <button onclick="renderView('mgmt-disciplinary-new')">+ New Case</button>
+      <button class="btn auto" style="padding:12px 22px; font-size:14px;" onclick="renderView('mgmt-disciplinary-new')">+ New Case</button>
     </div>
 
     ${disciplinaryCasesTableSection(ALL_DISCIPLINARY_RECORDS, 'Disciplinary Cases')}
