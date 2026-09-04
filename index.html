@@ -510,6 +510,31 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="removeSchedEmpModal">
+  <div class="modal-box">
+    <h3>Remove Employee from Schedule</h3>
+    <p class="muted">Removes them from this week's schedule grid and marks them inactive on the roster, so they won't be offered when building future schedules. Their attendance, evaluation, disciplinary, and other history is never touched.</p>
+    <label>Employee</label>
+    <input type="text" id="removeSchedEmpName" list="removeSchedEmpNameList" placeholder="Type a name to search…" autocomplete="off">
+    <datalist id="removeSchedEmpNameList"></datalist>
+    <label>Reason</label>
+    <select id="removeSchedEmpReason" onchange="toggleRemoveSchedEmpOther()">
+      <option value="Resigned">Resigned</option>
+      <option value="Terminated">Terminated</option>
+      <option value="Other">Other</option>
+    </select>
+    <div id="removeSchedEmpOtherWrap" style="display:none;">
+      <label>Please specify</label>
+      <input type="text" id="removeSchedEmpOtherReason" placeholder="e.g. Transferred to another property">
+    </div>
+    <p class="login-err" id="removeSchedEmpErr" style="display:none;"></p>
+    <div class="modal-btns">
+      <button class="btn ghost" onclick="closeRemoveSchedEmpModal()">Cancel</button>
+      <button class="btn" id="removeSchedEmpBtn" onclick="confirmRemoveSchedEmp()">Remove from Schedule</button>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ============================================================
    DATA LAYER — mock data shaped like what will come from Google
@@ -1200,69 +1225,14 @@ function setScheduleViewMode(mode){
 // already appear somewhere in SCHEDULE_ROWS/NEXT_SCHEDULE_ROWS, so a
 // genuinely new shift could never be picked for the very first
 // employee assigned to it.
-const EXTRA_TIME_OPTIONS = ["3:00PM-11:30PM", "11:30AM-8:00PM"];
-let MANAGED_SHIFT_TIMES = []; // [{id, time}] — populated from the "ShiftTimes" sheet via generalGroup at login; admin-managed via the Shift Time Management card on the Master Schedule page
+const EXTRA_TIME_OPTIONS = ["3:00PM-11:30PM", "11:30AM-8:00PM"]; // always-offered shift times, even before used anywhere in the schedule yet
 function getUniqueScheduleTimes(){
   const set = new Set(EXTRA_TIME_OPTIONS);
-  MANAGED_SHIFT_TIMES.forEach(t => set.add(t.time));
   [...SCHEDULE_ROWS, ...NEXT_SCHEDULE_ROWS].forEach(r => r.cells.forEach(c => {
     const p = parseScheduleCell(c);
     if(p.type === 'shift' && p.time) set.add(p.time);
   }));
   return Array.from(set).sort();
-}
-
-// Shift Time Management CRUD — see the card on the Master Schedule
-// page. Deleting/editing here only changes what's OFFERED going
-// forward; it can never reach into Schedule/NextSchedule and never
-// touches an existing cell, since those live in a completely
-// different sheet and are never referenced by ID from here.
-function normalizeShiftTimeInput_(raw){
-  const s = String(raw||'').replace(/\s+/g,'').toUpperCase();
-  const m = s.match(/^(\d{1,2}):(\d{2})(AM|PM)-(\d{1,2}):(\d{2})(AM|PM)$/);
-  if(!m) return null;
-  return `${m[1]}:${m[2]}${m[3]}-${m[4]}:${m[5]}${m[6]}`;
-}
-async function addShiftTimeEntry(){
-  const err = document.getElementById('shiftTimeErr');
-  err.style.display = 'none';
-  const input = document.getElementById('newShiftTimeInput');
-  const normalized = normalizeShiftTimeInput_(input.value);
-  if(!normalized){ err.textContent = 'Use the format H:MMAM-H:MMPM, e.g. 10:00AM-6:00PM.'; err.style.display='block'; return; }
-  if(MANAGED_SHIFT_TIMES.some(t=>t.time===normalized) || EXTRA_TIME_OPTIONS.includes(normalized)){ err.textContent = 'That shift time already exists.'; err.style.display='block'; return; }
-  if(USE_REMOTE()){
-    const r = await apiPost('addShiftTime', {time: normalized});
-    if(!r.ok){ err.textContent = r.error || "Couldn't add that shift time."; err.style.display='block'; return; }
-  }
-  MANAGED_SHIFT_TIMES.push({id: 'local-' + Date.now(), time: normalized}); // gets its real ID next time loadRemoteData() runs
-  input.value = '';
-  renderView('mgmt-schedule');
-}
-function startEditShiftTime(id, currentTime){
-  const next = prompt('Edit shift time (format: H:MMAM-H:MMPM):', currentTime);
-  if(next === null) return; // cancelled
-  editShiftTimeEntry(id, next);
-}
-async function editShiftTimeEntry(id, raw){
-  const normalized = normalizeShiftTimeInput_(raw);
-  if(!normalized){ alert('Use the format H:MMAM-H:MMPM, e.g. 10:00AM-6:00PM.'); return; }
-  if(USE_REMOTE()){
-    const r = await apiPost('editShiftTime', {id, time: normalized});
-    if(!r.ok){ alert(r.error || "Couldn't update that shift time."); return; }
-  }
-  const t = MANAGED_SHIFT_TIMES.find(x=>x.id===id);
-  if(t) t.time = normalized;
-  renderView('mgmt-schedule');
-}
-async function deleteShiftTimeEntry(id, timeLabel, el){
-  await confirmAndDelete(el, `Remove "${timeLabel}" from the shift time list? Existing schedule entries that already use it are not affected — they keep working exactly as before.`, async ()=>{
-    if(USE_REMOTE()){
-      const r = await apiPost('deleteShiftTime', {id});
-      if(!r.ok){ alert(r.error || "Couldn't remove that shift time."); return; }
-    }
-    MANAGED_SHIFT_TIMES = MANAGED_SHIFT_TIMES.filter(t=>t.id!==id);
-    renderView('mgmt-schedule');
-  });
 }
 
 const HIDDEN_POSITION_OPTIONS = new Set(["Drop/Main", "Drop/Supervise", "Maint/Drop", "Supervise/Maint", "Drop/Maint"]);
@@ -2137,7 +2107,7 @@ async function loadRemoteData(){
     // into sequential ones). Each group's own fallback shape mirrors
     // exactly what its fields were defaulting to before.
     const emptyScheduleGroup = {roster:[], schedule:{days:[],rows:[]}, nextSchedule:{days:[],rows:[],published:false}, accountsStatus:[]};
-    const emptyGeneralGroup = {attendance:[], announcements:[], formsLibrary:[], nominations:[], shiftTimes:[]};
+    const emptyGeneralGroup = {attendance:[], announcements:[], formsLibrary:[], nominations:[]};
     const emptyMgmtBulkA = {recognition:[], requests:[], concerns:[]};
     const emptyMgmtBulkB = {suggestions:[], evaluations:[], disciplinaryRecords:[]};
     const emptyMyPersonalGroup = {myConcerns:[], mySuggestions:[], myGivenEvaluations:[], myDisciplinaryRecords:[]};
@@ -2152,7 +2122,6 @@ async function loadRemoteData(){
     ]);
     const roster = scheduleGroup.roster, schedule = scheduleGroup.schedule, nextSchedule = scheduleGroup.nextSchedule, accountsStatus = scheduleGroup.accountsStatus;
     const attendance = generalGroup.attendance, announcements = generalGroup.announcements, formsLibrary = generalGroup.formsLibrary, nominations = generalGroup.nominations;
-    MANAGED_SHIFT_TIMES = (generalGroup.shiftTimes || []).map(t => ({id: t.ID, time: t.Time}));
     const myConcernsRaw = myPersonalGroup.myConcerns, mySuggestionsRaw = myPersonalGroup.mySuggestions, myGivenEvaluationsRaw = myPersonalGroup.myGivenEvaluations, myDisciplinaryRaw = myPersonalGroup.myDisciplinaryRecords;
     const recognition = mgmtBulkA.recognition, requests = mgmtBulkA.requests, concerns = mgmtBulkA.concerns;
     const suggestions = mgmtBulkB.suggestions, evaluations = mgmtBulkB.evaluations, disciplinaryRecords = mgmtBulkB.disciplinaryRecords;
@@ -2863,7 +2832,7 @@ async function confirmAddEmpModal(){
 
 function openAddSchedEmpModal(){
   const dl = document.getElementById('addSchedEmpNameList');
-  dl.innerHTML = EMPLOYEE_ROSTER.slice().sort((a,b)=>a.name.localeCompare(b.name))
+  dl.innerHTML = EMPLOYEE_ROSTER.filter(e=>e.status==='Active').slice().sort((a,b)=>a.name.localeCompare(b.name))
     .map(e=>`<option value="${e.name} — ${e.position}">`).join('');
   document.getElementById('addSchedEmpName').value = '';
   document.getElementById('addSchedEmpDept').value = 'CLUB 88';
@@ -2907,6 +2876,63 @@ async function confirmAddSchedEmp(){
     renderView('mgmt-schedule');
   } catch(e){
     err.textContent = e.message || "Couldn't add to schedule — please try again.";
+    err.style.display = 'block';
+    btnResetEl(btn);
+  }
+}
+
+// Remove Employee — deletes the employee's row from the CURRENTLY
+// VIEWED schedule (This Week or Next Week, whichever tab is open)
+// and marks them inactive on the Roster in one call, so they stop
+// being suggested in Add Employee to Schedule going forward (see the
+// Active-only filter in openAddSchedEmpModal() above). Their
+// attendance/evaluation/disciplinary/request history is untouched —
+// none of that is keyed off the Roster row or the schedule grid.
+function openRemoveSchedEmpModal(){
+  const dl = document.getElementById('removeSchedEmpNameList');
+  const rows = scheduleViewMode === 'next' ? NEXT_SCHEDULE_ROWS : SCHEDULE_ROWS;
+  dl.innerHTML = rows.slice().sort((a,b)=>a.name.localeCompare(b.name))
+    .map(r=>`<option value="${r.name}">`).join('');
+  document.getElementById('removeSchedEmpName').value = '';
+  document.getElementById('removeSchedEmpReason').value = 'Resigned';
+  document.getElementById('removeSchedEmpOtherReason').value = '';
+  document.getElementById('removeSchedEmpOtherWrap').style.display = 'none';
+  document.getElementById('removeSchedEmpErr').style.display = 'none';
+  document.getElementById('removeSchedEmpModal').classList.add('active');
+}
+function closeRemoveSchedEmpModal(){ document.getElementById('removeSchedEmpModal').classList.remove('active'); }
+function toggleRemoveSchedEmpOther(){
+  document.getElementById('removeSchedEmpOtherWrap').style.display = document.getElementById('removeSchedEmpReason').value === 'Other' ? 'block' : 'none';
+}
+async function confirmRemoveSchedEmp(){
+  const name = document.getElementById('removeSchedEmpName').value.trim();
+  const err = document.getElementById('removeSchedEmpErr');
+  err.style.display = 'none';
+  const rows = scheduleViewMode === 'next' ? NEXT_SCHEDULE_ROWS : SCHEDULE_ROWS;
+  if(!name || !rows.some(r=>r.name===name)){ err.textContent = "Pick a real employee from the suggestions — they must already be on this week's schedule."; err.style.display='block'; return; }
+
+  const reasonSel = document.getElementById('removeSchedEmpReason').value;
+  const reason = reasonSel === 'Other' ? (document.getElementById('removeSchedEmpOtherReason').value.trim() || 'Other') : reasonSel;
+
+  if(!confirm(`Remove ${name} from the schedule (reason: ${reason})?\n\nThey'll be marked inactive so they won't be offered for future schedules. Their past attendance, evaluation, and other records are never touched.`)) return;
+
+  const sheetName = scheduleViewMode === 'next' ? 'NextSchedule' : 'Schedule';
+  const btn = document.getElementById('removeSchedEmpBtn');
+  btnLoadingEl(btn, 'Removing...');
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPost('removeScheduleEmployee', {name, sheetName, reason});
+      if(!r.ok){ err.textContent = r.error || "Couldn't remove employee."; err.style.display='block'; btnResetEl(btn); return; }
+    }
+    if(scheduleViewMode === 'next') NEXT_SCHEDULE_ROWS = NEXT_SCHEDULE_ROWS.filter(r=>r.name!==name);
+    else SCHEDULE_ROWS = SCHEDULE_ROWS.filter(r=>r.name!==name);
+    const emp = EMPLOYEE_ROSTER.find(e=>e.name===name);
+    if(emp) emp.status = reason;
+    await btnSentEl(btn, 'Removed');
+    closeRemoveSchedEmpModal();
+    renderView('mgmt-schedule');
+  } catch(e){
+    err.textContent = e.message || "Couldn't remove employee — please try again.";
     err.style.display = 'block';
     btnResetEl(btn);
   }
@@ -5247,6 +5273,7 @@ const BUILDERS = {
           : `<button class="btn auto" id="publishNextBtn" onclick="publishNextWeek()">Publish to Employees</button>`}
         <button class="btn auto" id="promoteNextBtn" onclick="promoteNextWeek()">Promote to Current Week</button>
         <button class="btn ghost auto" onclick="openAddSchedEmpModal()">+ Add New Employee</button>
+        <button class="btn ghost auto" onclick="openRemoveSchedEmpModal()">🗑️ Remove Employee</button>
       </div>
     </div>` : ''}
     <div class="card no-print" style="padding:14px 16px; margin-bottom:16px;">
@@ -5268,21 +5295,6 @@ const BUILDERS = {
         </select>
         <button class="btn ghost auto" style="padding:8px 14px;" onclick="resetScheduleFilters()">Reset Filters</button>
       </div>
-    </div>
-    <div class="card no-print" style="padding:14px 16px; margin-bottom:16px;">
-      <h3 style="font-size:14px; margin-bottom:6px;"><span class="ic">🕐</span> Shift Time Management</h3>
-      <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Add, rename, or remove the shift times offered in the Time dropdown and the Shift filter above. Removing one here only takes it off this list — any schedule entries that already use it keep working exactly as before, and it'll still show up as an option automatically as long as it's still in use somewhere.</p>
-      <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
-        ${MANAGED_SHIFT_TIMES.length ? MANAGED_SHIFT_TIMES.map(t=>`<span class="pill" style="display:inline-flex; align-items:center; gap:6px; padding:5px 6px 5px 10px;">${t.time}
-          <button class="btn ghost auto" style="padding:2px 6px; font-size:10px;" onclick="startEditShiftTime('${t.id}','${t.time}')">✏️</button>
-          <button class="btn ghost auto" style="padding:2px 6px; font-size:10px;" onclick="deleteShiftTimeEntry('${t.id}','${t.time}', this)">🗑️</button>
-        </span>`).join('') : `<span class="muted" style="font-size:12.5px;">No custom shift times added yet — the defaults (like ${EXTRA_TIME_OPTIONS.join(', ')}) are always available regardless.</span>`}
-      </div>
-      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-        <input type="text" id="newShiftTimeInput" placeholder="e.g. 10:00AM-6:00PM" style="max-width:200px; margin-bottom:0;">
-        <button class="btn ghost auto" onclick="addShiftTimeEntry()">+ Add Shift Time</button>
-      </div>
-      <p class="login-err" id="shiftTimeErr" style="display:none; margin-top:8px;"></p>
     </div>
     <div class="card table-scroll">
       <h3><span class="ic">📅</span> ${isNext ? 'Next Week Schedule' : 'Master Schedule'}</h3>
