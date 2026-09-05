@@ -2301,7 +2301,8 @@ async function loadRemoteData(){
     accountsStatus.forEach(a => EMPLOYEE_ACCOUNTS.push({employeeName:a.employeeName, fullName:a.fullName, username:a.username, role:"employee", email:a.email, phone:a.phone}));
     MOCK.concernsLog = concerns.map(c => Object.assign(mapConcernRowBase_(c), {
       investigationNotes:c.InvestigationNotes, investigatedBy:c.InvestigatedBy, actionTaken:c.ActionTaken,
-      investigationLastUpdatedBy:c.InvestigationLastUpdatedBy, investigationLastUpdatedAt:c.InvestigationLastUpdatedAt
+      investigationLastUpdatedBy:c.InvestigationLastUpdatedBy, investigationLastUpdatedAt:c.InvestigationLastUpdatedAt,
+      statusLastChangedAt:c.StatusLastChangedAt
     })).reverse();
     MY_CONCERNS = myConcernsRaw.map(c => mapConcernRowBase_(c)).reverse();
     MOCK.suggestionsLog = suggestions.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID})).reverse();
@@ -6569,7 +6570,7 @@ const BUILDERS = {
         <select id="concernStatusSelect">
           ${CONCERN_STATUSES.map(s=>`<option ${c.status===s?'selected':''}>${s}</option>`).join('')}
         </select>
-        ${(c.investigationLastUpdatedBy || c.investigationLastUpdatedAt) ? `<p class="muted" style="font-size:11.5px; margin-top:12px;">${c.investigationLastUpdatedBy ? `Last Updated By: ${c.investigationLastUpdatedBy}<br>` : ''}${c.investigationLastUpdatedAt ? `Last Updated: ${fmtDateTime(c.investigationLastUpdatedAt)}` : ''}</p>` : ''}
+        ${(c.investigationLastUpdatedBy || c.investigationLastUpdatedAt) ? `<p class="muted" style="font-size:11.5px; margin-top:12px;">${c.investigationLastUpdatedBy ? `Last Updated By: ${c.investigationLastUpdatedBy}<br>` : ''}${c.investigationLastUpdatedAt ? `Last Updated: ${fmtDateTime(c.investigationLastUpdatedAt)}<br>` : ''}${c.statusLastChangedAt ? `Status Last Changed: ${fmtDateTime(c.statusLastChangedAt)}` : ''}</p>` : ''}
         <p id="concernInvErr" class="login-err"></p>
         <button class="btn auto" id="concernInvSaveBtn" style="margin-top:10px;" onclick="saveConcernInvestigation()">Save</button>
       </div>
@@ -6580,6 +6581,7 @@ const BUILDERS = {
         <tr><td class="muted">Status</td><td>${c.status||'Submitted'}</td></tr>
         ${c.investigationLastUpdatedBy ? `<tr><td class="muted">Last Updated By</td><td>${c.investigationLastUpdatedBy}</td></tr>` : ''}
         ${c.investigationLastUpdatedAt ? `<tr><td class="muted">Last Updated</td><td>${fmtDateTime(c.investigationLastUpdatedAt)}</td></tr>` : ''}
+        ${c.statusLastChangedAt ? `<tr><td class="muted">Status Last Changed</td><td>${fmtDateTime(c.statusLastChangedAt)}</td></tr>` : ''}
       </table>
     </div>
     </div>`;
@@ -7497,8 +7499,10 @@ async function saveConcernInvestigation(){
       if(mgmtAlertBaseline && wasFresh && status !== 'Submitted' && status !== 'Open') mgmtAlertBaseline.concerns = Math.max(0, mgmtAlertBaseline.concerns - 1);
     }
     if(c){
+      const statusChanged = c.status !== status;
       c.status = status; c.investigationNotes = fields.InvestigationNotes; c.investigatedBy = fields.InvestigatedBy; c.actionTaken = fields.ActionTaken;
       c.investigationLastUpdatedBy = CURRENT_USER.displayName; c.investigationLastUpdatedAt = new Date().toISOString();
+      if(statusChanged) c.statusLastChangedAt = c.investigationLastUpdatedAt;
     }
     await btnSentEl(btn, 'Saved');
     renderView('mgmt-concern-detail');
