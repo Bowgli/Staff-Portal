@@ -793,7 +793,7 @@ let editingNominationId = null;
 let expandedAnnouncement = null; // ID of the announcement currently expanded (click-to-view), employee-facing
 let editingAnnouncementId = null; // ID of the announcement being edited, management "Post Announcements"
 let MY_DISCIPLINARY_RECORDS = []; // scoped to the current employee, excludes Drafts and internal-only fields
-let discFilter = { employee:'', department:'All', position:'All', violation:'All', level:'All', status:'All', dateFrom:'', dateTo:'' };
+let discFilter = { search:'', violation:'All', level:'All', status:'All', sort:'newest', expanded:false };
 let discSummaryPeriod = ''; // "YYYY-MM", defaults to current month on first view
 let discSummaryMode = 'month'; // 'month' or 'year'
 let discSummaryYear = new Date().getFullYear();
@@ -3527,13 +3527,13 @@ function disciplinarySummarySection(){
 }
 
 function disciplinaryCasesTableSection(rows, title){
-  const filtered = discFilter.employee
-    ? rows.filter(d => (d.EmployeeName||'').toLowerCase().includes(discFilter.employee.toLowerCase()))
+  const filtered = discFilter.search
+    ? rows.filter(d => (d.EmployeeName||'').toLowerCase().includes(discFilter.search.toLowerCase()))
     : rows;
   return `
     <div class="card table-scroll">
       <h3><span class="ic">📁</span> ${title || 'Disciplinary Cases'}</h3>
-      <input type="text" id="discCaseSearch" placeholder="🔍 Search employee name…" value="${discFilter.employee}" oninput="setDiscEmployeeFilter(this.value)" style="margin-bottom:12px;">
+      <input type="text" id="discCaseSearch" placeholder="🔍 Search employee name…" value="${discFilter.search}" oninput="setDiscSearch(this.value)" style="margin-bottom:12px;">
       <table>
         <tr><th>Case #</th><th>Employee</th><th>Date Reported</th><th>Violation</th><th>Level</th><th>Status</th><th></th></tr>
         ${filtered.map(d=>`<tr>
@@ -3543,14 +3543,124 @@ function disciplinaryCasesTableSection(rows, title){
           <td class="muted">${discParseViolations(d.ViolationTypes).join(', ')||''}</td>
           <td>${d.DisciplinaryLevel||'<span class="muted">—</span>'}</td>
           <td>${discStatusPill(d.Status)}</td>
-          <td>${isViewAllowedForRole('mgmt-disciplinary-detail') ? `<button class="btn info auto" style="padding:5px 10px;" onclick="openDisciplinaryCase('${d.ID}')">👁️ View Case</button>` : '<span class="muted">Not authorized</span>'}</td>
+          <td>${isViewAllowedForRole('mgmt-disciplinary-detail') ? `<button class="btn info auto" style="padding:5px 10px;" onclick="openDisciplinaryCase('${d.ID}')">View Case</button>` : '<span class="muted">Not authorized</span>'}</td>
+        </tr>`).join('') || `<tr><td colspan="7" class="muted">No matching cases.</td></tr>`}
+      </table>
+    </div>`;
+}
+
+// Search/filter/sort logic shared by the full Disciplinary Cases page
+// (mgmt-disciplinary) — a richer version of the simple employee-name
+// search above, since this page needs to stay usable as case volume
+// grows. Search matches Employee Name, Case Number, OR Violation;
+// the dropdown filters and sort are additional AND conditions on
+// top of that.
+function filterAndSortDisciplinaryCases(rows){
+  let filtered = rows;
+  const q = discFilter.search.trim().toLowerCase();
+  if(q){
+    filtered = filtered.filter(d =>
+      (d.EmployeeName||'').toLowerCase().includes(q) ||
+      (d.CaseNumber||'').toLowerCase().includes(q) ||
+      discParseViolations(d.ViolationTypes).some(v=>v.toLowerCase().includes(q))
+    );
+  }
+  if(discFilter.violation !== 'All') filtered = filtered.filter(d => discParseViolations(d.ViolationTypes).includes(discFilter.violation));
+  if(discFilter.level !== 'All') filtered = filtered.filter(d => d.DisciplinaryLevel === discFilter.level);
+  if(discFilter.status !== 'All') filtered = filtered.filter(d => d.Status === discFilter.status);
+  return filtered.slice().sort((a,b)=>{
+    const ta = new Date(a.DateReported).getTime(), tb = new Date(b.DateReported).getTime();
+    const na = isNaN(ta) ? 0 : ta, nb = isNaN(tb) ? 0 : tb;
+    return discFilter.sort === 'oldest' ? na - nb : nb - na;
+  });
+}
+function setDiscSearch(val){
+  discFilter.search = val;
+  const cursorPos = document.activeElement && document.activeElement.selectionStart;
+  const focusedId = document.activeElement && document.activeElement.id;
+  renderView(activeView);
+  const input = document.getElementById(focusedId);
+  if(input){ input.focus(); if(cursorPos != null) input.setSelectionRange(cursorPos, cursorPos); }
+}
+function setDiscAdvFilter(field, val){
+  discFilter[field] = val;
+  renderView('mgmt-disciplinary');
+}
+function toggleDiscFiltersPanel(){
+  discFilter.expanded = !discFilter.expanded;
+  renderView('mgmt-disciplinary');
+}
+function resetDiscFilter(){
+  discFilter = { search:'', violation:'All', level:'All', status:'All', sort:'newest', expanded:discFilter.expanded };
+  renderView('mgmt-disciplinary');
+}
+
+// Full Disciplinary Cases page — search bar always visible; the
+// Violation/Level/Status/Sort dropdowns stay tucked behind a
+// "Filters" toggle so the page doesn't feel crowded when they're not
+// needed, matching the same collapsible pattern used elsewhere in
+// the portal. Shows "Showing X of Y cases" so it's always clear
+// whether a search/filter narrowed the list.
+function disciplinaryCasesAdvancedSection(rows, title){
+  const filtered = filterAndSortDisciplinaryCases(rows);
+  const hasActiveFilters = discFilter.search || discFilter.violation!=='All' || discFilter.level!=='All' || discFilter.status!=='All' || discFilter.sort!=='newest';
+  return `
+    <div class="card table-scroll">
+      <h3><span class="ic">📁</span> ${title || 'Disciplinary Cases'}</h3>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
+        <input type="text" id="discAdvSearch" placeholder="🔍 Search employee, case #, or violation…" value="${discFilter.search}" oninput="setDiscSearch(this.value)" style="flex:1; min-width:220px; margin-bottom:0;">
+        <button class="btn ghost auto" onclick="toggleDiscFiltersPanel()">${discFilter.expanded ? '▲ Hide Filters' : '▼ Filters'}</button>
+        ${hasActiveFilters ? `<button class="btn reset auto" onclick="resetDiscFilter()">↻ Clear Filters</button>` : ''}
+      </div>
+      ${discFilter.expanded ? `
+      <div class="grid grid-4" style="margin-bottom:14px;">
+        <div>
+          <label>Violation</label>
+          <select onchange="setDiscAdvFilter('violation', this.value)">
+            <option value="All" ${discFilter.violation==='All'?'selected':''}>All Violations</option>
+            ${DISC_VIOLATION_TYPES.map(v=>`<option ${discFilter.violation===v?'selected':''}>${v}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label>Disciplinary Level</label>
+          <select onchange="setDiscAdvFilter('level', this.value)">
+            <option value="All" ${discFilter.level==='All'?'selected':''}>All Levels</option>
+            ${DISC_LEVELS.map(l=>`<option ${discFilter.level===l?'selected':''}>${l}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label>Status</label>
+          <select onchange="setDiscAdvFilter('status', this.value)">
+            <option value="All" ${discFilter.status==='All'?'selected':''}>All Statuses</option>
+            ${DISC_STATUSES.map(s=>`<option ${discFilter.status===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label>Sort</label>
+          <select onchange="setDiscAdvFilter('sort', this.value)">
+            <option value="newest" ${discFilter.sort==='newest'?'selected':''}>Newest First</option>
+            <option value="oldest" ${discFilter.sort==='oldest'?'selected':''}>Oldest First</option>
+          </select>
+        </div>
+      </div>` : ''}
+      <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Showing ${filtered.length} of ${rows.length} case${rows.length===1?'':'s'}</p>
+      <table>
+        <tr><th>Case #</th><th>Employee</th><th>Date Reported</th><th>Violation</th><th>Level</th><th>Status</th><th></th></tr>
+        ${filtered.map(d=>`<tr>
+          <td class="mono">${d.CaseNumber||''}</td>
+          <td>${d.EmployeeName}</td>
+          <td>${fmtDateTime(d.DateReported)}</td>
+          <td class="muted">${discParseViolations(d.ViolationTypes).join(', ')||''}</td>
+          <td>${d.DisciplinaryLevel||'<span class="muted">—</span>'}</td>
+          <td>${discStatusPill(d.Status)}</td>
+          <td>${isViewAllowedForRole('mgmt-disciplinary-detail') ? `<button class="btn info auto" style="padding:5px 10px;" onclick="openDisciplinaryCase('${d.ID}')">View Case</button>` : '<span class="muted">Not authorized</span>'}</td>
         </tr>`).join('') || `<tr><td colspan="7" class="muted">No matching cases.</td></tr>`}
       </table>
     </div>`;
 }
 
 function viewEmployeeDisciplinaryHistory(employeeName){
-  discFilter.employee = employeeName;
+  discFilter.search = employeeName;
   renderView('mgmt-disciplinary');
 }
 
@@ -3608,13 +3718,6 @@ async function saveEmployeeProfile(){
   }
 }
 
-function setDiscEmployeeFilter(val){
-  discFilter.employee = val;
-  const cursorPos = document.activeElement && document.activeElement.selectionStart;
-  renderView(activeView);
-  const input = document.getElementById('discCaseSearch');
-  if(input){ input.focus(); if(cursorPos != null) input.setSelectionRange(cursorPos, cursorPos); }
-}
 function setDiscSummaryPeriod(val){
   discSummaryPeriod = val;
   renderView(activeView);
@@ -5089,7 +5192,7 @@ const BUILDERS = {
       <div class="card stat-card clickable" onclick="renderView('mgmt-attendance')"><div class="num">${ATTENDANCE_LOG.length}</div><div class="label">Attendance entries logged</div></div>
     </div>
     ${attendanceConcernsSection()}
-    ${disciplinaryCasesTableSection(ALL_DISCIPLINARY_RECORDS, 'Disciplinary Cases')}`,
+    ${disciplinaryCasesTableSection(ALL_DISCIPLINARY_RECORDS.filter(d=>d.Status!=='Closed'), 'Disciplinary Cases')}`,
 
   "mgmt-account-settings": ()=>`
     <div class="card" style="max-width:420px;">
@@ -5554,7 +5657,7 @@ const BUILDERS = {
       <button class="btn auto" style="padding:12px 22px; font-size:14px;" onclick="renderView('mgmt-disciplinary-new')">+ New Case</button>
     </div>
 
-    ${disciplinaryCasesTableSection(ALL_DISCIPLINARY_RECORDS, 'Disciplinary Cases')}
+    ${disciplinaryCasesAdvancedSection(ALL_DISCIPLINARY_RECORDS, 'Disciplinary Cases')}
     <div style="margin-top:16px;">${disciplinarySummarySection()}</div>`;
   },
 
