@@ -5315,7 +5315,7 @@ const BUILDERS = {
           <div class="section-title" style="font-size:13px; margin:14px 0 8px;">Employee Information</div>
           <label>Employee Name</label>
           ${employeePickerHtml('concernCoworkerName', EMPLOYEE_ROSTER.filter(e=>e.name!==CURRENT_EMPLOYEE.name), 'onchange="prefillConcernEmployeeInfo()"')}
-          <div class="grid grid-2">
+          <div class="grid grid-2" style="gap:20px; margin-top:16px;">
             <div><label>Position</label><input type="text" id="concernEmpPosition" placeholder="Auto-filled once selected" readonly style="opacity:0.75;"></div>
             <div><label>Department <span class="muted">(if known)</span></label><input type="text" id="concernEmpDept" placeholder="Optional"></div>
           </div>
@@ -5382,9 +5382,10 @@ const BUILDERS = {
           <p class="checkbox-help">Your identity will not be shown to management if you choose anonymous reporting. However, providing your name may help management contact you for clarification or additional information.</p>
         </div>
 
-        <div style="display:flex; gap:8px; margin-top:20px;">
+        <div style="display:flex; gap:8px; margin-top:20px; flex-wrap:wrap;">
+          <button class="btn ghost auto" onclick="cancelReportConcern()">← Cancel</button>
           <button class="btn" id="concernSubmitBtn" onclick="submitMyConcern()">Submit Concern</button>
-          <button class="btn ghost auto" id="concernCancelBtn" style="display:none;" onclick="cancelEditConcern()">Cancel</button>
+          <button class="btn ghost auto" id="concernCancelBtn" style="display:none;" onclick="cancelEditConcern()">Cancel Edit</button>
         </div>
         <p class="login-err" id="concernErr"></p>
         <p class="login-ok" id="concernOk">Saved.</p>
@@ -7065,6 +7066,35 @@ function startEditConcern(id){
 function cancelEditConcern(){
   editingConcernId = null;
   renderView('concern');
+}
+
+// Whether the person has actually typed/selected anything meaningful
+// yet — used by cancelReportConcern() below to decide whether to just
+// leave quietly or ask for confirmation first, so a truly blank form
+// can be dismissed instantly without a pointless "are you sure?".
+function hasUnsavedConcernInfo(){
+  const details = document.getElementById('concernDetails').value.trim();
+  const additional = document.getElementById('concernAdditionalComments').value.trim();
+  const witness = document.getElementById('concernWitnessName').value.trim();
+  if(details || additional || witness) return true;
+  if(document.querySelectorAll('.concernTypeCb:checked, .concernCustomerTypeCb:checked, .concernSafetyTypeCb:checked, .concernFacilitiesTypeCb:checked').length) return true;
+
+  const type = concernCategoryType(document.getElementById('concernTopic').value);
+  if(type === 'employee' && document.getElementById('concernCoworkerName').value.trim()) return true;
+  if(type === 'customer'){
+    if(document.getElementById('concernCustomerName').value.trim()) return true;
+    if(document.getElementById('concernMembershipNumber').value.trim()) return true;
+    if(document.getElementById('concernCustomerDescription').value.trim()) return true;
+  }
+  if(type === 'safety' && document.getElementById('concernImmediateAction').value.trim()) return true;
+  return false;
+}
+function cancelReportConcern(){
+  if(hasUnsavedConcernInfo()){
+    if(!confirm("Discard Report?\n\nYou have unsaved information in this report. Are you sure you want to discard your changes?")) return;
+  }
+  editingConcernId = null;
+  renderView('home');
 }
 
 async function deleteMyConcern(id, el){
