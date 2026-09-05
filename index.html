@@ -1157,27 +1157,48 @@ const DEPARTMENT_FILTER_GROUP_MAP = {
 function scheduleFilterGroupForRole(role){
   return DEPARTMENT_FILTER_GROUP_MAP[role] || role;
 }
+// Department FILTER options — deliberately derived from the actual
+// per-DAY assigned duty (each cell's own "position", the same value
+// shown in that cell — e.g. Cashier, Attendant, Membership), NOT the
+// employee's overall row-level role. Someone can be scheduled as
+// Cashier on some days and Attendant on others in the same week; the
+// filter needs to see it that way too, the same way
+// getUniqueScheduleTimes() derives shift times from real cell data.
 function getUniqueScheduleRoles(){
   const set = new Set();
-  [...SCHEDULE_ROWS, ...NEXT_SCHEDULE_ROWS].forEach(r => { if(r.role) set.add(scheduleFilterGroupForRole(r.role)); });
+  [...SCHEDULE_ROWS, ...NEXT_SCHEDULE_ROWS].forEach(r => r.cells.forEach(c => {
+    const p = parseScheduleCell(c);
+    if(p.type === 'shift' && p.position) set.add(scheduleFilterGroupForRole(p.position));
+  }));
   return Array.from(set).sort();
 }
 
-// Whether ONE DAY's cell (not the whole row) satisfies the active
-// Venue/Shift/Status filters. Used two ways below: (1) to decide row
-// visibility — a row shows if at least one day matches — and (2),
-// separately, to decide whether that day's shift actually gets
-// DISPLAYED or blanked out. Without part 2, a Security/Technical
-// employee who works both venues would still show their OTHER
-// venue's shifts on a day that didn't match, just because some OTHER
-// day in their week did — that was the reported bug: filtering by
-// Club 88 still revealed Saipan Vegas shifts for mixed-venue staff.
+// Whether ONE DAY's cell (not the whole row) satisfies ALL the active
+// filters together — Department/Role, Venue, Shift, Status. Used two
+// ways below: (1) to decide row visibility — a row shows if at least
+// one day matches — and (2), separately, to decide whether that
+// day's shift actually gets DISPLAYED or blanked out.
+//
+// Department/Role is checked here, per-day, against the cell's OWN
+// assigned duty — not the employee's overall row-level role — for
+// exactly the same reason Venue/Status/Shift already work this way:
+// an employee who's Cashier on Monday and Attendant on Tuesday should
+// only show their Monday shift when the Cashier filter is selected,
+// the same way a mixed-venue employee only shows their Club 88 shifts
+// when the Club 88 filter is selected. Checking role at the row level
+// (the employee's OVERALL role for the week) was the reported bug —
+// selecting Cashier still showed Attendant days for anyone whose
+// week mixed the two.
 function scheduleCellMatchesFilters(c){
-  if(scheduleFilterVenue === 'All' && scheduleFilterShift === 'All' && scheduleFilterStatus === 'All') return true;
+  if(scheduleFilterDept === 'All' && scheduleFilterVenue === 'All' && scheduleFilterShift === 'All' && scheduleFilterStatus === 'All') return true;
   const p = parseScheduleCell(c);
   if(scheduleFilterStatus !== 'All'){
     const statusLabel = p.type==='shift' ? 'Working' : p.type==='off' ? 'Off' : p.type==='leave' ? 'Leave' : null;
     if(statusLabel !== scheduleFilterStatus) return false;
+  }
+  if(scheduleFilterDept !== 'All'){
+    if(p.type !== 'shift') return false; // Off/Leave/blocked days have no duty to match against
+    if(scheduleFilterGroupForRole(p.position||'') !== scheduleFilterDept) return false;
   }
   if(scheduleFilterVenue !== 'All' && p.venueFull !== scheduleFilterVenue) return false;
   if(scheduleFilterShift !== 'All' && p.time !== scheduleFilterShift) return false;
@@ -1185,17 +1206,14 @@ function scheduleCellMatchesFilters(c){
 }
 
 // Whether an employee's row should show at all, given the current
-// filter state. Department (role) + Search are per-employee
-// attributes (checked directly). Venue/Shift/Status describe one
-// shift instance, so the row is included if there's at least one day
-// this week where all three hold together for that SAME day — e.g.
-// Venue=Club 88 + Shift=3:00PM-11:30PM only matches a row that has
-// THAT combination on some day, not a row that merely has Club 88 on
-// Monday and that shift time on Thursday. Which SPECIFIC days get
-// shown vs. blanked once a row is included is handled separately in
+// filter state. Search (employee name) is the only remaining
+// per-employee attribute checked directly here — Department/Role,
+// Venue/Shift/Status all describe one shift instance, so the row is
+// included if there's at least one day this week where all of them
+// hold together for that SAME day. Which SPECIFIC days get shown vs.
+// blanked once a row is included is handled separately in
 // renderScheduleRows(), via scheduleCellMatchesFilters() above.
 function scheduleRowMatchesFilters(r){
-  if(scheduleFilterDept !== 'All' && scheduleFilterGroupForRole(r.role||'') !== scheduleFilterDept) return false;
   if(scheduleSearchQuery && !r.name.toLowerCase().includes(scheduleSearchQuery.trim().toLowerCase())) return false;
   return r.cells.some(scheduleCellMatchesFilters);
 }
@@ -4984,12 +5002,19 @@ const BUILDERS = {
         </div>
         ${EVALUATION_QUESTIONS.map((q,i)=>`
           <label>${i+1}. ${q}</label>
-          <select id="evalQ${i+1}">${i===9
+          <select id="evalQ${i+1}" onchange="updateEvalScorePreview()">${i===9
             ? `<option value="5">5 — Excellent</option><option value="4">4 — Very Good</option><option value="3">3 — Good</option><option value="2">2 — Needs Improvement</option><option value="1">1 — Unsatisfactory</option>`
             : `<option value="5">5 — Always/Excellent</option><option value="4">4 — Usually/Very Good</option><option value="3">3 — Sometimes/Good</option><option value="2">2 — Rarely/Needs Improvement</option><option value="1">1 — Never/Unsatisfactory</option>`
           }</select>`).join('')}
+        <label>Additional Comments / Feedback (Optional)</label>
+        <textarea id="evalComments" placeholder="Any additional observations, suggestions, or explanations..."></textarea>
+        <div class="card" id="evalScorePreview" style="background:var(--panel-2); margin:14px 0; padding:12px 14px;">${evalScorePreviewHtml([5,5,5,5,5,5,5,5,5,5])}</div>
         <div class="checkbox-row"><input type="checkbox" id="anonEval"><label for="anonEval">Submit anonymously</label></div>
-        <button class="btn" id="evalSubmitBtn" onclick="submitEvaluationNow()">Submit Evaluation</button>
+        <p id="evalDupWarning" class="login-err" style="display:none;"></p>
+        <div style="display:flex; gap:8px;">
+          <button class="btn" id="evalSubmitBtn" onclick="submitEvaluationNow()">Submit Evaluation</button>
+          <button class="btn ghost auto" onclick="clearEvaluationForm()">Clear / Reset</button>
+        </div>
         <p class="login-err" id="evalErr"></p>
         <p class="login-ok" id="evalOk">Evaluation saved.</p>
       </div>
@@ -5040,9 +5065,10 @@ const BUILDERS = {
         <label>Supporting Comments or Details <span class="muted">(optional)</span></label>
         <textarea id="nominateDetails" rows="3" placeholder="Specific examples, dates, or other context"></textarea>
         <p id="nominateErr" class="login-err" style="display:none;"></p>
-        <div style="display:flex; gap:8px;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
           <button class="btn" id="nominateSubmitBtn" onclick="submitNomination()">Submit Nomination</button>
-          <button class="btn ghost auto" id="nominateCancelBtn" style="display:none;" onclick="cancelEditNomination()">Cancel</button>
+          <button class="btn ghost auto" onclick="clearNominationForm()">Clear / Reset</button>
+          <button class="btn ghost auto" id="nominateCancelBtn" style="display:none;" onclick="cancelEditNomination()">Cancel Edit</button>
         </div>
       </div>
       <div class="card table-scroll">
@@ -6694,18 +6720,54 @@ async function deleteMySuggestion(id, el){
 
 let editingEvaluationId = null;
 
+// Live "Overall Score" preview shown on the Evaluate a Staff form —
+// recalculates the moment any rating changes, using the exact same
+// averaging/label thresholds Code.gs uses when actually saving
+// (ratingLabelFor_), so the preview always matches what gets stored.
+function evalScorePreviewHtml(scores){
+  const avg = scores.reduce((a,b)=>a+b,0) / scores.length;
+  const rounded = Math.round(avg*100)/100;
+  const label = avg >= 4.5 ? "Excellent" : avg >= 3.5 ? "Very Good" : avg >= 2.5 ? "Good" : avg >= 1.5 ? "Needs Improvement" : "Unsatisfactory";
+  const filledStars = Math.round(avg);
+  const stars = '⭐'.repeat(filledStars) + '☆'.repeat(5 - filledStars);
+  return `<p class="muted" style="margin:0 0 4px; font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">Overall Score Preview</p><p style="margin:0; font-weight:600;">${rounded.toFixed(1)} / 5.0 — ${label} ${stars}</p>`;
+}
+function updateEvalScorePreview(){
+  const scores = [];
+  for(let i=1;i<=10;i++){ const el = document.getElementById('evalQ'+i); if(el) scores.push(Number(el.value)||0); }
+  const el = document.getElementById('evalScorePreview');
+  if(el && scores.length) el.innerHTML = evalScorePreviewHtml(scores);
+}
+function clearEvaluationForm(){
+  if(!confirm("Are you sure you want to clear this evaluation? All unsaved selections will be removed.")) return;
+  editingEvaluationId = null;
+  renderView('evaluate');
+}
 async function submitEvaluationNow(){
   const EmployeeName = readEmployeePicker('evalEmp');
   const Month = document.getElementById('evalMonth').value;
   const Year = document.getElementById('evalYear').value.trim();
+  const Comments = document.getElementById('evalComments').value.trim();
   const err = document.getElementById('evalErr');
+  const dupWarning = document.getElementById('evalDupWarning');
   const ok = document.getElementById('evalOk');
-  err.style.display='none'; ok.style.display='none';
+  err.style.display='none'; dupWarning.style.display='none'; ok.style.display='none';
   if(!EmployeeName){ err.textContent="Type a name and pick a real match from the suggestions."; err.style.display='block'; return; }
   if(!Year){ err.textContent="Enter a year."; err.style.display='block'; return; }
 
+  // Duplicate check — only for a brand-new evaluation, not while
+  // editing an existing one (that one's expected to already exist).
+  if(!editingEvaluationId){
+    const isDup = MY_GIVEN_EVALUATIONS.some(e => e.EmployeeName===EmployeeName && e.Month===Month && String(e.Year)===String(Year));
+    if(isDup){
+      dupWarning.textContent = `You have already submitted an evaluation for ${EmployeeName} for ${Month} ${Year}.`;
+      dupWarning.style.display = 'block';
+      return;
+    }
+  }
+
   const anon = document.getElementById('anonEval').checked;
-  const body = {EmployeeName, Month, Year, EvaluatedBy: anon ? "Anonymous" : CURRENT_EMPLOYEE.fullName, SubmittedBy: CURRENT_EMPLOYEE.fullName};
+  const body = {EmployeeName, Month, Year, Comments, EvaluatedBy: anon ? "Anonymous" : CURRENT_EMPLOYEE.fullName, SubmittedBy: CURRENT_EMPLOYEE.fullName};
   for(let i=1;i<=10;i++){ body['Q'+i] = document.getElementById('evalQ'+i).value; }
 
   if(editingEvaluationId){
@@ -6741,7 +6803,9 @@ function startEditEvaluation(id){
   document.getElementById('evalEmp').value = e.EmployeeName;
   document.getElementById('evalMonth').value = e.Month;
   document.getElementById('evalYear').value = e.Year;
+  document.getElementById('evalComments').value = e.Comments || '';
   for(let i=1;i<=10;i++){ document.getElementById('evalQ'+i).value = e['Q'+i]; }
+  updateEvalScorePreview();
   document.getElementById('evalSubmitBtn').textContent = 'Update Evaluation';
   window.scrollTo({top:0, behavior:'smooth'});
 }
@@ -6753,6 +6817,11 @@ async function refreshNominationsOnly(){
   if(myNominationsRaw) MY_NOMINATIONS = myNominationsRaw.slice().reverse();
 }
 
+function clearNominationForm(){
+  if(!confirm("Are you sure you want to clear this nomination? All unsaved information will be removed.")) return;
+  editingNominationId = null;
+  renderView('nominate');
+}
 async function submitNomination(){
   const nomineeName = readEmployeePicker('nominateEmp');
   const category = document.getElementById('nominateCategory').value;
@@ -6766,6 +6835,21 @@ async function submitNomination(){
   if(!reason){ err.textContent = "Add a reason for the nomination."; err.style.display='block'; return; }
 
   const isEditing = !!editingNominationId;
+
+  // Duplicate check — only for a brand-new nomination, not while
+  // editing an existing one. Checked against ALL nominations
+  // company-wide (not just this nominator's own), since the point is
+  // to avoid the SAME employee being nominated twice for the same
+  // award/period regardless of who submits it.
+  if(!isEditing){
+    const isDup = ALL_NOMINATIONS.some(n => n.NomineeName===nomineeName && n.AwardCategory===category && n.Month===month && String(n.Year)===String(year));
+    if(isDup){
+      err.textContent = `This employee has already been nominated for ${category} for ${month} ${year}.`;
+      err.style.display = 'block';
+      return;
+    }
+  }
+
   const btn = document.getElementById('nominateSubmitBtn');
   btnLoading('nominateSubmitBtn', isEditing ? 'Updating...' : 'Sending...');
   try{
@@ -6805,8 +6889,8 @@ function startEditNomination(id){
   editingNominationId = id;
   document.getElementById('nominateEmp').value = n.NomineeName;
   document.getElementById('nominateCategory').value = n.AwardCategory;
-  if(n.Month) document.getElementById('nominateMonth').value = n.Month;
-  if(n.Year) document.getElementById('nominateYear').value = n.Year;
+  document.getElementById('nominateMonth').value = n.Month || 'January';
+  document.getElementById('nominateYear').value = n.Year || String(new Date().getFullYear());
   document.getElementById('nominateReason').value = n.Reason || '';
   document.getElementById('nominateDetails').value = n.SupportingDetails || '';
   document.getElementById('nominateCardTitle').innerHTML = '<span class="ic">🌟</span> Edit Nomination';
