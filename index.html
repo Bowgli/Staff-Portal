@@ -2178,7 +2178,8 @@ function mapConcernRowBase_(c){
     coworkerName:c.CoworkerName, concernTypes:c.ConcernTypes, requestCCTV:c.RequestCCTV, cctvDate:c.CCTVDate, cctvTime:c.CCTVTime,
     refNo:c.RefNo, incidentDate:c.IncidentDate, incidentTime:c.IncidentTime, specificLocation:c.SpecificLocation,
     membershipNumber:c.MembershipNumber, customerDescription:c.CustomerDescription, priority:c.Priority,
-    safetyRisk:c.SafetyRisk, immediateActionTaken:c.ImmediateActionTaken, witnessName:c.WitnessName, additionalComments:c.AdditionalComments
+    safetyRisk:c.SafetyRisk, immediateActionTaken:c.ImmediateActionTaken, witnessName:c.WitnessName, additionalComments:c.AdditionalComments,
+    editHistory:c.EditHistory, lastUpdated:c.LastUpdated
   };
 }
 async function refreshMyConcerns(){
@@ -3555,7 +3556,7 @@ const DISC_CONCERN_TYPES = ["Unprofessional Behavior","Disrespectful Attitude","
 const STATUS_LABELS = {"pending":"Pending","approved":"Approved","declined":"Declined","acknowledged":"Acknowledged","needs-clarification":"Needs Clarification"};
 const DISC_CUSTOMER_CONCERN_TYPES = ["Panhandling","Abusive Behavior / Shouting at Staff","Disrespectful Attitude","Threatening Behavior","Aggressive or Confrontational Behavior","Intoxicated / Drunk Customer","Refusal to Follow House Rules","Creating Disturbance to Other Guests","Harassment of Staff or Guests","Inappropriate Language or Comments","Disorderly Conduct","Other"];
 const CONCERN_SAFETY_TYPES = ["Slip / Trip Hazard","Electrical Hazard","Fire Safety Concern","Unsafe Equipment","Blocked Emergency Exit","Water Leak / Flooding","Injury / Accident","Unsafe Working Condition","Other"];
-const CONCERN_FACILITIES_TYPES = ["Electrical","Air Conditioning","Plumbing","Lighting","Furniture","Equipment Damage","Cleaning / Sanitation","Building Damage","Internet / Network","CCTV","Other"];
+const CONCERN_FACILITIES_TYPES = ["Electrical","Air Conditioning","Plumbing","Lighting","Furniture","Equipment Damage","Cleaning / Sanitation","Building Damage","Other"];
 const CONCERN_LOCATION_OPTIONS = ["Gaming Floor","Cashier Area","Membership Counter","Restaurant","Hotel Lobby","Parking Area","Restroom","Entrance","Back Office","Other"];
 const CONCERN_ASSIGN_DEPARTMENTS = ["HR / Management","Security","Surveillance","Technical Department","Maintenance","Operations"];
 const CONCERN_PRIORITIES = ["Low","Medium","High","Urgent"];
@@ -3573,9 +3574,41 @@ function concernCategoryType(topic){
   if(t.indexOf("Facilities") > -1 || t.indexOf("Maintenance") > -1) return "facilities";
   return "other";
 }
+// Renders one "Type of Concern"-style checkbox list, wiring the
+// "Other" checkbox (if present) to reveal/hide its matching "Please
+// Specify" text field — reused by all 4 category checklists so the
+// behavior is identical everywhere an "Other" option appears.
+function concernTypeChecklist(types, idPrefix, groupClass, specifyId){
+  return types.map(t=>{
+    const safeId = idPrefix + t.replace(/[^a-zA-Z]/g,'');
+    const isOther = t === 'Other';
+    return `<div class="checkbox-row"><input type="checkbox" id="${safeId}" value="${t}" class="${groupClass}"${isOther ? ` onchange="toggleConcernOtherSpecify('${specifyId}', this.checked)"` : ''}><label for="${safeId}">${t}</label></div>`;
+  }).join('');
+}
+function toggleConcernOtherSpecify(specifyId, checked){
+  const wrap = document.getElementById(specifyId + 'Wrap');
+  if(!wrap) return;
+  wrap.style.display = checked ? 'block' : 'none';
+  if(!checked) document.getElementById(specifyId).value = '';
+}
+// Re-checks the right boxes when editing a saved concern — "Other"
+// may have been saved as "Other: <specified text>", so this treats
+// anything starting with "Other" as matching the Other checkbox and
+// restores the specified text into its Please Specify field.
+function applyConcernTypeCheckboxes(cbClass, types, specifyId){
+  const otherEntry = types.find(t => t === 'Other' || t.indexOf('Other:') === 0);
+  document.querySelectorAll(cbClass).forEach(cb=>{
+    cb.checked = types.includes(cb.value) || (cb.value === 'Other' && !!otherEntry);
+  });
+  if(otherEntry && specifyId){
+    const specifyText = otherEntry.indexOf('Other:') === 0 ? otherEntry.slice(6).trim() : '';
+    document.getElementById(specifyId).value = specifyText;
+    toggleConcernOtherSpecify(specifyId, true);
+  }
+}
 const CONCERN_STATUSES = ["Submitted","Under Review","Under Investigation","Pending Information","Resolved","Closed","Escalated"];
 function concernStatusPill(status){
-  const map = { "Submitted":"warn", "Under Review":"warn", "Under Investigation":"warn", "Pending Information":"warn", "Resolved":"ok", "Closed":"ok", "Escalated":"danger",
+  const map = { "Submitted":"warn", "Under Review":"warn", "Under Investigation":"warn", "Pending Information":"warn", "Resolved":"ok", "Closed":"ok", "Escalated":"danger", "Withdrawn":"danger",
     // legacy statuses from before this update — kept working so old reports still display correctly
     "Open":"warn", "No Action Needed":"ok" };
   return `<span class="pill ${map[status]||'warn'}">${status||'Submitted'}</span>`;
@@ -5320,7 +5353,11 @@ const BUILDERS = {
             <div><label>Department <span class="muted">(if known)</span></label><input type="text" id="concernEmpDept" placeholder="Optional"></div>
           </div>
           <label>Type of Concern <span class="muted">(select all that apply)</span></label>
-          ${DISC_CONCERN_TYPES.map(t=>`<div class="checkbox-row"><input type="checkbox" id="concernT_${t.replace(/[^a-zA-Z]/g,'')}" value="${t}" class="concernTypeCb"><label for="concernT_${t.replace(/[^a-zA-Z]/g,'')}">${t}</label></div>`).join('')}
+          ${concernTypeChecklist(DISC_CONCERN_TYPES, 'concernT_', 'concernTypeCb', 'concernTypeOtherSpecify')}
+          <div id="concernTypeOtherSpecifyWrap" style="display:none; margin-top:8px;">
+            <label>Please Specify</label>
+            <input type="text" id="concernTypeOtherSpecify" placeholder="Describe the concern...">
+          </div>
         </div>
 
         <div id="concernCustomerFields" style="display:${defaultType==='customer' ? 'block' : 'none'};">
@@ -5332,12 +5369,20 @@ const BUILDERS = {
           <label>Description / Identifying Information <span class="muted">(optional)</span></label>
           <input type="text" id="concernCustomerDescription" placeholder="e.g. appearance, clothing, table or machine number">
           <label>Type of Concern <span class="muted">(select all that apply)</span></label>
-          ${DISC_CUSTOMER_CONCERN_TYPES.map(t=>`<div class="checkbox-row"><input type="checkbox" id="concernCT_${t.replace(/[^a-zA-Z]/g,'')}" value="${t}" class="concernCustomerTypeCb"><label for="concernCT_${t.replace(/[^a-zA-Z]/g,'')}">${t}</label></div>`).join('')}
+          ${concernTypeChecklist(DISC_CUSTOMER_CONCERN_TYPES, 'concernCT_', 'concernCustomerTypeCb', 'concernCustomerTypeOtherSpecify')}
+          <div id="concernCustomerTypeOtherSpecifyWrap" style="display:none; margin-top:8px;">
+            <label>Please Specify</label>
+            <input type="text" id="concernCustomerTypeOtherSpecify" placeholder="Describe the concern...">
+          </div>
         </div>
 
         <div id="concernSafetyFields" style="display:${defaultType==='safety' ? 'block' : 'none'};">
           <div class="section-title" style="font-size:13px; margin:14px 0 8px;">Type of Safety Concern</div>
-          ${CONCERN_SAFETY_TYPES.map(t=>`<div class="checkbox-row"><input type="checkbox" id="concernST_${t.replace(/[^a-zA-Z]/g,'')}" value="${t}" class="concernSafetyTypeCb"><label for="concernST_${t.replace(/[^a-zA-Z]/g,'')}">${t}</label></div>`).join('')}
+          ${concernTypeChecklist(CONCERN_SAFETY_TYPES, 'concernST_', 'concernSafetyTypeCb', 'concernSafetyTypeOtherSpecify')}
+          <div id="concernSafetyTypeOtherSpecifyWrap" style="display:none; margin-top:8px;">
+            <label>Please Specify</label>
+            <input type="text" id="concernSafetyTypeOtherSpecify" placeholder="Describe the safety concern...">
+          </div>
           <label>Is this an immediate safety risk?</label>
           <select id="concernSafetyRisk"><option value="No">No – Regular Safety Concern</option><option value="Yes">Yes – Requires Immediate Attention</option></select>
           <label>Immediate Action Taken <span class="muted">(if any)</span></label>
@@ -5346,7 +5391,11 @@ const BUILDERS = {
 
         <div id="concernFacilitiesFields" style="display:${defaultType==='facilities' ? 'block' : 'none'};">
           <div class="section-title" style="font-size:13px; margin:14px 0 8px;">Type of Issue</div>
-          ${CONCERN_FACILITIES_TYPES.map(t=>`<div class="checkbox-row"><input type="checkbox" id="concernFT_${t.replace(/[^a-zA-Z]/g,'')}" value="${t}" class="concernFacilitiesTypeCb"><label for="concernFT_${t.replace(/[^a-zA-Z]/g,'')}">${t}</label></div>`).join('')}
+          ${concernTypeChecklist(CONCERN_FACILITIES_TYPES, 'concernFT_', 'concernFacilitiesTypeCb', 'concernFacilitiesTypeOtherSpecify')}
+          <div id="concernFacilitiesTypeOtherSpecifyWrap" style="display:none; margin-top:8px;">
+            <label>Please Specify</label>
+            <input type="text" id="concernFacilitiesTypeOtherSpecify" placeholder="Describe the issue...">
+          </div>
           <label>Priority</label>
           <select id="concernFacilitiesPriority">${CONCERN_PRIORITIES.map(p=>`<option>${p}</option>`).join('')}</select>
         </div>
@@ -5406,7 +5455,7 @@ const BUILDERS = {
               <td>${concernStatusPill(c.status)}</td>
               <td style="white-space:nowrap;">
                 <button class="btn info auto" style="padding:5px 10px; margin-right:6px;" onclick="viewMyConcernDetail('${c.id}')">View</button>
-                ${canEdit ? `<button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditConcern('${c.id}')">✏️ Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyConcern('${c.id}', this)">🗑️ Delete</button>` : ''}
+                ${canEdit ? `<button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditConcern('${c.id}')">✏️ Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="withdrawMyConcern('${c.id}', this)">↩️ Withdraw</button>` : ''}
               </td>
             </tr>`;
           }).join('') || `<tr><td colspan="7" class="muted">No concerns submitted yet.</td></tr>`}
@@ -6911,30 +6960,49 @@ async function submitMyConcern(){
   let CoworkerName = '', ConcernTypes = '', MembershipNumber = '', CustomerDescription = '', SafetyRisk = '', ImmediateActionTaken = '', Priority = '';
   let RequestCCTV = false, CCTVDate = '', CCTVTime = '';
 
+  // "Other" needs its Please Specify text filled in — encoded right
+  // into the saved type string itself ("Other: <text>") so no new
+  // column is needed and it displays naturally everywhere the type
+  // list is already shown.
+  function withOtherSpecify(types, specifyInputId, label){
+    if(!types.includes('Other')) return {ok:true, types};
+    const text = document.getElementById(specifyInputId).value.trim();
+    if(!text) return {ok:false, error:`Please specify the "Other" ${label}.`};
+    return {ok:true, types: types.map(t => t==='Other' ? ('Other: '+text) : t)};
+  }
+
   if(type === 'employee'){
     CoworkerName = readEmployeePicker('concernCoworkerName');
     if(!CoworkerName){ err.textContent="Type the employee's name and pick a match from the suggestions."; err.style.display='block'; return; }
     const types = Array.from(document.querySelectorAll('.concernTypeCb:checked')).map(cb=>cb.value);
     if(!types.length){ err.textContent="Select at least one Type of Concern."; err.style.display='block'; return; }
-    ConcernTypes = JSON.stringify(types);
+    const r = withOtherSpecify(types, 'concernTypeOtherSpecify', 'concern');
+    if(!r.ok){ err.textContent=r.error; err.style.display='block'; return; }
+    ConcernTypes = JSON.stringify(r.types);
   } else if(type === 'customer'){
     CoworkerName = document.getElementById('concernCustomerName').value.trim(); // reuses the same field — "leave blank if unknown" is fine here
     MembershipNumber = document.getElementById('concernMembershipNumber').value.trim();
     CustomerDescription = document.getElementById('concernCustomerDescription').value.trim();
     const types = Array.from(document.querySelectorAll('.concernCustomerTypeCb:checked')).map(cb=>cb.value);
     if(!types.length){ err.textContent="Select at least one Type of Concern."; err.style.display='block'; return; }
-    ConcernTypes = JSON.stringify(types);
+    const r = withOtherSpecify(types, 'concernCustomerTypeOtherSpecify', 'concern');
+    if(!r.ok){ err.textContent=r.error; err.style.display='block'; return; }
+    ConcernTypes = JSON.stringify(r.types);
   } else if(type === 'safety'){
     const types = Array.from(document.querySelectorAll('.concernSafetyTypeCb:checked')).map(cb=>cb.value);
     if(!types.length){ err.textContent="Select at least one Type of Safety Concern."; err.style.display='block'; return; }
-    ConcernTypes = JSON.stringify(types);
+    const r = withOtherSpecify(types, 'concernSafetyTypeOtherSpecify', 'safety concern');
+    if(!r.ok){ err.textContent=r.error; err.style.display='block'; return; }
+    ConcernTypes = JSON.stringify(r.types);
     SafetyRisk = document.getElementById('concernSafetyRisk').value;
     ImmediateActionTaken = document.getElementById('concernImmediateAction').value.trim();
     Priority = SafetyRisk === 'Yes' ? 'Urgent' : 'High';
   } else if(type === 'facilities'){
     const types = Array.from(document.querySelectorAll('.concernFacilitiesTypeCb:checked')).map(cb=>cb.value);
     if(!types.length){ err.textContent="Select at least one Type of Issue."; err.style.display='block'; return; }
-    ConcernTypes = JSON.stringify(types);
+    const r = withOtherSpecify(types, 'concernFacilitiesTypeOtherSpecify', 'issue');
+    if(!r.ok){ err.textContent=r.error; err.style.display='block'; return; }
+    ConcernTypes = JSON.stringify(r.types);
     Priority = document.getElementById('concernFacilitiesPriority').value;
   }
 
@@ -6997,6 +7065,8 @@ function viewMyConcernDetail(id){
     ['Specific Location', c.specificLocation || '—'],
     ['Incident Date', c.incidentDate ? fmtDiscDate(c.incidentDate) : '—'],
     ['Incident Time', c.incidentTime ? fmtDiscTime(c.incidentTime) : '—'],
+    ['Submitted', fmtDateTime(c.date)],
+    ['Last Updated', c.lastUpdated ? fmtDiscDate(c.lastUpdated) : fmtDateTime(c.date)],
   ];
   if(type==='employee') rows.push(['Employee', c.coworkerName||'—']);
   if(type==='customer'){ rows.push(['Customer', c.coworkerName||'Unknown']); if(c.membershipNumber) rows.push(['Membership #', c.membershipNumber]); if(c.customerDescription) rows.push(['Description', c.customerDescription]); }
@@ -7004,13 +7074,20 @@ function viewMyConcernDetail(id){
   if(type==='safety'){ rows.push(['Immediate Safety Risk', c.safetyRisk||'—']); if(c.immediateActionTaken) rows.push(['Immediate Action Taken', c.immediateActionTaken]); }
   if(c.requestCCTV) rows.push(['CCTV Requested', '📹 Yes']);
   if(c.witnessName) rows.push(['Witness', c.witnessName]);
+  let history = [];
+  try{ history = JSON.parse(c.editHistory || '[]'); }catch(e){ history = []; }
   document.getElementById('myConcernDetailBody').innerHTML = `
     <table style="margin-bottom:14px;">
       ${rows.map(([label,val])=>`<tr><td class="muted">${label}</td><td>${val}</td></tr>`).join('')}
     </table>
     <p style="font-weight:600; margin-bottom:6px;">Incident Description</p>
     <p class="muted" style="margin-bottom:14px; white-space:pre-wrap;">${c.details||'—'}</p>
-    ${c.additionalComments ? `<p style="font-weight:600; margin-bottom:6px;">Additional Comments</p><p class="muted" style="white-space:pre-wrap;">${c.additionalComments}</p>` : ''}`;
+    ${c.additionalComments ? `<p style="font-weight:600; margin-bottom:6px;">Additional Comments</p><p class="muted" style="white-space:pre-wrap;">${c.additionalComments}</p>` : ''}
+    ${history.length ? `<p style="font-weight:600; margin:14px 0 6px;">Edit History</p>
+    <table>
+      <tr><th>Date</th><th>What Changed</th></tr>
+      ${history.map(h=>`<tr><td class="mono">${fmtDiscDate(h.date)}</td><td class="muted">${(h.changed||[]).join(', ')}</td></tr>`).join('')}
+    </table>` : ''}`;
   document.getElementById('myConcernDetailModal').classList.add('active');
 }
 function closeMyConcernDetailModal(){
@@ -7032,22 +7109,18 @@ function startEditConcern(id){
   const type = concernCategoryType(c.topic);
   if(type === 'employee'){
     document.getElementById('concernCoworkerName').value = c.coworkerName || '';
-    const types = discParseViolations(c.concernTypes);
-    document.querySelectorAll('.concernTypeCb').forEach(cb=>{ cb.checked = types.includes(cb.value); });
+    applyConcernTypeCheckboxes('.concernTypeCb', discParseViolations(c.concernTypes), 'concernTypeOtherSpecify');
   } else if(type === 'customer'){
     document.getElementById('concernCustomerName').value = c.coworkerName || '';
     document.getElementById('concernMembershipNumber').value = c.membershipNumber || '';
     document.getElementById('concernCustomerDescription').value = c.customerDescription || '';
-    const types = discParseViolations(c.concernTypes);
-    document.querySelectorAll('.concernCustomerTypeCb').forEach(cb=>{ cb.checked = types.includes(cb.value); });
+    applyConcernTypeCheckboxes('.concernCustomerTypeCb', discParseViolations(c.concernTypes), 'concernCustomerTypeOtherSpecify');
   } else if(type === 'safety'){
-    const types = discParseViolations(c.concernTypes);
-    document.querySelectorAll('.concernSafetyTypeCb').forEach(cb=>{ cb.checked = types.includes(cb.value); });
+    applyConcernTypeCheckboxes('.concernSafetyTypeCb', discParseViolations(c.concernTypes), 'concernSafetyTypeOtherSpecify');
     if(c.safetyRisk) document.getElementById('concernSafetyRisk').value = c.safetyRisk;
     document.getElementById('concernImmediateAction').value = c.immediateActionTaken || '';
   } else if(type === 'facilities'){
-    const types = discParseViolations(c.concernTypes);
-    document.querySelectorAll('.concernFacilitiesTypeCb').forEach(cb=>{ cb.checked = types.includes(cb.value); });
+    applyConcernTypeCheckboxes('.concernFacilitiesTypeCb', discParseViolations(c.concernTypes), 'concernFacilitiesTypeOtherSpecify');
     if(c.priority) document.getElementById('concernFacilitiesPriority').value = c.priority;
   }
 
@@ -7097,14 +7170,15 @@ function cancelReportConcern(){
   renderView('home');
 }
 
-async function deleteMyConcern(id, el){
-  await confirmAndDelete(el, "Delete this concern? This can't be undone.", async ()=>{
+async function withdrawMyConcern(id, el){
+  await confirmAndDelete(el, "Withdraw this report? The record is kept (not deleted) for audit purposes, marked as Withdrawn, and can no longer be edited.", async ()=>{
     if(USE_REMOTE()){
-      const r = await apiPost('deleteConcern', {id});
-      if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
+      const r = await apiPost('withdrawConcern', {id});
+      if(!r.ok){ alert(r.error || "Couldn't withdraw."); return; }
       await refreshMyConcerns();
     } else {
-      MY_CONCERNS = MY_CONCERNS.filter(x=>x.id!==id);
+      const c = MY_CONCERNS.find(x=>x.id===id);
+      if(c) c.status = 'Withdrawn';
     }
     renderView('concern');
   });
