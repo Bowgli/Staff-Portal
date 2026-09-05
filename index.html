@@ -183,9 +183,10 @@
      height, radius, padding, and font regardless of its color. */
   .btn.danger{background:var(--red); color:#fff;} /* destructive: delete, remove */
   .btn.reset{background:var(--orange); color:#1b1305;} /* clear/reset filters or forms */
-  .btn.info{background:var(--blue); color:#fff;} /* account/system: password, permissions, settings */
-  .btn.danger:hover, .btn.reset:hover, .btn.info:hover{filter:brightness(1.1);}
-  .btn.danger:disabled, .btn.reset:disabled, .btn.info:disabled{opacity:0.8; cursor:default; filter:none;}
+  .btn.info{background:var(--blue); color:#fff;} /* account/system: password, permissions, settings; also view/search actions */
+  .btn.edit{background:var(--teal); color:#fff;} /* consistent color for every Edit / Change-Status toggle across Management Account */
+  .btn.danger:hover, .btn.reset:hover, .btn.info:hover, .btn.edit:hover{filter:brightness(1.1);}
+  .btn.danger:disabled, .btn.reset:disabled, .btn.info:disabled, .btn.edit:disabled{opacity:0.8; cursor:default; filter:none;}
   .checkbox-row{display:flex; align-items:center; gap:8px; margin-top:14px;}
   .checkbox-row input{width:auto;}
   .checkbox-row label{margin:0; color:var(--text-mute); font-weight:500;}
@@ -3542,7 +3543,7 @@ function disciplinaryCasesTableSection(rows, title){
           <td class="muted">${discParseViolations(d.ViolationTypes).join(', ')||''}</td>
           <td>${d.DisciplinaryLevel||'<span class="muted">—</span>'}</td>
           <td>${discStatusPill(d.Status)}</td>
-          <td>${isViewAllowedForRole('mgmt-disciplinary-detail') ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="openDisciplinaryCase('${d.ID}')">View Case</button>` : '<span class="muted">Not authorized</span>'}</td>
+          <td>${isViewAllowedForRole('mgmt-disciplinary-detail') ? `<button class="btn info auto" style="padding:5px 10px;" onclick="openDisciplinaryCase('${d.ID}')">👁️ View Case</button>` : '<span class="muted">Not authorized</span>'}</td>
         </tr>`).join('') || `<tr><td colspan="7" class="muted">No matching cases.</td></tr>`}
       </table>
     </div>`;
@@ -4882,7 +4883,7 @@ const BUILDERS = {
       <table>
         <tr><th>Employee</th><th>Period</th><th>Score</th><th>Rating</th><th></th></tr>
         ${MY_GIVEN_EVALUATIONS.map(e=>`<tr><td>${e.EmployeeName}</td><td>${e.Month} ${e.Year}</td><td class="mono">${e.AverageScore}</td><td>${ratingStars(e.AverageScore)} ${e.RatingLabel}</td>
-          <td><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditEvaluation('${e.ID}')">Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyEvaluation('${e.ID}', this)">🗑️ Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">You haven't evaluated anyone yet.</td></tr>`}
+          <td><button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditEvaluation('${e.ID}')">✏️ Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyEvaluation('${e.ID}', this)">🗑️ Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">You haven't evaluated anyone yet.</td></tr>`}
       </table>
     </div>`,
 
@@ -4962,7 +4963,7 @@ const BUILDERS = {
             <td>${(()=>{
               const canEdit = r.status==='pending' || (r.status==='needs-clarification' && isNotice);
               const canDelete = r.status==='pending';
-              return `${canEdit ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditRequest('${r.id}')">Edit</button>` : ''}${canDelete ? `<button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyRequest('${r.id}', this)">🗑️ Delete</button>` : ''}`;
+              return `${canEdit ? `<button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditRequest('${r.id}')">✏️ Edit</button>` : ''}${canDelete ? `<button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyRequest('${r.id}', this)">🗑️ Delete</button>` : ''}`;
             })()}</td></tr>`;
           }).join('') || `<tr><td colspan="4" class="muted">No requests yet.</td></tr>`}
         </table>
@@ -5018,7 +5019,7 @@ const BUILDERS = {
         <table>
           <tr><th>Topic</th><th>Date</th><th>Status</th><th></th></tr>
           ${MY_CONCERNS.map(c=>`<tr><td>${c.topic}</td><td>${fmtDateTime(c.date)}</td><td>${statusPill(c.status)}</td>
-            <td>${c.status==='Open' ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditConcern('${c.id}')">Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyConcern('${c.id}', this)">🗑️ Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No concerns submitted yet.</td></tr>`}
+            <td>${c.status==='Open' ? `<button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditConcern('${c.id}')">✏️ Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyConcern('${c.id}', this)">🗑️ Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No concerns submitted yet.</td></tr>`}
         </table>
       </div>
     </div>`,
@@ -5040,7 +5041,7 @@ const BUILDERS = {
         <table>
           <tr><th>Idea</th><th>Date</th><th>Status</th><th></th></tr>
           ${MY_SUGGESTIONS.map(s=>`<tr><td>${s.idea}</td><td>${fmtDateTime(s.date)}</td><td><span class="pill ${s.status==='new'?'warn':'ok'}">${s.status==='new'?'New':'Reviewed'}</span></td>
-            <td>${s.status==='new' ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditSuggestion('${s.id}')">Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMySuggestion('${s.id}', this)">🗑️ Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No suggestions submitted yet.</td></tr>`}
+            <td>${s.status==='new' ? `<button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditSuggestion('${s.id}')">✏️ Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMySuggestion('${s.id}', this)">🗑️ Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No suggestions submitted yet.</td></tr>`}
         </table>
       </div>
     </div>`,
@@ -5167,7 +5168,7 @@ const BUILDERS = {
       <div class="card">
         <h3 style="display:flex; justify-content:space-between; align-items:center;">
           <span>Employment Information</span>
-          ${!employeeProfileEditMode ? `<button class="btn ghost auto no-print" style="padding:4px 10px; font-size:13px;" onclick="toggleEmployeeProfileEdit(true)">Edit</button>` : ''}
+          ${!employeeProfileEditMode ? `<button class="btn edit auto no-print" style="padding:4px 10px; font-size:13px;" onclick="toggleEmployeeProfileEdit(true)">✏️ Edit</button>` : ''}
         </h3>
         ${employeeProfileEditMode ? `
           <label>Full Name</label>
@@ -5302,7 +5303,7 @@ const BUILDERS = {
         <button class="btn ${isNext?'ghost':''} auto" style="padding:8px 14px;" onclick="setScheduleViewMode('current')">This Week</button>
         <button class="btn ${isNext?'':'ghost'} auto" style="padding:8px 14px;" onclick="setScheduleViewMode('next')">Next Week${NEXT_SCHEDULE_ROWS.length?'':' (empty)'}</button>
       </div>
-      <button class="btn ghost auto" style="padding:8px 14px;" onclick="printWithPageSettings('letter','landscape','0.4cm 0.20in')">🖨️ Print Schedule</button>
+      <button class="btn auto" style="padding:8px 14px;" onclick="printWithPageSettings('letter','landscape','0.4cm 0.20in')">🖨️ Print Schedule</button>
     </div>
     ${isNext ? `<div class="banner note no-print" style="margin-bottom:16px;">
       <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
@@ -5634,7 +5635,8 @@ const BUILDERS = {
     </div>
 
     <p id="discFormErr" class="login-err" style="display:none;"></p>
-    <div style="display:flex; gap:8px;">
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn ghost auto" onclick="renderView('mgmt-disciplinary')">← Cancel / Back</button>
       <button class="btn ghost auto" id="discDraftBtn" onclick="saveDisciplinaryCase('Draft')">Save Draft</button>
       <button class="btn auto" id="discSubmitBtn" onclick="saveDisciplinaryCase('Under Review')">Submit Report</button>
     </div>`;
@@ -5651,14 +5653,14 @@ const BUILDERS = {
     return `
     <div class="no-print" style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <button class="btn ghost auto" onclick="renderView('mgmt-disciplinary')">← Back to Disciplinary Reports</button>
-      <button class="btn ghost auto" onclick="printWithPageSettings('letter','portrait','0.75in')">🖨️ Print Case</button>
+      <button class="btn auto" onclick="printWithPageSettings('letter','portrait','0.75in')">🖨️ Print Case</button>
     </div>
 
     <div class="print-doc">
     <div class="card" style="margin-bottom:16px;">
       <h3 style="display:flex; justify-content:space-between; align-items:center;">
         <span>Case Information</span>
-        ${!discCaseInfoEditMode ? `<button class="btn ghost auto no-print" style="padding:4px 10px; font-size:13px;" onclick="toggleDiscCaseInfoEdit(true)">Edit</button>` : ''}
+        ${!discCaseInfoEditMode ? `<button class="btn edit auto no-print" style="padding:4px 10px; font-size:13px;" onclick="toggleDiscCaseInfoEdit(true)">✏️ Edit</button>` : ''}
       </h3>
       ${discCaseInfoEditMode ? `
         <div class="grid grid-2">
@@ -5703,7 +5705,7 @@ const BUILDERS = {
     <div class="card" style="margin-bottom:16px;">
       <h3 style="display:flex; justify-content:space-between; align-items:center;">
         <span>Incident Information</span>
-        ${!discIncidentEditMode ? `<button class="btn ghost auto no-print" style="padding:4px 10px; font-size:13px;" onclick="toggleDiscIncidentEdit(true)">Edit</button>` : ''}
+        ${!discIncidentEditMode ? `<button class="btn edit auto no-print" style="padding:4px 10px; font-size:13px;" onclick="toggleDiscIncidentEdit(true)">✏️ Edit</button>` : ''}
       </h3>
       ${discIncidentEditMode ? `
         <div class="grid grid-2">
@@ -5764,7 +5766,7 @@ const BUILDERS = {
     <div class="card" style="margin-bottom:16px;">
       <h3 style="display:flex; justify-content:space-between; align-items:center;">
         <span>Management Review</span>
-        ${(!discReviewEditMode && currentMgmtRole()==='full') ? `<button class="btn ghost auto no-print" style="padding:4px 10px; font-size:13px;" onclick="toggleDiscReviewEdit(true)">Edit</button>` : ''}
+        ${(!discReviewEditMode && currentMgmtRole()==='full') ? `<button class="btn edit auto no-print" style="padding:4px 10px; font-size:13px;" onclick="toggleDiscReviewEdit(true)">✏️ Edit</button>` : ''}
       </h3>
       ${discReviewEditMode ? `
         <label>Management Findings</label>
@@ -5789,7 +5791,7 @@ const BUILDERS = {
     <div class="card" style="margin-bottom:16px;">
       <h3 style="display:flex; justify-content:space-between; align-items:center;">
         <span>Disciplinary Level</span>
-        ${(!discLevelEditMode && currentMgmtRole()==='full') ? `<button class="btn ghost auto no-print" style="padding:4px 10px; font-size:13px;" onclick="toggleDiscLevelEdit(true)">Edit</button>` : ''}
+        ${(!discLevelEditMode && currentMgmtRole()==='full') ? `<button class="btn edit auto no-print" style="padding:4px 10px; font-size:13px;" onclick="toggleDiscLevelEdit(true)">✏️ Edit</button>` : ''}
       </h3>
       ${discLevelEditMode ? `
         <p class="muted" style="margin-bottom:8px;">Management should review the circumstances, employee response, and company policy before selecting a level — it's never assigned automatically from case count.</p>
@@ -5819,7 +5821,7 @@ const BUILDERS = {
     <div class="card" style="margin-bottom:16px;">
       <h3 style="display:flex; justify-content:space-between; align-items:center;">
         <span>Case Status</span>
-        ${(!discStatusEditMode && currentMgmtRole()==='full') ? `<button class="btn ghost auto no-print" style="padding:4px 10px; font-size:13px;" onclick="toggleDiscStatusEdit(true)">Change Status</button>` : ''}
+        ${(!discStatusEditMode && currentMgmtRole()==='full') ? `<button class="btn edit auto no-print" style="padding:4px 10px; font-size:13px;" onclick="toggleDiscStatusEdit(true)">✏️ Change Status</button>` : ''}
       </h3>
       ${discStatusEditMode ? `
         <select id="discStatusSelect">
@@ -5918,7 +5920,7 @@ const BUILDERS = {
     <div class="card print-doc">
       <div class="no-print" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:4px;">
         <h3 style="margin:0;"><span class="ic">📝</span> All Requests</h3>
-        <button class="btn ghost auto" onclick="printRequestsLog()">🖨️ Print Filtered Requests</button>
+        <button class="btn auto" onclick="printRequestsLog()">🖨️ Print Filtered Requests</button>
       </div>
       <div class="print-only" style="display:none;" id="reqPrintHeader"></div>
       <p class="muted no-print" style="margin-bottom:12px;">Status can be changed anytime — handy for an accidental click or if the staff member changes their mind on a swap.</p>
@@ -6004,7 +6006,7 @@ const BUILDERS = {
       <table>
         <tr><th>From</th><th>Venue</th><th>Topic</th><th>Date</th><th>Status</th><th></th></tr>
         ${filtered.map(c=>`<tr><td>${c.from}</td><td class="muted">${c.venue||'—'}</td><td>${c.topic}${c.coworkerName ? `<br><span class="muted" style="font-size:11px;">${c.topic==='Customer conduct'?'Customer':'Coworker'}: ${c.coworkerName}</span>` : ''}</td><td>${fmtDateTime(c.date)}</td><td>${concernStatusPill(c.status)}</td>
-          <td><button class="btn ghost auto" style="padding:5px 10px;" onclick="openConcernDetail('${c.id}')">View Report</button></td></tr>`).join('') || `<tr><td colspan="6" class="muted">No matching concerns.</td></tr>`}
+          <td><button class="btn info auto" style="padding:5px 10px;" onclick="openConcernDetail('${c.id}')">👁️ View Report</button></td></tr>`).join('') || `<tr><td colspan="6" class="muted">No matching concerns.</td></tr>`}
       </table>
     </div>`;
   },
@@ -6015,7 +6017,7 @@ const BUILDERS = {
     return `
     <div class="no-print" style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <button class="btn ghost auto" onclick="renderView('mgmt-concerns')">← Back to All Reported Concerns</button>
-      <button class="btn ghost auto" onclick="printWithPageSettings('letter','portrait','0.75in')">🖨️ Print Report</button>
+      <button class="btn auto" onclick="printWithPageSettings('letter','portrait','0.75in')">🖨️ Print Report</button>
     </div>
 
     <div class="print-doc">
@@ -6182,7 +6184,7 @@ const BUILDERS = {
         ${ALL_ANNOUNCEMENTS.map(a=>`<tr><td>${a.Title}</td><td class="muted">${a.TargetType==='All'?'All Staff':a.TargetType==='Position'?a.TargetValue:a.TargetValue}</td><td>${fmtDateTime(a.Date)}</td>
           <td style="white-space:nowrap;">
             <button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="viewAnnouncementDetail('${a.ID}')">👁️ View</button>
-            <button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditAnnouncement('${a.ID}')">✏️ Edit</button>
+            <button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditAnnouncement('${a.ID}')">✏️ Edit</button>
             <button class="btn danger auto" style="padding:5px 10px;" onclick="deleteAnnouncementEntry('${a.ID}', this)">🗑️ Delete</button>
           </td></tr>`).join('') || `<tr><td colspan="4" class="muted">No announcements posted yet.</td></tr>`}
       </table>
@@ -6986,7 +6988,7 @@ function renderAttendanceLogRows(){
   let filtered = sortedAttendanceLog();
   const q = attendanceSearchQuery.toLowerCase();
   if(!q) filtered = filtered.slice(0, 10); // keep the default view short — search shows everything that matches
-  return filtered.map(a=>`<tr><td>${a.name}</td><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td><td class="muted">${a.loggedBy||'—'}</td><td><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditAttendance('${a.id}')">Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteAttendanceEntry('${a.id}', this)">🗑️ Delete</button></td></tr>`).join('')
+  return filtered.map(a=>`<tr><td>${a.name}</td><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td><td class="muted">${a.loggedBy||'—'}</td><td><button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditAttendance('${a.id}')">✏️ Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteAttendanceEntry('${a.id}', this)">🗑️ Delete</button></td></tr>`).join('')
     || `<tr><td colspan="7" class="muted">${attendanceSearchQuery ? 'No entries match that search.' : 'No entries logged yet.'}</td></tr>`;
 }
 /* Individual Employee Print Log — search shows an on-screen preview
