@@ -399,6 +399,15 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="perfDetailModal">
+  <div class="modal-box" style="max-width:600px;">
+    <div id="perfDetailBody"></div>
+    <div class="modal-btns">
+      <button class="btn ghost" onclick="closePerfDetailModal()">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== LOGIN GATE ===== -->
 <div class="login-gate" id="loginGate">
   <div class="login-card">
@@ -811,6 +820,7 @@ let attendanceSearchQuery = '';
 const ATTENDANCE_ARCHIVE_DAYS_CLIENT = 90; // mirrors ATTENDANCE_ARCHIVE_DAYS in Code.gs — display text only, the actual cutoff is enforced server-side
 let perfFilterMonth = 'All';
 let perfFilterYear = 'All';
+let perfFilterPosition = 'All';
 let perfSearchQuery = '';
 let employeesSearchQuery = '';
 let reqFilter = { employee:'', type:'All', status:'All', dateFrom:'', dateTo:'' };
@@ -821,12 +831,14 @@ let nomFilterYear = 'All';
 let nomFilterCategory = 'All';
 function setPerfFilter(type, val){
   if(type==='month') perfFilterMonth = val;
-  else perfFilterYear = val;
+  else if(type==='year') perfFilterYear = val;
+  else perfFilterPosition = val;
   renderView('mgmt-performance');
 }
 function resetPerfFilter(){
   perfFilterMonth = 'All';
   perfFilterYear = 'All';
+  perfFilterPosition = 'All';
   perfSearchQuery = '';
   renderView('mgmt-performance');
 }
@@ -4608,15 +4620,89 @@ function topNominatedChart(nominations){
         </div>`).join('') : `<p class="muted">No nominations match the selected filters.</p>`}
     </div>`;
 }
-function topPerformersChart(latestByEmployee){
-  const all = Object.entries(latestByEmployee).map(([name,e])=>[name, Number(e.AverageScore)]);
-  const ranked = all.slice().sort((a,b)=>b[1]-a[1]);
-  const needsImprovement = all.filter(([,score])=>score>=1.00 && score<=2.49).sort((a,b)=>a[1]-b[1]);
+// Finds the evaluation immediately before "current" for the same
+// employee — ALL_EVALUATIONS is already newest-first, so the first
+// one older than current's own date is the correct "previous".
+function getPreviousEvaluation(current){
+  if(!current) return null;
+  const curTime = new Date(current.Date).getTime();
+  return ALL_EVALUATIONS.find(e => e.EmployeeName===current.EmployeeName && e.ID!==current.ID && new Date(e.Date).getTime() < curTime) || null;
+}
+// Shared by the Evaluation Report table and the View Details modal —
+// so the trend shown in both places is always computed the same way.
+function evalTrendHtml(current, previous){
+  if(!current) return `<span class="muted">—</span>`;
+  if(!previous) return `<span class="muted">— First Evaluation</span>`;
+  const diff = Math.round((Number(current.AverageScore) - Number(previous.AverageScore)) * 100) / 100;
+  if(diff > 0) return `<span style="color:var(--teal);">📈 Improved +${diff.toFixed(1)}</span>`;
+  if(diff < 0) return `<span style="color:var(--red);">📉 Declined ${diff.toFixed(1)}</span>`;
+  return `<span class="muted">➖ No Change</span>`;
+}
+
+// Position filter options for Performance Reports — reuses the exact
+// same grouping as the Master Schedule Department filter (Technical
+// Supervisor / Assistant Technical Supervisor both fold into "Slot
+// Technician"), derived from the actual roster so the list can never
+// silently miss a position as roles change.
+function getUniqueEmployeePositions(){
+  const set = new Set();
+  EMPLOYEE_ROSTER.forEach(e => { if(e.position) set.add(scheduleFilterGroupForRole(e.position)); });
+  return Array.from(set).sort();
+}
+
+// Richer version of "Staff for Improvement" specifically for the
+// Performance Reports page — adds Current/Previous score and trend,
+// not just a name and a bar, so management can see at a glance
+// whether someone is already trending back up.
+function staffForImprovementSection(rows){
+  const needing = rows.filter(r => r.e && Number(r.e.AverageScore) >= 1 && Number(r.e.AverageScore) <= 2.49)
+    .sort((a,b) => Number(a.e.AverageScore) - Number(b.e.AverageScore));
   return `
-    <div class="grid grid-2" style="margin-bottom:16px;">
-      ${renderRankedEvalCard('🏆', 'Performing Staff — All Evaluated', ranked, 'var(--teal)')}
-      ${renderRankedEvalCard('📈', 'Staff for Improvement', needsImprovement, 'var(--red)', '🎉 Great News! No employees currently require performance improvement.')}
+    <div class="card" style="margin-bottom:16px;">
+      <h3><span class="ic">📈</span> Staff Needing Improvement</h3>
+      ${needing.length ? `<table>
+        <tr><th>Employee</th><th>Current Score</th><th>Previous Score</th><th>Trend</th></tr>
+        ${needing.map(r=>{
+          const prev = getPreviousEvaluation(r.e);
+          return `<tr>
+            <td>${r.name}</td>
+            <td class="mono">${r.e.AverageScore}</td>
+            <td class="mono">${prev ? prev.AverageScore : '<span class="muted">—</span>'}</td>
+            <td>${evalTrendHtml(r.e, prev)}</td>
+          </tr>`;
+        }).join('')}
+      </table>` : `<p class="muted">🎉 Great News! No employees currently require performance improvement.</p>`}
     </div>`;
+}
+
+function openPerfDetail(id){
+  const e = ALL_EVALUATIONS.find(x=>x.ID===id);
+  if(!e) return;
+  const prev = getPreviousEvaluation(e);
+  const history = ALL_EVALUATIONS.filter(x=>x.EmployeeName===e.EmployeeName).sort((a,b)=>new Date(b.Date)-new Date(a.Date));
+  document.getElementById('perfDetailBody').innerHTML = `
+    <h3 style="margin-bottom:4px;">${e.EmployeeName}</h3>
+    <p class="muted" style="margin-bottom:14px;">${e.Month} ${e.Year} · Evaluated by ${e.EvaluatedBy || 'Anonymous'}</p>
+    <div class="card stat-card" style="background:var(--panel-2); margin-bottom:14px;">
+      <div class="num">${e.AverageScore} / 5.0</div>
+      <div class="label">${ratingStars(e.AverageScore)} ${e.RatingLabel}</div>
+      <div class="trend" style="margin-top:6px;">${evalTrendHtml(e, prev)}</div>
+    </div>
+    <p style="font-weight:600; margin-bottom:8px;">Question Scores</p>
+    <table style="margin-bottom:14px;">
+      ${EVALUATION_QUESTIONS.map((q,i)=>`<tr><td class="muted">${i+1}. ${q}</td><td class="mono" style="text-align:right;">${e['Q'+(i+1)]||'—'}</td></tr>`).join('')}
+    </table>
+    <p style="font-weight:600; margin-bottom:6px;">Comments / Feedback</p>
+    <p class="muted" style="margin-bottom:14px;">${e.Comments || 'No additional comments.'}</p>
+    <p style="font-weight:600; margin-bottom:8px;">Evaluation History</p>
+    <table>
+      <tr><th>Period</th><th>Score</th><th>Rating</th></tr>
+      ${history.map(h=>`<tr><td>${h.Month} ${h.Year}</td><td class="mono">${h.AverageScore}</td><td>${h.RatingLabel}</td></tr>`).join('')}
+    </table>`;
+  document.getElementById('perfDetailModal').classList.add('active');
+}
+function closePerfDetailModal(){
+  document.getElementById('perfDetailModal').classList.remove('active');
 }
 
 function topStatusChart(log, icon, status, title, limit, barColor, linkTo){
@@ -5617,10 +5703,19 @@ const BUILDERS = {
     const countByEmployee = {};
     ALL_EVALUATIONS.forEach(e=>{ countByEmployee[e.EmployeeName] = (countByEmployee[e.EmployeeName]||0) + 1; });
 
-    let rows = filtered
+    // Base population — Active roster only, respecting Period +
+    // Position filters, but NOT the search box: Search is just a
+    // table-scrolling convenience and shouldn't shrink the Progress/
+    // Summary numbers, which should reflect the full filtered group.
+    let baseRows = (filtered
       ? filtered.map(e => ({name:e.EmployeeName, position:(EMPLOYEE_ROSTER.find(r=>r.name===e.EmployeeName)||{}).position||'', e}))
-      : EMPLOYEE_ROSTER.map(emp => ({name:emp.name, position:emp.position, e:latestByEmployee[emp.name]}));
+      : EMPLOYEE_ROSTER.filter(emp=>emp.status==='Active').map(emp => ({name:emp.name, position:emp.position, e:latestByEmployee[emp.name]})));
 
+    if(perfFilterPosition !== 'All'){
+      baseRows = baseRows.filter(r => scheduleFilterGroupForRole(r.position||'') === perfFilterPosition);
+    }
+
+    let rows = baseRows;
     if(perfSearchQuery.trim()){
       const q = perfSearchQuery.trim().toLowerCase();
       rows = rows.filter(r => r.name.toLowerCase().includes(q));
@@ -5629,15 +5724,41 @@ const BUILDERS = {
     const scored = rows.map(r=>r.e).filter(Boolean).map(e=>Number(e.AverageScore));
     const totalAvg = scored.length ? (scored.reduce((a,b)=>a+b,0)/scored.length).toFixed(2) : '—';
 
+    // Evaluation Progress — always against the Period+Position-filtered
+    // population (baseRows), regardless of what's currently typed in
+    // the search box.
+    const totalCount = baseRows.length;
+    const evaluatedCount = baseRows.filter(r=>r.e).length;
+    const notEvaluatedCount = totalCount - evaluatedCount;
+    const evalPct = totalCount ? Math.round((evaluatedCount/totalCount)*100) : 0;
+    const excellentCount = baseRows.filter(r=>r.e && Number(r.e.AverageScore)>=4.5).length;
+    const needsImprovementCount = baseRows.filter(r=>r.e && Number(r.e.AverageScore)>=1 && Number(r.e.AverageScore)<=2.49).length;
+
     const years = Array.from(new Set(ALL_EVALUATIONS.map(e=>String(e.Year)))).sort().reverse();
     const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const positions = getUniqueEmployeePositions();
 
     return `
-    <div class="card stat-card" style="margin-bottom:16px;"><div class="num">${totalAvg}</div><div class="label">Total average score${filtered?' — '+perfFilterMonth+' '+perfFilterYear:' (latest per staff)'}</div></div>
-    ${topPerformersChart(latestByEmployee)}
+    <div class="card" style="margin-bottom:16px; padding:14px 16px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
+        <span style="font-weight:600;">Evaluation Progress: ${evaluatedCount} / ${totalCount} Employees Evaluated (${evalPct}%)</span>
+        <span class="muted" style="font-size:12px;">${filtered ? perfFilterMonth+' '+perfFilterYear : 'Latest per staff'}${perfFilterPosition!=='All' ? ' · '+perfFilterPosition : ''}</span>
+      </div>
+      <div style="height:8px; background:var(--panel-2); border-radius:6px; overflow:hidden;"><div style="height:100%; width:${evalPct}%; background:var(--gold);"></div></div>
+    </div>
+    <div class="grid grid-3" style="margin-bottom:16px;">
+      <div class="card stat-card"><div class="num">${totalCount}</div><div class="label">Total Employees</div></div>
+      <div class="card stat-card"><div class="num" style="color:var(--teal);">${evaluatedCount}</div><div class="label">Employees Evaluated</div></div>
+      <div class="card stat-card"><div class="num" style="color:var(--gold);">${notEvaluatedCount}</div><div class="label">Not Yet Evaluated</div></div>
+      <div class="card stat-card"><div class="num">${totalAvg}</div><div class="label">Average Performance Score</div></div>
+      <div class="card stat-card"><div class="num" style="color:var(--teal);">${excellentCount}</div><div class="label">Excellent Performers</div></div>
+      <div class="card stat-card"><div class="num" style="color:var(--red);">${needsImprovementCount}</div><div class="label">Staff Needing Improvement</div></div>
+    </div>
+    ${staffForImprovementSection(baseRows)}
+    <div style="margin-bottom:16px;">${renderRankedEvalCard('🏆', 'Performing Staff — All Evaluated', baseRows.filter(r=>r.e).map(r=>[r.name, Number(r.e.AverageScore)]).sort((a,b)=>b[1]-a[1]), 'var(--teal)')}</div>
     <div class="card" style="margin-bottom:16px;">
-      <h3>Filter by Period</h3>
-      <div class="grid grid-3">
+      <h3>Filter by Period &amp; Position</h3>
+      <div class="grid grid-4">
         <div>
           <label>Month</label>
           <select onchange="setPerfFilter('month', this.value)">
@@ -5652,6 +5773,13 @@ const BUILDERS = {
             ${years.map(y=>`<option ${perfFilterYear===y?'selected':''}>${y}</option>`).join('')}
           </select>
         </div>
+        <div>
+          <label>Position</label>
+          <select onchange="setPerfFilter('position', this.value)">
+            <option value="All" ${perfFilterPosition==='All'?'selected':''}>All Positions</option>
+            ${positions.map(p=>`<option ${perfFilterPosition===p?'selected':''}>${p}</option>`).join('')}
+          </select>
+        </div>
         <div style="display:flex; align-items:flex-end;">
           <button class="btn reset auto" style="margin-top:16px;" onclick="resetPerfFilter()">↻ Clear / Reset Filters</button>
         </div>
@@ -5662,8 +5790,17 @@ const BUILDERS = {
       <p class="muted" style="margin-bottom:12px;">${filtered ? 'Showing evaluations for '+perfFilterMonth+' '+perfFilterYear+'.' : "Each employee's most recent monthly evaluation."}</p>
       <input type="text" placeholder="🔍 Search employee name…" value="${perfSearchQuery}" oninput="setPerfSearch(this.value)" style="margin-bottom:12px;">
       <table>
-        <tr><th>Employee</th><th>Position</th><th>Period</th><th>Score</th><th>Rating</th><th>Total Records</th></tr>
-        ${rows.map(r=>`<tr><td>${r.name}</td><td class="muted">${r.position}</td><td>${r.e ? r.e.Month+' '+r.e.Year : '—'}</td><td class="mono">${r.e ? r.e.AverageScore : '—'}</td><td>${r.e ? ratingStars(r.e.AverageScore)+' '+r.e.RatingLabel : '<span class="muted">Not yet evaluated</span>'}</td><td class="mono">${countByEmployee[r.name] || 0}</td></tr>`).join('') || `<tr><td colspan="6" class="muted">No evaluations found.</td></tr>`}
+        <tr><th>Employee</th><th>Position</th><th>Period</th><th>Score</th><th>Rating</th><th>Trend</th><th>Total Records</th><th></th></tr>
+        ${rows.map(r=>`<tr>
+          <td>${r.name}</td>
+          <td class="muted">${r.position}</td>
+          <td>${r.e ? r.e.Month+' '+r.e.Year : '—'}</td>
+          <td class="mono">${r.e ? r.e.AverageScore : '—'}</td>
+          <td>${r.e ? ratingStars(r.e.AverageScore)+' '+r.e.RatingLabel : '<span class="muted">Not yet evaluated</span>'}</td>
+          <td>${r.e ? evalTrendHtml(r.e, getPreviousEvaluation(r.e)) : '<span class="muted">—</span>'}</td>
+          <td class="mono">${countByEmployee[r.name] || 0}</td>
+          <td>${r.e ? `<button class="btn info auto" style="padding:5px 10px;" onclick="openPerfDetail('${r.e.ID}')">View Details</button>` : ''}</td>
+        </tr>`).join('') || `<tr><td colspan="8" class="muted">No evaluations found.</td></tr>`}
       </table>
     </div>`;
   },
