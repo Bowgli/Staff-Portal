@@ -5301,7 +5301,8 @@ const BUILDERS = {
     // of truth for every change after this initial render.
     const defaultType = concernCategoryType(CONCERN_CATEGORIES[0]);
     return `
-    <div class="card" style="max-width:900px; margin:0 auto 16px;">
+    <div class="grid grid-2">
+      <div class="card">
       <h3><span class="ic">⚠️</span> Report a Concern</h3>
       <p class="muted">This goes directly to management for review and investigation before any action is decided. Your name is attached unless you check anonymous below.</p>
 
@@ -5387,8 +5388,8 @@ const BUILDERS = {
         </div>
         <p class="login-err" id="concernErr"></p>
         <p class="login-ok" id="concernOk">Saved.</p>
-    </div>
-    <div class="card table-scroll" style="max-width:1200px; margin:0 auto;">
+      </div>
+      <div class="card table-scroll">
       <h3>Your Concern History</h3>
         <p class="muted" style="margin-bottom:12px;">Includes ones you submitted anonymously — management still only sees "Anonymous," this list is for your own eyes only.</p>
         <table>
@@ -5409,6 +5410,7 @@ const BUILDERS = {
             </tr>`;
           }).join('') || `<tr><td colspan="7" class="muted">No concerns submitted yet.</td></tr>`}
         </table>
+      </div>
     </div>`;
   },
 
