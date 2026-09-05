@@ -820,6 +820,13 @@ let EMPLOYEE_ACCOUNTS = [
   // starts empty — employees register themselves; management seeds
   // one here if a specific employee needs help getting started.
 ];
+// Accounts allowed to appear in the "Investigated By" dropdown on a
+// Concern's investigation section — Management (full/limited),
+// Shift Managers, and Supervisors. Populated from accountsStatus at
+// login (see loadRemoteData()), which is now the source of truth
+// instead of auto-filling from whoever merely opened the report.
+let MGMT_AUTHORIZED_ACCOUNTS = [];
+const MGMT_AUTHORIZED_ROLES_ = new Set(["management","management-limited","shift-manager","supervisor"]);
 function findAccountByUsername(u){
   return EMPLOYEE_ACCOUNTS.find(a => a.username.toLowerCase()===u.toLowerCase())
       || MANAGEMENT_USERS.find(a => a.username.toLowerCase()===u.toLowerCase());
@@ -2299,6 +2306,7 @@ async function loadRemoteData(){
     ALL_REQUESTS = requests.slice().reverse();
     EMPLOYEE_ACCOUNTS.length = 0;
     accountsStatus.forEach(a => EMPLOYEE_ACCOUNTS.push({employeeName:a.employeeName, fullName:a.fullName, username:a.username, role:"employee", email:a.email, phone:a.phone}));
+    MGMT_AUTHORIZED_ACCOUNTS = accountsStatus.filter(a => MGMT_AUTHORIZED_ROLES_.has(a.role)).map(a => a.fullName || a.username).filter(Boolean);
     MOCK.concernsLog = concerns.map(c => Object.assign(mapConcernRowBase_(c), {
       investigationNotes:c.InvestigationNotes, investigatedBy:c.InvestigatedBy, actionTaken:c.ActionTaken,
       investigationLastUpdatedBy:c.InvestigationLastUpdatedBy, investigationLastUpdatedAt:c.InvestigationLastUpdatedAt,
@@ -6563,7 +6571,11 @@ const BUILDERS = {
         <label>Investigation Notes</label>
         <textarea id="concernInvNotes" rows="4" placeholder="Findings, interviews, evidence reviewed…">${c.investigationNotes||''}</textarea>
         <label>Investigated By</label>
-        <input type="text" value="${CURRENT_USER.displayName} 🔒" readonly style="opacity:0.75;">
+        <select id="concernInvBy">
+          <option value="">Select an authorized account…</option>
+          ${MGMT_AUTHORIZED_ACCOUNTS.map(name=>`<option ${c.investigatedBy===name?'selected':''}>${name}</option>`).join('')}
+          ${(c.investigatedBy && !MGMT_AUTHORIZED_ACCOUNTS.includes(c.investigatedBy)) ? `<option value="${c.investigatedBy}" selected>${c.investigatedBy}</option>` : ''}
+        </select>
         <label>Action Taken</label>
         <textarea id="concernActionTaken" rows="3" placeholder="Describe the action taken…">${c.actionTaken||''}</textarea>
         <label>Status</label>
@@ -7482,13 +7494,16 @@ async function saveConcernInvestigation(){
   const err = document.getElementById('concernInvErr');
   err.style.display = 'none';
   const status = document.getElementById('concernStatusSelect').value;
+  const investigatedBy = document.getElementById('concernInvBy').value;
+  if(!investigatedBy){ err.textContent = "Select who conducted this investigation."; err.style.display = 'block'; return; }
   const wasFresh = c && (c.status === 'Submitted' || c.status === 'Open' || !c.status);
   const fields = {
     id: discDetailConcernId,
     Status: status,
     InvestigationNotes: document.getElementById('concernInvNotes').value.trim(),
-    InvestigatedBy: CURRENT_USER.displayName, // always the person actually saving this — never manually typed
+    InvestigatedBy: investigatedBy, // picked from the authorized-accounts dropdown, not auto-filled from whoever's viewing
     ActionTaken: document.getElementById('concernActionTaken').value.trim(),
+    SavedBy: CURRENT_USER.displayName, // whoever actually clicked Save — the real audit identity, separate from who's picked as the investigator
   };
   const btn = document.getElementById('concernInvSaveBtn');
   btnLoadingEl(btn, 'Saving...');
