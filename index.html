@@ -46,12 +46,27 @@
 
   .modal-overlay{position:fixed; inset:0; background:rgba(8,9,13,0.75); backdrop-filter:blur(3px); display:none; align-items:center; justify-content:center; z-index:50; padding:20px;}
   .modal-overlay.active{display:flex;}
-  .modal-box{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:26px; width:100%; max-width:340px;}
+  .modal-box{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:26px; width:100%; max-width:340px; max-height:90vh; overflow-y:auto;}
   .modal-box h3{font-family:'Fraunces',serif; font-size:16px; margin-bottom:4px;}
   .modal-box p.muted{margin-bottom:14px;}
   .modal-btns{display:flex; gap:8px; margin-top:16px;}
   .modal-btns .btn{margin-top:0;}
   .modal-btns .btn.ghost{flex:none; padding:10px 16px; width:auto;}
+  /* Opt-in layout for modals whose content length varies a lot (e.g.
+     View Details on Performance Reports) — a fixed header with an
+     always-visible × close button, an independently scrollable body,
+     and a sticky footer, so Close is never pushed out of view no
+     matter how long the content gets or what the browser zoom is.
+     The base .modal-box above already caps at 90vh with its own
+     scroll as a safety net for every other modal; this is the fuller
+     treatment for ones that actually need it. */
+  .modal-box-tall{display:flex; flex-direction:column; overflow:hidden; padding:0;}
+  .modal-box-tall .modal-header-row{display:flex; justify-content:space-between; align-items:center; gap:12px; flex-shrink:0; padding:20px 22px 14px; border-bottom:1px solid var(--line);}
+  .modal-box-tall .modal-header-row h3{margin-bottom:0;}
+  .modal-close-x{background:none; border:none; color:var(--text-mute); font-size:24px; line-height:1; cursor:pointer; padding:4px 8px; border-radius:8px; transition:background .15s ease, color .15s ease; flex-shrink:0;}
+  .modal-close-x:hover{background:var(--panel-2); color:var(--text);}
+  .modal-box-tall .modal-body-scroll{overflow-y:auto; flex:1; min-height:0; padding:18px 22px;}
+  .modal-box-tall .modal-btns{flex-shrink:0; margin:0; padding:14px 22px; border-top:1px solid var(--line);}
 
   /* ===== APP SHELL ===== */
   #appRoot{display:flex; min-height:100vh;}
@@ -400,8 +415,15 @@
 </div>
 
 <div class="modal-overlay" id="perfDetailModal">
-  <div class="modal-box" style="max-width:600px;">
-    <div id="perfDetailBody"></div>
+  <div class="modal-box modal-box-tall" style="max-width:600px;">
+    <div class="modal-header-row">
+      <div>
+        <h3>Evaluation Details</h3>
+        <p class="muted" id="perfDetailSub" style="margin:2px 0 0; font-size:12.5px;"></p>
+      </div>
+      <button class="modal-close-x" onclick="closePerfDetailModal()" aria-label="Close">×</button>
+    </div>
+    <div class="modal-body-scroll" id="perfDetailBody"></div>
     <div class="modal-btns">
       <button class="btn ghost" onclick="closePerfDetailModal()">Close</button>
     </div>
@@ -4680,9 +4702,8 @@ function openPerfDetail(id){
   if(!e) return;
   const prev = getPreviousEvaluation(e);
   const history = ALL_EVALUATIONS.filter(x=>x.EmployeeName===e.EmployeeName).sort((a,b)=>new Date(b.Date)-new Date(a.Date));
+  document.getElementById('perfDetailSub').textContent = `${e.EmployeeName} — ${e.Month} ${e.Year} · Evaluated by ${e.EvaluatedBy || 'Anonymous'}`;
   document.getElementById('perfDetailBody').innerHTML = `
-    <h3 style="margin-bottom:4px;">${e.EmployeeName}</h3>
-    <p class="muted" style="margin-bottom:14px;">${e.Month} ${e.Year} · Evaluated by ${e.EvaluatedBy || 'Anonymous'}</p>
     <div class="card stat-card" style="background:var(--panel-2); margin-bottom:14px;">
       <div class="num">${e.AverageScore} / 5.0</div>
       <div class="label">${ratingStars(e.AverageScore)} ${e.RatingLabel}</div>
