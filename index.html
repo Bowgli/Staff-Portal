@@ -206,6 +206,15 @@
   .checkbox-row{display:flex; align-items:center; gap:8px; margin-top:14px;}
   .checkbox-row input{width:auto;}
   .checkbox-row label{margin:0; color:var(--text-mute); font-weight:500;}
+  /* Checkbox + explanatory caption underneath it, e.g. "Request CCTV
+     Footage Review" / "Submit anonymously" — the caption gets its own
+     line with real spacing (not a negative margin squeezed against
+     the checkbox), indented to align under the label text so it
+     still reads as clearly belonging to that checkbox, not to
+     whatever comes next. */
+  .checkbox-block{margin-top:18px;}
+  .checkbox-block .checkbox-row{margin-top:0;}
+  .checkbox-block .checkbox-help{margin:6px 0 0 26px; font-size:12.5px; line-height:1.6; color:var(--text-mute);}
   .check-list{max-height:180px; overflow-y:auto; background:var(--panel-2); border:1px solid var(--line); border-radius:9px; padding:10px 12px;}
   .check-list .cl-row{display:flex; align-items:center; gap:8px; padding:5px 0;}
   .check-list .cl-row input{width:auto;}
@@ -5282,13 +5291,12 @@ const BUILDERS = {
     </div>`,
 
   concern: ()=>`
-    <div class="grid grid-2">
-      <div class="card" style="max-width:560px;">
-        <h3><span class="ic">⚠️</span> Report a Concern</h3>
-        <p class="muted">This goes directly to management for review and investigation before any action is decided. Your name is attached unless you check anonymous below.</p>
+    <div class="card" style="max-width:900px; margin:0 auto 16px;">
+      <h3><span class="ic">⚠️</span> Report a Concern</h3>
+      <p class="muted">This goes directly to management for review and investigation before any action is decided. Your name is attached unless you check anonymous below.</p>
 
-        <label>Concern Category</label>
-        <select id="concernTopic" onchange="toggleConcernCategoryFields()">
+      <label>Concern Category</label>
+      <select id="concernTopic" onchange="toggleConcernCategoryFields()">
           ${CONCERN_CATEGORIES.map(c=>`<option>${c}</option>`).join('')}
         </select>
 
@@ -5349,27 +5357,29 @@ const BUILDERS = {
         <textarea id="concernDetails" placeholder="Please provide a clear and factual description of what happened. Include important details such as the people involved, sequence of events, actions taken, and any relevant information. Avoid personal opinions or assumptions."></textarea>
 
         <div class="section-title" style="font-size:13px; margin:14px 0 8px;">Supporting Information</div>
-        <div id="concernCCTVContainer" style="display:none;">
-          <div class="checkbox-row"><input type="checkbox" id="concernCCTV" onchange="toggleConcernCCTVFields()"><label for="concernCCTV">Request CCTV Footage Review</label></div>
-          <p id="concernCCTVNote" class="muted" style="font-size:12px; display:none; margin:-6px 0 12px;">Uses the Date, Time, Venue, and Specific Location above so the Surveillance Team can locate the footage — please make sure those are filled in.</p>
+        <div id="concernCCTVContainer" style="display:none;" class="checkbox-block">
+          <div class="checkbox-row"><input type="checkbox" id="concernCCTV"><label for="concernCCTV">Request CCTV Footage Review</label></div>
+          <p class="checkbox-help">If applicable, please provide the approximate date, time, and specific location in the incident details above so the Surveillance Team can locate and review the footage.</p>
         </div>
         <label>Witness Name <span class="muted">(optional)</span></label>
         <input type="text" id="concernWitnessName" placeholder="Optional">
         <label>Additional Comments <span class="muted">(optional)</span></label>
         <textarea id="concernAdditionalComments" placeholder="Anything else worth noting..."></textarea>
 
-        <div class="checkbox-row"><input type="checkbox" id="anonConcern"><label for="anonConcern">Submit anonymously</label></div>
-        <p class="muted" style="font-size:12px; margin-top:-4px;">Your identity will not be shown to management if you choose anonymous reporting. However, submitting your name may help management contact you for clarification or additional information.</p>
+        <div class="checkbox-block">
+          <div class="checkbox-row"><input type="checkbox" id="anonConcern"><label for="anonConcern">Submit anonymously</label></div>
+          <p class="checkbox-help">Your identity will not be shown to management if you choose anonymous reporting. However, providing your name may help management contact you for clarification or additional information.</p>
+        </div>
 
-        <div style="display:flex; gap:8px; margin-top:10px;">
+        <div style="display:flex; gap:8px; margin-top:20px;">
           <button class="btn" id="concernSubmitBtn" onclick="submitMyConcern()">Submit Concern</button>
           <button class="btn ghost auto" id="concernCancelBtn" style="display:none;" onclick="cancelEditConcern()">Cancel</button>
         </div>
         <p class="login-err" id="concernErr"></p>
         <p class="login-ok" id="concernOk">Saved.</p>
-      </div>
-      <div class="card">
-        <h3>Your Concern History</h3>
+    </div>
+    <div class="card table-scroll" style="max-width:1200px; margin:0 auto;">
+      <h3>Your Concern History</h3>
         <p class="muted" style="margin-bottom:12px;">Includes ones you submitted anonymously — management still only sees "Anonymous," this list is for your own eyes only.</p>
         <table>
           <tr><th>Ref No.</th><th>Category</th><th>Subject</th><th>Venue</th><th>Date Submitted</th><th>Status</th><th></th></tr>
@@ -5389,7 +5399,6 @@ const BUILDERS = {
             </tr>`;
           }).join('') || `<tr><td colspan="7" class="muted">No concerns submitted yet.</td></tr>`}
         </table>
-      </div>
     </div>`,
 
   suggestion: ()=>`
@@ -6703,10 +6712,6 @@ function prefillConcernEmployeeInfo(){
   const emp = EMPLOYEE_ROSTER.find(e=>e.name===name);
   document.getElementById('concernEmpPosition').value = emp ? emp.position : '';
 }
-function toggleConcernCCTVFields(){
-  const wantsCCTV = document.getElementById('concernCCTV').checked;
-  document.getElementById('concernCCTVNote').style.display = wantsCCTV ? 'block' : 'none';
-}
 
 function toggleSwapFields(){
   const type = document.getElementById('reqType').value;
@@ -7035,7 +7040,6 @@ function startEditConcern(id){
   if(type === 'employee' || type === 'customer'){
     if(c.requestCCTV){
       document.getElementById('concernCCTV').checked = true;
-      toggleConcernCCTVFields();
     }
   }
 
