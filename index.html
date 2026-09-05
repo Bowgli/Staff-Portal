@@ -5290,7 +5290,17 @@ const BUILDERS = {
       </div>
     </div>`,
 
-  concern: ()=>`
+  concern: ()=>{
+    // The dropdown always starts on its first option (Employee /
+    // Coworker Concern) on a fresh form, but onchange only fires when
+    // the person actually CHANGES the selection — so on first load,
+    // with nothing changed yet, the matching section below needs its
+    // OWN initial visibility computed to match that default, instead
+    // of always starting hidden and waiting for a change event that
+    // never comes. toggleConcernCategoryFields() remains the source
+    // of truth for every change after this initial render.
+    const defaultType = concernCategoryType(CONCERN_CATEGORIES[0]);
+    return `
     <div class="card" style="max-width:900px; margin:0 auto 16px;">
       <h3><span class="ic">⚠️</span> Report a Concern</h3>
       <p class="muted">This goes directly to management for review and investigation before any action is decided. Your name is attached unless you check anonymous below.</p>
@@ -5300,7 +5310,7 @@ const BUILDERS = {
           ${CONCERN_CATEGORIES.map(c=>`<option>${c}</option>`).join('')}
         </select>
 
-        <div id="concernEmployeeFields" style="display:none;">
+        <div id="concernEmployeeFields" style="display:${defaultType==='employee' ? 'block' : 'none'};">
           <div class="section-title" style="font-size:13px; margin:14px 0 8px;">Employee Information</div>
           <label>Employee Name</label>
           ${employeePickerHtml('concernCoworkerName', EMPLOYEE_ROSTER.filter(e=>e.name!==CURRENT_EMPLOYEE.name), 'onchange="prefillConcernEmployeeInfo()"')}
@@ -5312,7 +5322,7 @@ const BUILDERS = {
           ${DISC_CONCERN_TYPES.map(t=>`<div class="checkbox-row"><input type="checkbox" id="concernT_${t.replace(/[^a-zA-Z]/g,'')}" value="${t}" class="concernTypeCb"><label for="concernT_${t.replace(/[^a-zA-Z]/g,'')}">${t}</label></div>`).join('')}
         </div>
 
-        <div id="concernCustomerFields" style="display:none;">
+        <div id="concernCustomerFields" style="display:${defaultType==='customer' ? 'block' : 'none'};">
           <div class="section-title" style="font-size:13px; margin:14px 0 8px;">Customer Information</div>
           <label>Customer / Guest Name <span class="muted">(optional)</span></label>
           <input type="text" id="concernCustomerName" placeholder="Leave blank if unknown">
@@ -5324,7 +5334,7 @@ const BUILDERS = {
           ${DISC_CUSTOMER_CONCERN_TYPES.map(t=>`<div class="checkbox-row"><input type="checkbox" id="concernCT_${t.replace(/[^a-zA-Z]/g,'')}" value="${t}" class="concernCustomerTypeCb"><label for="concernCT_${t.replace(/[^a-zA-Z]/g,'')}">${t}</label></div>`).join('')}
         </div>
 
-        <div id="concernSafetyFields" style="display:none;">
+        <div id="concernSafetyFields" style="display:${defaultType==='safety' ? 'block' : 'none'};">
           <div class="section-title" style="font-size:13px; margin:14px 0 8px;">Type of Safety Concern</div>
           ${CONCERN_SAFETY_TYPES.map(t=>`<div class="checkbox-row"><input type="checkbox" id="concernST_${t.replace(/[^a-zA-Z]/g,'')}" value="${t}" class="concernSafetyTypeCb"><label for="concernST_${t.replace(/[^a-zA-Z]/g,'')}">${t}</label></div>`).join('')}
           <label>Is this an immediate safety risk?</label>
@@ -5333,7 +5343,7 @@ const BUILDERS = {
           <textarea id="concernImmediateAction" placeholder="What was done right away, if anything..."></textarea>
         </div>
 
-        <div id="concernFacilitiesFields" style="display:none;">
+        <div id="concernFacilitiesFields" style="display:${defaultType==='facilities' ? 'block' : 'none'};">
           <div class="section-title" style="font-size:13px; margin:14px 0 8px;">Type of Issue</div>
           ${CONCERN_FACILITIES_TYPES.map(t=>`<div class="checkbox-row"><input type="checkbox" id="concernFT_${t.replace(/[^a-zA-Z]/g,'')}" value="${t}" class="concernFacilitiesTypeCb"><label for="concernFT_${t.replace(/[^a-zA-Z]/g,'')}">${t}</label></div>`).join('')}
           <label>Priority</label>
@@ -5357,7 +5367,7 @@ const BUILDERS = {
         <textarea id="concernDetails" placeholder="Please provide a clear and factual description of what happened. Include important details such as the people involved, sequence of events, actions taken, and any relevant information. Avoid personal opinions or assumptions."></textarea>
 
         <div class="section-title" style="font-size:13px; margin:14px 0 8px;">Supporting Information</div>
-        <div id="concernCCTVContainer" style="display:none;" class="checkbox-block">
+        <div id="concernCCTVContainer" style="display:${(defaultType==='employee'||defaultType==='customer') ? 'block' : 'none'};" class="checkbox-block">
           <div class="checkbox-row"><input type="checkbox" id="concernCCTV"><label for="concernCCTV">Request CCTV Footage Review</label></div>
           <p class="checkbox-help">If applicable, please provide the approximate date, time, and specific location in the incident details above so the Surveillance Team can locate and review the footage.</p>
         </div>
@@ -5399,7 +5409,8 @@ const BUILDERS = {
             </tr>`;
           }).join('') || `<tr><td colspan="7" class="muted">No concerns submitted yet.</td></tr>`}
         </table>
-    </div>`,
+    </div>`;
+  },
 
   suggestion: ()=>`
     <div class="grid grid-2">
