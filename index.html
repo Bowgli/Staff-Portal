@@ -1845,7 +1845,7 @@ async function doLoginWithCredentials(u, p){
     if(r.role === 'management'){
       CURRENT_USER = {role:'management', displayName:r.displayName, username:r.username, accessLevel: r.accessLevel || 'full', mgmtRole: r.mgmtRole || 'full'};
     } else {
-      CURRENT_USER = {role:'employee', employeeName:r.employeeName, mgmtRole: r.mgmtRole || null, displayName: r.fullName};
+      CURRENT_USER = {role:'employee', employeeName:r.employeeName, mgmtRole: r.mgmtRole || null, displayName: r.fullName, username: r.username || '', lastNotifSeenAt: r.lastNotifSeenAt || ''};
       CURRENT_EMPLOYEE = {
         name: r.employeeName, fullName: r.fullName,
         initials: r.fullName.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(),
@@ -3344,6 +3344,22 @@ function computeRecentActivity(){
   return items;
 }
 
+// Marks "now" as the last-seen point for this account — persisted
+// server-side (Accounts sheet) so it survives across devices/browser
+// data clears, unlike the old browser-localStorage-only approach.
+// Updates CURRENT_USER in memory FIRST, synchronously, so the very
+// next renderNav() call (e.g. navigating away from this page) already
+// sees the badge as cleared, rather than waiting on a network
+// round-trip or a stale value written moments too late.
+function markNotificationsSeenNow(){
+  if(!CURRENT_USER) return;
+  CURRENT_USER.lastNotifSeenAt = new Date().toISOString();
+  if(USE_REMOTE() && CURRENT_USER.username){
+    apiPost('markNotificationsSeen', {username: CURRENT_USER.username})
+      .catch(e => console.warn('Could not save notifications-seen state:', e.message));
+  }
+}
+
 // Routes a clicked notification to its related existing content —
 // reuses the same tabs/views and (for announcements) the same
 // click-to-view expand already used elsewhere, per the "reuse
@@ -4270,10 +4286,16 @@ function renderNav(){
         badge = fresh > 0 ? fresh : null;
       }
       if(item.id === 'notifications' && CURRENT_EMPLOYEE){
+        // Timestamp-based, not count-based — an item is unread if its
+        // own date is after the last time this account looked at
+        // Notifications. Immune to the old bug where a raw COUNT
+        // comparison ("how many items existed last time" vs "how many
+        // exist now") could drift or misfire if the underlying list
+        // ever shifted; this only cares about each item's own date
+        // vs. one fixed point in time, which never changes retroactively.
         const activity = computeRecentActivity();
-        let seen = 0;
-        try{ seen = parseInt(localStorage.getItem('sv_notif_count_'+CURRENT_EMPLOYEE.name) || '0'); }catch(e){}
-        const unseen = activity.length - seen;
+        const seenAt = (CURRENT_USER && CURRENT_USER.lastNotifSeenAt) ? new Date(CURRENT_USER.lastNotifSeenAt).getTime() : 0;
+        const unseen = activity.filter(a => { const t = new Date(a.rawDate).getTime(); return !isNaN(t) && (isNaN(seenAt) ? true : t > seenAt); }).length;
         badge = unseen > 0 ? unseen : null;
       }
       html += `<div class="nav-item ${item.id===activeView?'active':''}" onclick="renderView('${item.id}')">
@@ -5168,7 +5190,7 @@ const BUILDERS = {
 
   notifications: ()=>{
     const activity = computeRecentActivity();
-    try{ localStorage.setItem('sv_notif_count_'+CURRENT_EMPLOYEE.name, String(activity.length)); }catch(e){}
+    markNotificationsSeenNow();
     return `
     <div class="card" style="margin-bottom:16px;">
       <h3>📲 Connect Telegram</h3>
