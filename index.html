@@ -6529,9 +6529,23 @@ const BUILDERS = {
     // that account, or an Admin (full-access management), can edit it
     // further. A report with no investigation yet has no owner, so
     // anyone authorized can start one.
+    // Ownership: the account that FIRST saved an investigation on this
+    // report owns it (tracked by username, not the typed name) — only
+    // that account, or an Admin (full-access management), can edit it
+    // further. A report with no investigation yet has no owner, so
+    // anyone authorized can start one.
+    //
+    // Reports investigated BEFORE ownership tracking existed have
+    // content (Investigated By / Notes / Action Taken already filled
+    // in) but no recorded account ID — there's no way to know who
+    // legitimately owns those retroactively, so they're treated as
+    // "owned by someone unknown" rather than "unowned": locked to
+    // Admin-only editing instead of wide open to everyone, which is
+    // the safer direction to get this wrong in.
     const isAdmin = CURRENT_USER.mgmtRole === 'full';
-    const hasOwner = !!c.investigationCreatedByAccount;
-    const isOwner = hasOwner && String(c.investigationCreatedByAccount).toLowerCase() === String(CURRENT_USER.username||'').toLowerCase();
+    const hasLegacyContent = !!(c.investigatedBy || c.investigationNotes || c.actionTaken);
+    const hasOwner = !!c.investigationCreatedByAccount || hasLegacyContent;
+    const isOwner = !!c.investigationCreatedByAccount && String(c.investigationCreatedByAccount).toLowerCase() === String(CURRENT_USER.username||'').toLowerCase();
     const canEditInvestigation = isAdmin || !hasOwner || isOwner;
     return `
     <div class="no-print" style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
