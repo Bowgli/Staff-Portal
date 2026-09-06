@@ -456,6 +456,13 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="photoPreviewModal">
+  <div class="modal-box" style="max-width:340px; text-align:center;">
+    <img id="photoPreviewImg" src="" alt="" style="width:100%; border-radius:10px; margin-bottom:14px;">
+    <button class="btn ghost auto" onclick="closePhotoPreviewModal()">Close</button>
+  </div>
+</div>
+
 <!-- ===== LOGIN GATE ===== -->
 <div class="login-gate" id="loginGate">
   <div class="login-card">
@@ -1128,6 +1135,7 @@ const TEAM_GROUP_ICONS = {'Shift Manager':'🔀','Supervisor':'👔','Cashier':'
    the current user's own shift (not just an exact match), grouped
    by position. */
 function renderTeamOnDuty(){
+  lastTeamOnDutyPhotos = []; // reset each render — repopulated below if there's an actual team to show
   const myRow = findMyScheduleRow(CURRENT_EMPLOYEE.name);
   const todayIndex = SCHEDULE_DAYS.findIndex(isScheduleDayToday);
 
@@ -1153,7 +1161,8 @@ function renderTeamOnDuty(){
     if(cell.type !== 'shift' || !cell.time) return;
     if(cell.venue !== myCell.venue) return; // same venue only — overlapping time at a DIFFERENT venue doesn't mean working together
     if(!isMeaningfulShiftOverlap(myCell.time, cell.time)) return;
-    teamMembers.push({ name: row.name, position: (cell.position || row.role || 'Staff').trim(), time: cell.time });
+    const rosterEntry = EMPLOYEE_ROSTER.find(e=>e.name===row.name);
+    teamMembers.push({ name: row.name, position: (cell.position || row.role || 'Staff').trim(), time: cell.time, photoFileId: rosterEntry ? rosterEntry.photoFileId : '' });
   });
 
   if(!teamMembers.length){
@@ -1172,12 +1181,21 @@ function renderTeamOnDuty(){
     <h3><span class="ic">👥</span> My Team on Duty</h3>
     <p class="muted" style="font-size:13px; margin-bottom:14px;">Working with you at ${myCell.venueFull || 'your venue'}.</p>
     <div class="grid" style="grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:16px;">
-      ${sortedMembers.map(m=>`
+      ${sortedMembers.map(m=>{
+        const elId = 'teamPhoto_'+m.name.replace(/[^a-zA-Z0-9]/g,'');
+        if(m.photoFileId) lastTeamOnDutyPhotos.push({fileId:m.photoFileId, elId});
+        return `
         <div class="daycard ${shiftHighlightClass(m.time, m.position)}">
-          <div class="dname" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${m.name}</div>
-          <div class="pos">${m.position}</div>
+          <div style="display:flex; align-items:center; gap:10px; margin-bottom:2px;">
+            ${photoThumbHtml(m.name, m.photoFileId, 40, elId)}
+            <div style="min-width:0;">
+              <div class="dname" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${m.name}</div>
+              <div class="pos">${m.position}</div>
+            </div>
+          </div>
           <div class="time" style="margin-top:2px;">${fmtShiftTimeDisplay(m.time)}</div>
-        </div>`).join('')}
+        </div>`;
+      }).join('')}
     </div>
   </div>`;
 }
@@ -2299,7 +2317,7 @@ async function loadRemoteData(){
     EMPLOYEE_ROSTER.length = 0;
     const acctByName = {};
     accountsStatus.forEach(a => { acctByName[a.employeeName] = a; });
-    roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, position:r.Position, status:r.Status||"Active", employmentStatus:r.EmploymentStatus||'', probationMilestonesSent:r.ProbationMilestonesSent||'[]', attendance:"—", dateHired:r.DateHired||'', phone:(acctByName[r.Name]&&acctByName[r.Name].phone)||'', email:(acctByName[r.Name]&&acctByName[r.Name].email)||''}));
+    roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, position:r.Position, status:r.Status||"Active", employmentStatus:r.EmploymentStatus||'', probationMilestonesSent:r.ProbationMilestonesSent||'[]', attendance:"—", dateHired:r.DateHired||'', phone:(acctByName[r.Name]&&acctByName[r.Name].phone)||'', email:(acctByName[r.Name]&&acctByName[r.Name].email)||'', photoFileId:(acctByName[r.Name]&&acctByName[r.Name].photoFileId)||''}));
     SCHEDULE_DAYS = schedule.days || [];
     SCHEDULE_ROWS = schedule.rows || [];
     NEXT_SCHEDULE_DAYS = nextSchedule.days || [];
@@ -2325,7 +2343,7 @@ async function loadRemoteData(){
       .map(r => ({type:r.Type, date:r.Date, status:r.Status, id:r.ID, details:r.Details, swapDay:r.SwapDay, theirDay:r.TheirDay, swapWithName:r.SwapWithName, reasonForAbsence:r.ReasonForAbsence, minutesLate:r.MinutesLate, shiftSchedule:r.ShiftSchedule}));
     ALL_REQUESTS = requests.slice().reverse();
     EMPLOYEE_ACCOUNTS.length = 0;
-    accountsStatus.forEach(a => EMPLOYEE_ACCOUNTS.push({employeeName:a.employeeName, fullName:a.fullName, username:a.username, role:"employee", email:a.email, phone:a.phone}));
+    accountsStatus.forEach(a => EMPLOYEE_ACCOUNTS.push({employeeName:a.employeeName, fullName:a.fullName, username:a.username, role:"employee", email:a.email, phone:a.phone, photoFileId:a.photoFileId||''}));
     MOCK.concernsLog = concerns.map(c => Object.assign(mapConcernRowBase_(c), {
       investigationNotes:c.InvestigationNotes, investigatedBy:c.InvestigatedBy, actionTaken:c.ActionTaken,
       investigationLastUpdatedBy:c.InvestigationLastUpdatedBy, investigationLastUpdatedAt:c.InvestigationLastUpdatedAt,
@@ -3558,6 +3576,65 @@ function avatarHtml(emp){
   return emp ? emp.initials : "--";
 }
 
+// Shared, session-wide cache: a given photo is fetched from the
+// backend AT MOST ONCE, no matter how many places show it (Manage
+// Accounts row, My Team on Duty card, profile page, etc.) — reused
+// by every thumbnail below instead of each one re-fetching.
+const PHOTO_CACHE = {};
+function initialsFromName(name){
+  return (name||'').split(' ').filter(Boolean).map(w=>w[0]).join('').slice(0,2).toUpperCase() || '?';
+}
+let lastTeamOnDutyPhotos = []; // populated by renderTeamOnDuty() each render — photos to lazy-load right after the "home" view is inserted into the page
+// Renders a small circular avatar that starts as initials and swaps
+// to the real photo once it's fetched (or stays as initials if there
+// is no photo, the fetch fails, or the image itself fails to load).
+function photoThumbHtml(name, fileId, size, elId){
+  const initials = initialsFromName(name);
+  const cached = fileId && PHOTO_CACHE[fileId];
+  const fontSize = Math.round(size*0.38);
+  return `<span style="position:relative; display:inline-flex; width:${size}px; height:${size}px; flex-shrink:0;">
+    <span id="${elId}_init" style="width:${size}px; height:${size}px; border-radius:50%; background:var(--panel-2); color:var(--text-mute); display:${cached?'none':'flex'}; align-items:center; justify-content:center; font-size:${fontSize}px; font-weight:700;">${initials}</span>
+    <img id="${elId}" src="${cached||''}" alt="" style="width:${size}px; height:${size}px; border-radius:50%; object-fit:cover; position:absolute; top:0; left:0; display:${cached?'block':'none'};" onerror="this.style.display='none'; const i=document.getElementById('${elId}_init'); if(i) i.style.display='flex';">
+  </span>`;
+}
+// Fetches ONE photo (if not already cached) and updates its
+// thumbnail element in place — safe to call for elements that may no
+// longer be in the DOM (e.g. the user navigated away while it was
+// loading), since it just does nothing in that case.
+async function loadPhotoThumbnail(fileId, elId){
+  if(!fileId || !USE_REMOTE()) return;
+  if(PHOTO_CACHE[fileId]){
+    const img = document.getElementById(elId);
+    if(img){ img.src = PHOTO_CACHE[fileId]; img.style.display = 'block'; const init = document.getElementById(elId+'_init'); if(init) init.style.display = 'none'; }
+    return;
+  }
+  try{
+    const photo = await apiGet('photo&id=' + fileId);
+    if(photo.ok){
+      const dataUrl = `data:${photo.mime};base64,${photo.base64}`;
+      PHOTO_CACHE[fileId] = dataUrl;
+      const img = document.getElementById(elId);
+      if(img){ img.src = dataUrl; img.style.display = 'block'; const init = document.getElementById(elId+'_init'); if(init) init.style.display = 'none'; }
+    }
+  } catch(e){ /* no photo yet, or fetch failed — initials stay showing */ }
+}
+// Kicks off the (at-most-one-per-file) fetches for a batch of
+// thumbnails that were just rendered onto the page — only ever
+// called with the small set of people actually visible right now
+// (a Manage Accounts page of rows, or today's on-duty team), never
+// the whole roster at once.
+function loadVisiblePhotos(items){
+  items.forEach(({fileId, elId}) => { if(fileId) loadPhotoThumbnail(fileId, elId); });
+}
+function previewPhotoModal(src){
+  if(!src) return;
+  document.getElementById('photoPreviewImg').src = src;
+  document.getElementById('photoPreviewModal').classList.add('active');
+}
+function closePhotoPreviewModal(){
+  document.getElementById('photoPreviewModal').classList.remove('active');
+}
+
 /* Fetches the logged-in employee's photo in the background AFTER
    the dashboard is already shown, so login never waits on it. */
 async function handleAssignPhoto(event, employeeName){
@@ -4651,6 +4728,8 @@ function renderView(id, fromHistory){
   // check to catch up. Renders instantly from memory first (above),
   // then quietly re-renders once fresh data lands.
   if(id === 'mgmt-requests') refreshRequestsOnNavigate();
+  if(id === 'home' && lastTeamOnDutyPhotos.length) loadVisiblePhotos(lastTeamOnDutyPhotos);
+  if(id === 'mgmt-accounts') loadVisiblePhotos(EMPLOYEE_ROSTER.filter(e=>e.photoFileId).map(e=>({fileId:e.photoFileId, elId:'photoThumb_mgmt_'+e.name.replace(/[^a-zA-Z0-9]/g,'')})));
 
   if(!fromHistory){
     // a normal (forward) navigation — remember it and push a browser
@@ -5854,9 +5933,20 @@ const BUILDERS = {
             <td>${acct ? `<span class="pill ok">Registered</span>` : `<span class="pill warn">Not registered</span>`}</td>
             <td><button class="btn ghost auto" style="padding:5px 10px;" onclick="openResetModal('${e.name}')">${acct ? 'Reset Password' : 'Assign Account'}</button></td>
             <td>
-              <label class="btn ghost auto" style="padding:5px 10px; cursor:pointer;">Upload
-                <input type="file" accept="image/*" style="display:none;" onchange="handleAssignPhoto(event,'${e.name}')">
-              </label>
+              ${e.photoFileId ? `
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span onclick="loadPhotoThumbnail('${e.photoFileId}','photoThumb_mgmt_${e.name.replace(/[^a-zA-Z0-9]/g,'')}'); previewPhotoModal(document.getElementById('photoThumb_mgmt_${e.name.replace(/[^a-zA-Z0-9]/g,'')}').src)" style="cursor:pointer;">
+                    ${photoThumbHtml(e.name, e.photoFileId, 32, 'photoThumb_mgmt_'+e.name.replace(/[^a-zA-Z0-9]/g,''))}
+                  </span>
+                  <label class="btn ghost auto" style="padding:5px 10px; cursor:pointer; font-size:11.5px;">Change Photo
+                    <input type="file" accept="image/*" style="display:none;" onchange="handleAssignPhoto(event,'${e.name}')">
+                  </label>
+                </div>
+              ` : `
+                <label class="btn ghost auto" style="padding:5px 10px; cursor:pointer;">⚠️ Upload Photo
+                  <input type="file" accept="image/*" style="display:none;" onchange="handleAssignPhoto(event,'${e.name}')">
+                </label>
+              `}
             </td>
           </tr>`;
         }).join('') || `<tr><td colspan="6" class="muted">No matches.</td></tr>`}
