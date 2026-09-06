@@ -876,7 +876,7 @@ let perfFilterPosition = 'All';
 let perfSearchQuery = '';
 let employeesSearchQuery = '';
 let reqFilter = { employee:'', type:'All', status:'All', dateFrom:'', dateTo:'' };
-let concernFilter = { employee:'', venue:'All', topic:'All', status:'All', priority:'All', dateFrom:'', dateTo:'' };
+let concernFilter = { employee:'', venue:'All', topic:'All', status:'All', dateFrom:'', dateTo:'' };
 let accountsSearchQuery = '';
 let nomFilterMonth = 'All';
 let nomFilterYear = 'All';
@@ -950,7 +950,7 @@ function setConcernFilter(field, val){
   }
 }
 function resetConcernFilter(){
-  concernFilter = { employee:'', venue:'All', topic:'All', status:'All', priority:'All', dateFrom:'', dateTo:'' };
+  concernFilter = { employee:'', venue:'All', topic:'All', status:'All', dateFrom:'', dateTo:'' };
   renderView('mgmt-concerns');
 }
 function setAccountsSearch(val){
@@ -6573,7 +6573,6 @@ const BUILDERS = {
       if(concernFilter.venue !== 'All' && c.venue !== concernFilter.venue) return false;
       if(concernFilter.topic !== 'All' && concernCategoryType(c.topic) !== concernFilter.topic) return false;
       if(concernFilter.status !== 'All' && c.status !== concernFilter.status) return false;
-      if(concernFilter.priority !== 'All' && (c.priority||'') !== concernFilter.priority) return false;
       if(concernFilter.dateFrom){ const dt = new Date(c.date); if(isNaN(dt) || dt < new Date(concernFilter.dateFrom)) return false; }
       if(concernFilter.dateTo){ const dt = new Date(c.date); if(isNaN(dt) || dt > new Date(concernFilter.dateTo + 'T23:59:59')) return false; }
       return true;
@@ -6613,13 +6612,6 @@ const BUILDERS = {
           </select>
         </div>
         <div>
-          <label>Priority</label>
-          <select onchange="setConcernFilter('priority', this.value)">
-            <option value="All" ${concernFilter.priority==='All'?'selected':''}>All Priorities</option>
-            ${CONCERN_PRIORITIES.map(p=>`<option ${concernFilter.priority===p?'selected':''}>${p}</option>`).join('')}
-          </select>
-        </div>
-        <div>
           <label>Date From</label>
           <input type="date" value="${concernFilter.dateFrom}" onchange="setConcernFilter('dateFrom', this.value)">
         </div>
@@ -6634,7 +6626,7 @@ const BUILDERS = {
       <h3><span class="ic">⚠️</span> All Reported Concerns</h3>
       <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Showing ${filtered.length} of ${MOCK.concernsLog.length} concerns</p>
       <table>
-        <tr><th>Ref No.</th><th>Category</th><th>Subject</th><th>Venue</th><th>Date Submitted</th><th>Status</th><th>Priority</th><th></th></tr>
+        <tr><th>Ref No.</th><th>Category</th><th>Subject</th><th>Venue</th><th>Date Submitted</th><th>Status</th><th></th></tr>
         ${filtered.map(c=>`<tr>
           <td class="mono">${c.refNo||'—'}</td>
           <td>${c.topic}</td>
@@ -6642,9 +6634,8 @@ const BUILDERS = {
           <td class="muted">${c.venue||'—'}</td>
           <td>${fmtDateTime(c.date)}</td>
           <td>${concernStatusPill(c.status)}</td>
-          <td class="muted">${c.priority||'—'}</td>
           <td><button class="btn info auto" style="padding:5px 10px;" onclick="openConcernDetail('${c.id}')">View Report</button></td>
-        </tr>`).join('') || `<tr><td colspan="8" class="muted">No matching concerns.</td></tr>`}
+        </tr>`).join('') || `<tr><td colspan="7" class="muted">No matching concerns.</td></tr>`}
       </table>
     </div>`;
   },
@@ -7187,7 +7178,6 @@ function viewMyConcernDetail(id){
   const rows = [
     ['Category', c.topic],
     ['Status', concernStatusPill(c.status)],
-    ['Priority', c.priority || '—'],
     ['Venue', c.venue || '—'],
     ['Specific Location', c.specificLocation || '—'],
     ['Incident Date', c.incidentDate ? fmtDiscDate(c.incidentDate) : '—'],
@@ -7195,6 +7185,7 @@ function viewMyConcernDetail(id){
     ['Submitted', fmtDateTime(c.date)],
     ['Last Updated', c.lastUpdated ? fmtDiscDate(c.lastUpdated) : fmtDateTime(c.date)],
   ];
+  if(c.priority) rows.splice(2, 0, ['Priority', c.priority]); // legacy field — only shown for older reports that actually have one
   if(type==='employee') rows.push(['Employee', c.coworkerName||'—']);
   if(type==='customer'){ rows.push(['Customer', c.coworkerName||'Unknown']); if(c.membershipNumber) rows.push(['Membership #', c.membershipNumber]); if(c.customerDescription) rows.push(['Description', c.customerDescription]); }
   if(c.concernTypes) rows.push(['Type of Concern', discParseViolations(c.concernTypes).join(', ')]);
