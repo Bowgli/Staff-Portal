@@ -2299,7 +2299,7 @@ async function loadRemoteData(){
     EMPLOYEE_ROSTER.length = 0;
     const acctByName = {};
     accountsStatus.forEach(a => { acctByName[a.employeeName] = a; });
-    roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, position:r.Position, status:r.Status||"Active", employmentStatus:r.EmploymentStatus||'', attendance:"—", dateHired:r.DateHired||'', phone:(acctByName[r.Name]&&acctByName[r.Name].phone)||'', email:(acctByName[r.Name]&&acctByName[r.Name].email)||''}));
+    roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, position:r.Position, status:r.Status||"Active", employmentStatus:r.EmploymentStatus||'', probationMilestonesSent:r.ProbationMilestonesSent||'[]', attendance:"—", dateHired:r.DateHired||'', phone:(acctByName[r.Name]&&acctByName[r.Name].phone)||'', email:(acctByName[r.Name]&&acctByName[r.Name].email)||''}));
     SCHEDULE_DAYS = schedule.days || [];
     SCHEDULE_ROWS = schedule.rows || [];
     NEXT_SCHEDULE_DAYS = nextSchedule.days || [];
@@ -2480,6 +2480,59 @@ function showMgmtToast(icon, title, body, targetView){
 // Baseline seeding split out from startMgmtPolling() so it can be
 // re-run by the post-login recovery flow (see finishLogin() below)
 // without restarting the poll interval itself.
+// Months elapsed since Date Hired, rounded down — used to determine
+// which probation milestones (1/2/3 months) an employee has reached.
+function monthsSinceHired(dateHired){
+  if(!dateHired) return -1;
+  const hired = new Date(dateHired + 'T00:00:00');
+  if(isNaN(hired.getTime())) return -1;
+  const now = new Date();
+  let months = (now.getFullYear() - hired.getFullYear()) * 12 + (now.getMonth() - hired.getMonth());
+  if(now.getDate() < hired.getDate()) months--;
+  return months;
+}
+// Checks every Active + Probationary employee for a newly-reached
+// 1/2/3-month milestone that hasn't been announced yet, and toasts +
+// sounds for each one found through the same centralized mechanism
+// as new submissions — then persists it as sent (on the Roster row
+// itself, not just in this browser) so it's never repeated on a
+// later login or refresh, by this account or any other. Runs once
+// per management session rather than on every 30-second poll, since
+// probation milestones don't change that often.
+async function checkProbationMilestones(){
+  if(!USE_REMOTE()) return;
+  const due = [];
+  EMPLOYEE_ROSTER.forEach(e=>{
+    if(e.status !== 'Active' || e.employmentStatus !== 'Probationary' || !e.dateHired) return;
+    let sent = [];
+    try{ sent = JSON.parse(e.probationMilestonesSent || '[]'); }catch(err){ sent = []; }
+    const months = monthsSinceHired(e.dateHired);
+    [1,2,3].forEach(m=>{
+      if(months >= m && sent.indexOf(String(m)) === -1) due.push({employee:e, milestone:m});
+    });
+  });
+  if(!due.length) return;
+  if(soundAlertsEnabled()) playAlertTone();
+  due.forEach(({employee, milestone})=>{
+    const icons = {1:'🟡', 2:'🟠', 3:'🔴'};
+    const titles = {1:'Probation Update', 2:'Probation Review Reminder', 3:'Probation Review Required'};
+    const bodies = {
+      1: `${employee.name} has completed 1 month of the 3-month probation period.`,
+      2: `${employee.name} has completed 2 months of probation. Please begin reviewing performance and attendance.`,
+      3: `${employee.name} has completed the 3-month probation period and requires Management review.`
+    };
+    showMgmtToast(icons[milestone], titles[milestone], bodies[milestone], 'mgmt-employees');
+  });
+  // Persist AFTER toasting — if this fails partway, the worst case is
+  // a milestone gets announced again next session, never silently lost.
+  for(const {employee, milestone} of due){
+    try{ await apiPost('markProbationMilestoneSent', {name: employee.name, milestone: String(milestone)}); }catch(err){}
+    let sentArr = [];
+    try{ sentArr = JSON.parse(employee.probationMilestonesSent || '[]'); }catch(err){ sentArr = []; }
+    if(sentArr.indexOf(String(milestone)) === -1) sentArr.push(String(milestone));
+    employee.probationMilestonesSent = JSON.stringify(sentArr);
+  }
+}
 async function seedMgmtPollingBaseline(){
   // Use the same server-fresh source the comparison loop below uses
   // — capturing the baseline from local arrays instead could
@@ -3566,6 +3619,7 @@ function setRole(role){
     stopEmpPolling();
     initMgmtAudio();
     startMgmtPolling();
+    checkProbationMilestones();
     document.getElementById('soundAlertToggle').style.display = 'block';
     updateSoundAlertUI();
   }
@@ -4808,6 +4862,33 @@ function getUniqueEmployeePositions(){
 // Performance Reports page — adds Current/Previous score and trend,
 // not just a name and a bar, so management can see at a glance
 // whether someone is already trending back up.
+// Compact "Probation Monitoring" card for the Management dashboard —
+// only Active + Probationary employees, so it stays empty/hidden most
+// of the time rather than cluttering the dashboard permanently.
+function probationMonitoringSection(){
+  const probationary = EMPLOYEE_ROSTER.filter(e => e.status==='Active' && e.employmentStatus==='Probationary' && e.dateHired);
+  if(!probationary.length) return '';
+  return `
+    <div class="card" style="margin-bottom:16px;">
+      <h3><span class="ic">⚠️</span> Probation Monitoring</h3>
+      <table>
+        <tr><th>Employee</th><th>Position</th><th>Progress</th><th></th></tr>
+        ${probationary.map(e=>{
+          const months = Math.max(0, monthsSinceHired(e.dateHired));
+          const progress = months >= 3 ? '3 Months Completed' : `${months} Month${months===1?'':'s'} Completed`;
+          const actionLabel = months >= 3 ? 'Action Required' : (months >= 2 ? 'Review' : 'View');
+          const actionClass = months >= 3 ? 'btn danger auto' : (months >= 2 ? 'btn reset auto' : 'btn info auto');
+          return `<tr>
+            <td>${e.name}</td>
+            <td class="muted">${e.position}</td>
+            <td>${progress}</td>
+            <td><button class="${actionClass}" style="padding:5px 10px;" onclick="openEmployeeProfile('${e.name.replace(/'/g,"\\'")}')">${actionLabel}</button></td>
+          </tr>`;
+        }).join('')}
+      </table>
+    </div>`;
+}
+
 function staffForImprovementSection(rows){
   const needing = rows.filter(r => r.e && Number(r.e.AverageScore) >= 1 && Number(r.e.AverageScore) <= 2.49)
     .sort((a,b) => Number(a.e.AverageScore) - Number(b.e.AverageScore));
@@ -5565,6 +5646,7 @@ const BUILDERS = {
       <div class="card stat-card clickable" onclick="renderView('mgmt-suggestions')"><div class="num">${MOCK.suggestionsLog.filter(s=>s.status==='new').length}</div><div class="label">New suggestions</div></div>
       <div class="card stat-card clickable" onclick="renderView('mgmt-attendance')"><div class="num">${ATTENDANCE_LOG.length}</div><div class="label">Attendance entries logged</div></div>
     </div>
+    ${probationMonitoringSection()}
     ${attendanceConcernsSection()}
     ${disciplinaryCasesTableSection(ALL_DISCIPLINARY_RECORDS.filter(d=>d.Status!=='Closed'), 'Disciplinary Cases')}`,
 
