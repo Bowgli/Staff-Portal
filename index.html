@@ -547,9 +547,7 @@
     <label>Full Name</label>
     <input type="text" id="addEmpName" placeholder="e.g. Juan Dela Cruz">
     <label>Position</label>
-    <select id="addEmpPosition">
-      ${EMPLOYEE_POSITIONS.map(p=>`<option>${p}</option>`).join('')}
-    </select>
+    <select id="addEmpPosition"></select>
     <label>Status</label>
     <select id="addEmpStatus">
       <option>Active</option>
@@ -557,6 +555,12 @@
       <option>Furlough</option>
       <option>Resigned</option>
       <option>Terminated</option>
+    </select>
+    <label>Employment Status <span class="muted">(optional)</span></label>
+    <select id="addEmpEmploymentStatus">
+      <option value="">— Not Set —</option>
+      <option value="Probationary">Probationary</option>
+      <option value="Regular">Regular</option>
     </select>
     <label>Date Hired <span class="muted">(optional)</span></label>
     <input type="date" id="addEmpDateHired">
@@ -1378,6 +1382,29 @@ const EXTRA_POSITION_OPTIONS = ["Slot Tech", "Tech Supervisor", "Membership"]; /
    copies is exactly how a typo or a missed update creates duplicate
    or inconsistent position options. */
 const EMPLOYEE_POSITIONS = ["Shift Manager","Supervisor","Technical Manager","Group Gaming Manager","Assistant Group Gaming Manager","Cashier","Slot Technician","Attendant","Membership Officer","Security"];
+// Employment Status (Probationary/Regular) is deliberately separate
+// from the existing Status field (Active/On Leave/Furlough/Resigned/
+// Terminated) — Master Schedule availability keeps reading Status
+// alone; this never factors into it. Probation End Date is computed
+// on the fly from Date Hired + 3 months rather than stored, so it's
+// always correct and never needs its own persisted/edited field.
+function computeProbationEndDate(dateHired){
+  if(!dateHired) return '';
+  const d = new Date(dateHired + 'T00:00:00');
+  if(isNaN(d.getTime())) return '';
+  d.setMonth(d.getMonth() + 3);
+  return d.toISOString().slice(0,10);
+}
+function employmentStatusPill(employmentStatus, dateHired){
+  if(!employmentStatus) return '<span class="muted">—</span>';
+  if(employmentStatus === 'Probationary'){
+    const endDate = computeProbationEndDate(dateHired);
+    const isDue = endDate && new Date(endDate) <= new Date();
+    return `🟡 Probationary${isDue ? ' <span class="muted" style="font-size:11px;">⚠️ Review Due</span>' : ''}`;
+  }
+  if(employmentStatus === 'Regular') return '🟢 Regular';
+  return employmentStatus;
+}
 
 const ROSTER_POSITION_TO_SCHEDULE_POSITION = {
   "Shift Manager": "Shift Manager",
@@ -2272,7 +2299,7 @@ async function loadRemoteData(){
     EMPLOYEE_ROSTER.length = 0;
     const acctByName = {};
     accountsStatus.forEach(a => { acctByName[a.employeeName] = a; });
-    roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, position:r.Position, status:r.Status||"Active", attendance:"—", dateHired:r.DateHired||'', phone:(acctByName[r.Name]&&acctByName[r.Name].phone)||'', email:(acctByName[r.Name]&&acctByName[r.Name].email)||''}));
+    roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, position:r.Position, status:r.Status||"Active", employmentStatus:r.EmploymentStatus||'', attendance:"—", dateHired:r.DateHired||'', phone:(acctByName[r.Name]&&acctByName[r.Name].phone)||'', email:(acctByName[r.Name]&&acctByName[r.Name].email)||''}));
     SCHEDULE_DAYS = schedule.days || [];
     SCHEDULE_ROWS = schedule.rows || [];
     NEXT_SCHEDULE_DAYS = nextSchedule.days || [];
@@ -2945,8 +2972,10 @@ function closeAcctModal(){ document.getElementById('acctModal').classList.remove
 
 function openAddEmpModal(){
   document.getElementById('addEmpName').value = '';
+  document.getElementById('addEmpPosition').innerHTML = EMPLOYEE_POSITIONS.map(p=>`<option>${p}</option>`).join('');
   document.getElementById('addEmpPosition').value = 'Shift Manager';
   document.getElementById('addEmpStatus').value = 'Active';
+  document.getElementById('addEmpEmploymentStatus').value = '';
   document.getElementById('addEmpDateHired').value = '';
   document.getElementById('addEmpErr').style.display = 'none';
   document.getElementById('addEmpModal').classList.add('active');
@@ -2956,6 +2985,7 @@ async function confirmAddEmpModal(){
   const name = document.getElementById('addEmpName').value.trim();
   const position = document.getElementById('addEmpPosition').value.trim();
   const status = document.getElementById('addEmpStatus').value;
+  const employmentStatus = document.getElementById('addEmpEmploymentStatus').value;
   const dateHired = document.getElementById('addEmpDateHired').value;
   const err = document.getElementById('addEmpErr');
   err.style.display = 'none';
@@ -2964,10 +2994,10 @@ async function confirmAddEmpModal(){
   btnLoadingEl(btn, 'Adding...');
   try{
     if(USE_REMOTE()){
-      const r = await apiPost('addEmployee', {name, position, status, dateHired});
+      const r = await apiPost('addEmployee', {name, position, status, dateHired, employmentStatus});
       if(!r.ok){ err.textContent = r.error || "Couldn't add employee."; err.style.display='block'; btnResetEl(btn); return; }
     }
-    EMPLOYEE_ROSTER.push({name, position, status, attendance:'—', dateHired});
+    EMPLOYEE_ROSTER.push({name, position, status, employmentStatus, attendance:'—', dateHired});
     await btnSentEl(btn, 'Added');
     closeAddEmpModal();
     renderView('mgmt-employees');
@@ -3844,11 +3874,18 @@ function toggleEmployeeProfileEdit(on){
   renderView('mgmt-employee-profile');
 }
 
+function updateProbationEndDatePreview(){
+  const empStatus = document.getElementById('empProfileEmploymentStatus').value;
+  const dateHired = document.getElementById('empProfileDateHired').value;
+  const endDate = empStatus==='Probationary' ? computeProbationEndDate(dateHired) : '';
+  document.getElementById('empProfileProbationEnd').value = endDate ? fmtDiscDate(endDate) : '—';
+}
 async function saveEmployeeProfile(){
   const oldName = viewingEmployeeName;
   const newName = document.getElementById('empProfileName').value.trim();
   const position = document.getElementById('empProfilePosition').value;
   const status = document.getElementById('empProfileStatus').value;
+  const employmentStatus = document.getElementById('empProfileEmploymentStatus').value;
   const dateHired = document.getElementById('empProfileDateHired').value;
   const err = document.getElementById('empProfileErr');
   err.style.display = 'none';
@@ -3858,11 +3895,11 @@ async function saveEmployeeProfile(){
   btnLoadingEl(btn, 'Saving...');
   try{
     if(USE_REMOTE()){
-      const r = await apiPost('updateEmployee', {name: oldName, newName, position, status, dateHired});
+      const r = await apiPost('updateEmployee', {name: oldName, newName, position, status, dateHired, employmentStatus});
       if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnResetEl(btn); return; }
     }
     const roster = EMPLOYEE_ROSTER.find(e=>e.name===oldName);
-    if(roster){ roster.name = newName; roster.position = position; roster.status = status; roster.dateHired = dateHired; }
+    if(roster){ roster.name = newName; roster.position = position; roster.status = status; roster.employmentStatus = employmentStatus; roster.dateHired = dateHired; }
     viewingEmployeeName = newName; // keep viewing the same person under their (possibly new) name
     await btnSentEl(btn, 'Saved');
     employeeProfileEditMode = false;
@@ -5556,10 +5593,11 @@ const BUILDERS = {
       <p class="muted" style="margin-bottom:12px;">Click a name to open their full Employee Profile — employment info, contact details, performance, attendance, disciplinary, and recognition records all in one place.</p>
       <input type="text" placeholder="🔍 Search by name or position…" value="${employeesSearchQuery}" oninput="setEmployeesSearch(this.value)" style="margin-bottom:12px;">
       <table>
-        <tr><th>Name</th><th>Position</th><th>Status</th><th>Contact Number</th><th>Email</th><th>Date Hired</th><th></th></tr>
+        <tr><th>Name</th><th>Position</th><th>Employment Status</th><th>Employee Status</th><th>Contact Number</th><th>Email</th><th>Date Hired</th><th></th></tr>
         ${rows.map(e=>`<tr>
           <td><button class="btn ghost auto" style="padding:3px 10px; font-weight:600;" onclick="openEmployeeProfile('${e.name.replace(/'/g,"\\'")}')">${e.name}</button></td>
           <td>${e.position}</td>
+          <td>${employmentStatusPill(e.employmentStatus, e.dateHired)}</td>
           <td>
             <select class="status-select" onchange="updateEmployeeStatus('${e.name.replace(/'/g,"\\'")}', this.value, this)">
               <option ${e.status==='Active'?'selected':''}>Active</option>
@@ -5573,7 +5611,7 @@ const BUILDERS = {
           <td class="muted">${e.email || '—'}</td>
           <td class="muted">${e.dateHired ? fmtDiscDate(e.dateHired) : '—'}</td>
           <td><button class="btn danger auto" style="padding:4px 10px;" onclick="deleteEmployeeConfirm('${e.name.replace(/'/g,"\\'")}', this)">🗑️ Delete</button></td>
-        </tr>`).join('') || `<tr><td colspan="7" class="muted">No matches.</td></tr>`}
+        </tr>`).join('') || `<tr><td colspan="8" class="muted">No matches.</td></tr>`}
       </table>
     </div>`;
   },
@@ -5617,7 +5655,13 @@ const BUILDERS = {
           <select id="empProfilePosition">
             ${EMPLOYEE_POSITIONS.map(p=>`<option ${e.position===p?'selected':''}>${p}</option>`).join('')}
           </select>
-          <label>Employment Status</label>
+          <label>Employment Status <span class="muted">(Probationary/Regular — optional)</span></label>
+          <select id="empProfileEmploymentStatus" onchange="updateProbationEndDatePreview()">
+            <option value="" ${!e.employmentStatus?'selected':''}>— Not Set —</option>
+            <option value="Probationary" ${e.employmentStatus==='Probationary'?'selected':''}>Probationary</option>
+            <option value="Regular" ${e.employmentStatus==='Regular'?'selected':''}>Regular</option>
+          </select>
+          <label>Employee Status</label>
           <select id="empProfileStatus">
             <option ${e.status==='Active'?'selected':''}>Active</option>
             <option ${e.status==='On Leave'?'selected':''}>On Leave</option>
@@ -5626,7 +5670,9 @@ const BUILDERS = {
             <option ${e.status==='Terminated'?'selected':''}>Terminated</option>
           </select>
           <label>Date Hired</label>
-          <input type="date" id="empProfileDateHired" value="${e.dateHired||''}">
+          <input type="date" id="empProfileDateHired" value="${e.dateHired||''}" onchange="updateProbationEndDatePreview()">
+          <label>Probation End Date <span class="muted">(auto-calculated — Date Hired + 3 months)</span></label>
+          <input type="text" id="empProfileProbationEnd" value="${e.employmentStatus==='Probationary' ? (computeProbationEndDate(e.dateHired) ? fmtDiscDate(computeProbationEndDate(e.dateHired)) : '—') : '—'}" readonly style="opacity:0.7;">
           <p id="empProfileErr" class="login-err"></p>
           <div style="display:flex; gap:8px; margin-top:8px;">
             <button class="btn ghost auto" onclick="toggleEmployeeProfileEdit(false)">Cancel</button>
@@ -5637,8 +5683,10 @@ const BUILDERS = {
           <table>
             <tr><td class="muted">Full Name</td><td>${e.name}</td></tr>
             <tr><td class="muted">Position</td><td>${e.position}</td></tr>
-            <tr><td class="muted">Employment Status</td><td>${statusPill(e.status)}</td></tr>
+            <tr><td class="muted">Employment Status</td><td>${employmentStatusPill(e.employmentStatus, e.dateHired)}</td></tr>
+            <tr><td class="muted">Employee Status</td><td>${statusPill(e.status)}</td></tr>
             <tr><td class="muted">Date Hired</td><td>${e.dateHired ? fmtDiscDate(e.dateHired) : '—'}</td></tr>
+            ${e.employmentStatus==='Probationary' && computeProbationEndDate(e.dateHired) ? `<tr><td class="muted">Probation End Date</td><td>${fmtDiscDate(computeProbationEndDate(e.dateHired))}</td></tr>` : ''}
           </table>
         `}
       </div>
