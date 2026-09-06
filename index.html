@@ -871,6 +871,7 @@ let ALL_NOMINATIONS = []; // Award Nominations — full list, for management
 let MY_NOMINATIONS = []; // Award Nominations this employee submitted, so they can edit their own
 let editingNominationId = null;
 let expandedAnnouncement = null; // ID of the announcement currently expanded (click-to-view), employee-facing
+let expandedRecognition = null; // ID of the recognition currently expanded (click-to-view) — mirrors expandedAnnouncement above
 let editingAnnouncementId = null; // ID of the announcement being edited, management "Post Announcements"
 let MY_DISCIPLINARY_RECORDS = []; // scoped to the current employee, excludes Drafts and internal-only fields
 let discFilter = { search:'', violation:'All', level:'All', status:'All', sort:'newest', expanded:false };
@@ -3458,6 +3459,10 @@ function toggleAnnouncementView(id){
   expandedAnnouncement = (expandedAnnouncement === id) ? null : id;
   renderView('announcements');
 }
+function toggleRecognitionView(id){
+  expandedRecognition = (expandedRecognition === id) ? null : id;
+  renderView('recognition');
+}
 
 let expandedResponsibility = null;
 function toggleResponsibility(pos){
@@ -5393,7 +5398,28 @@ const BUILDERS = {
   recognition: ()=>`
     <div class="card">
       <h3><span class="ic">🏆</span> Your Recognitions</h3>
-      ${MY_RECOGNITION.length ? MY_RECOGNITION.map(r=>`<div class="badge-recog"><div class="medal">${r.medal}</div><div><div class="name">${r.name}</div><div class="desc">${r.desc}</div></div></div>`).join('') : `<p class="muted">No awards yet — keep up the good work!</p>`}
+      ${MY_RECOGNITION.length ? MY_RECOGNITION.map(r=>{
+        const isOpen = expandedRecognition === r.id;
+        const roster = EMPLOYEE_ROSTER.find(e=>e.name===r.employeeName);
+        const preview = (r.desc||'').length > 110 ? r.desc.slice(0,110).trim() + '…' : (r.desc||'');
+        return `<div class="feed-item" style="cursor:pointer;" onclick="toggleRecognitionView('${r.id}')">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+            <div class="title" style="font-size:16px;">${r.medal} ${r.name}</div>
+            <span class="muted" style="white-space:nowrap;">${isOpen?'Hide ↑':'View Recognition →'}</span>
+          </div>
+          <div class="meta" style="margin-top:6px;">Awarded: ${fmtDateTime(r.date)}</div>
+          ${isOpen ? `<div style="margin-top:14px;" onclick="event.stopPropagation()">
+            <table style="margin-bottom:14px;">
+              <tr><td class="muted">Awarded To</td><td>${r.employeeName}</td></tr>
+              ${roster ? `<tr><td class="muted">Position</td><td>${roster.position}</td></tr>` : ''}
+              <tr><td class="muted">Date Awarded</td><td>${fmtDateTime(r.date)}</td></tr>
+              <tr><td class="muted">Recognized By</td><td>Management</td></tr>
+            </table>
+            <p style="font-weight:600; margin-bottom:6px; font-size:13px;">Recognition Details</p>
+            <p style="white-space:pre-line; font-size:14.5px; line-height:1.6;">${r.desc}</p>
+          </div>` : `<p class="muted" style="margin-top:8px; font-size:13.5px; line-height:1.5;">${preview}</p>`}
+        </div>`;
+      }).join('') : `<p class="muted">No awards yet — keep up the good work!</p>`}
     </div>`,
 
   evaluate: ()=>`
