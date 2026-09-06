@@ -3559,7 +3559,6 @@ const STATUS_LABELS = {"pending":"Pending","approved":"Approved","declined":"Dec
 const DISC_CUSTOMER_CONCERN_TYPES = ["Panhandling","Abusive Behavior / Shouting at Staff","Disrespectful Attitude","Threatening Behavior","Aggressive or Confrontational Behavior","Intoxicated / Drunk Customer","Refusal to Follow House Rules","Creating Disturbance to Other Guests","Harassment of Staff or Guests","Inappropriate Language or Comments","Disorderly Conduct","Other"];
 const CONCERN_SAFETY_TYPES = ["Slip / Trip Hazard","Electrical Hazard","Fire Safety Concern","Unsafe Equipment","Blocked Emergency Exit","Water Leak / Flooding","Injury / Accident","Unsafe Working Condition","Other"];
 const CONCERN_FACILITIES_TYPES = ["Electrical","Air Conditioning","Plumbing","Lighting","Furniture","Equipment Damage","Cleaning / Sanitation","Building Damage","Other"];
-const CONCERN_LOCATION_OPTIONS = ["Gaming Floor","Cashier Area","Membership Counter","Restaurant","Hotel Lobby","Parking Area","Restroom","Entrance","Back Office","Other"];
 const CONCERN_PRIORITIES = ["Low","Medium","High","Urgent"];
 // The 5 Concern Category options shown on the form going forward.
 // Older reports saved before this update used a different, shorter
@@ -5412,7 +5411,7 @@ const BUILDERS = {
           <option value="Club 88">Club 88</option>
         </select>
         <label>Specific Location / Area</label>
-        <select id="concernSpecificLocation">${CONCERN_LOCATION_OPTIONS.map(l=>`<option>${l}</option>`).join('')}</select>
+        <input type="text" id="concernSpecificLocation" placeholder="Please type the specific location / area">
 
         <label>Incident Description</label>
         <textarea id="concernDetails" placeholder="Please provide a clear and factual description of what happened. Include important details such as the people involved, sequence of events, actions taken, and any relevant information. Avoid personal opinions or assumptions."></textarea>
