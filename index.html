@@ -4969,16 +4969,36 @@ function probationMonitoringSection(){
     <div class="card" style="margin-bottom:16px;">
       <h3><span class="ic">⚠️</span> Probation Monitoring</h3>
       <table>
-        <tr><th>Employee</th><th>Position</th><th>Progress</th><th></th></tr>
+        <tr><th>Employee</th><th>Position</th><th>Probation Period</th><th>Progress</th><th></th></tr>
         ${probationary.map(e=>{
           const months = Math.max(0, monthsSinceHired(e.dateHired));
-          const progress = months >= 3 ? '3 Months Completed' : `${months} Month${months===1?'':'s'} Completed`;
+          const monthsLabel = months >= 3 ? '3 Months Completed' : `${months} Month${months===1?'':'s'} Completed`;
           const actionLabel = months >= 3 ? 'Action Required' : (months >= 2 ? 'Review' : 'View');
           const actionClass = months >= 3 ? 'btn danger auto' : (months >= 2 ? 'btn reset auto' : 'btn info auto');
+
+          // Everything below is derived purely from Date Hired (already
+          // loaded with the roster) — no extra fields, no extra
+          // queries, just date arithmetic against today.
+          const endDateStr = computeProbationEndDate(e.dateHired);
+          const hired = new Date(e.dateHired + 'T00:00:00');
+          const end = new Date(endDateStr + 'T00:00:00');
+          const today = new Date(); today.setHours(0,0,0,0);
+          const totalDays = Math.max(1, Math.round((end - hired) / 86400000));
+          const daysCompleted = Math.min(totalDays, Math.max(0, Math.round((today - hired) / 86400000)));
+          const daysRemaining = Math.max(0, totalDays - daysCompleted);
+          const pct = Math.min(100, Math.round((daysCompleted / totalDays) * 100));
+          const filledBars = Math.round(pct / 5); // 20-segment bar
+          const bar = '█'.repeat(filledBars) + '░'.repeat(20 - filledBars);
+
           return `<tr>
             <td>${e.name}</td>
             <td class="muted">${e.position}</td>
-            <td>${progress}</td>
+            <td class="muted" style="font-size:12px; white-space:nowrap;">${fmtDiscDate(e.dateHired)} – ${fmtDiscDate(endDateStr)}</td>
+            <td>
+              <div style="font-size:12.5px; margin-bottom:3px;">${monthsLabel} · ${daysCompleted} / ${totalDays} Days</div>
+              <div class="mono" style="font-size:12px; letter-spacing:-1px; color:var(--gold);" title="${pct}% complete">${bar} ${pct}%</div>
+              <div class="muted" style="font-size:11px; margin-top:2px;">${daysRemaining} Day${daysRemaining===1?'':'s'} Remaining</div>
+            </td>
             <td><button class="${actionClass}" style="padding:5px 10px;" onclick="openEmployeeProfile('${e.name.replace(/'/g,"\\'")}')">${actionLabel}</button></td>
           </tr>`;
         }).join('')}
