@@ -3792,6 +3792,7 @@ function concernStatusPill(status){
   return `<span class="pill ${map[status]||'warn'}">${status||'Submitted'}</span>`;
 }
 let discDetailConcernId = null; // which concern mgmt-concern-detail is showing
+let concernInvEditMode = null; // null = not yet decided for this record; true/false once initialized — see mgmt-concern-detail
 const DISC_POSITIONS = ["Shift Manager","Supervisor","Cashier","Membership","Slot Attendant","Slot Technician Supervisor","Assistant Slot Technician Supervisor","Slot Technician","Security"];
 const DISC_LEVELS = ["Level 1 – Coaching / Verbal Reminder","Level 2 – Written Warning","Level 3 – Written Warning + Suspension","Level 4 – Final Review","Level 5 – Employment Decision"];
 const DISC_STATUSES = ["Draft","Under Review","Pending Approval","Final Review","Action Issued","Closed","No Action"];
@@ -6816,6 +6817,14 @@ const BUILDERS = {
     const hasOwner = !!c.investigationCreatedByAccount || hasLegacyContent;
     const isOwner = !!c.investigationCreatedByAccount && String(c.investigationCreatedByAccount).toLowerCase() === String(CURRENT_USER.username||'').toLowerCase();
     const canEditInvestigation = isAdmin || !hasOwner || isOwner;
+    // View/Edit toggle — defaults to Edit only when there's nothing
+    // saved yet (a brand-new investigation), otherwise opens in
+    // read-only View mode so existing notes can't be changed by
+    // accident; the Edit button switches it into the editable form.
+    if(concernInvEditMode === null){
+      concernInvEditMode = canEditInvestigation && !(c.investigationNotes || c.investigatedBy || c.actionTaken);
+    }
+    const isEditingNow = canEditInvestigation && concernInvEditMode;
     return `
     <div class="no-print" style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <button class="btn ghost auto" onclick="cancelConcernInvestigation()">← Back to All Reported Concerns</button>
@@ -6853,28 +6862,41 @@ const BUILDERS = {
       <h3>Management Review &amp; Investigation</h3>
       <p class="muted no-print" style="margin-bottom:8px;">Use this space to document investigation findings, actions taken, and the current status of the concern. Not visible to employees.</p>
       ${!canEditInvestigation ? `<p class="no-print" style="background:var(--panel-2); padding:10px 12px; border-radius:8px; margin-bottom:12px; font-size:13px; color:var(--text-mute);">🔒 This Management Review &amp; Investigation was created by another authorized user and is available for viewing only.</p>` : ''}
+      ${isEditingNow ? `
       <div class="no-print">
         <label>Investigation Notes</label>
-        <textarea id="concernInvNotes" rows="4" placeholder="Findings, interviews, evidence reviewed…" ${canEditInvestigation?'':'disabled style="opacity:0.7;"'}>${c.investigationNotes||''}</textarea>
-        <label>Investigated By ${canEditInvestigation?'':'🔒'}</label>
-        <input type="text" id="concernInvBy" value="${c.investigatedBy||''}" placeholder="Type your full name" ${canEditInvestigation?'':'disabled style="opacity:0.7;"'}>
+        <textarea id="concernInvNotes" rows="4" placeholder="Findings, interviews, evidence reviewed…">${c.investigationNotes||''}</textarea>
+        <label>Investigated By</label>
+        <input type="text" id="concernInvBy" value="${c.investigatedBy||''}" placeholder="Type your full name">
         <label>Action Taken</label>
-        <textarea id="concernActionTaken" rows="3" placeholder="Describe the action taken…" ${canEditInvestigation?'':'disabled style="opacity:0.7;"'}>${c.actionTaken||''}</textarea>
+        <textarea id="concernActionTaken" rows="3" placeholder="Describe the action taken…">${c.actionTaken||''}</textarea>
         <label>Status</label>
-        <select id="concernStatusSelect" ${canEditInvestigation?'':'disabled style="opacity:0.7;"'}>
+        <select id="concernStatusSelect">
           ${CONCERN_STATUSES.map(s=>`<option ${c.status===s?'selected':''}>${s}</option>`).join('')}
         </select>
         ${(c.investigationLastUpdatedBy || c.investigationLastUpdatedAt) ? `<p class="muted" style="font-size:11.5px; margin-top:12px;">${c.investigationLastUpdatedBy ? `Last Updated By: ${c.investigationLastUpdatedBy}<br>` : ''}${c.investigationLastUpdatedAt ? `Last Updated: ${fmtDateTime(c.investigationLastUpdatedAt)}<br>` : ''}${c.statusLastChangedAt ? `Status Last Changed: ${fmtDateTime(c.statusLastChangedAt)}` : ''}</p>` : ''}
         <p id="concernInvErr" class="login-err"></p>
-        ${canEditInvestigation ? `
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-top:12px;">
           <button class="btn ghost auto" onclick="cancelConcernInvestigation()">← Cancel / Back</button>
           <div style="display:flex; gap:8px; flex-wrap:wrap;">
             <button class="btn ghost auto" id="concernInvDraftBtn" onclick="saveConcernInvestigation('draft')">Save Draft</button>
             <button class="btn auto" id="concernInvSaveBtn" onclick="saveConcernInvestigation('final')">Save Changes</button>
           </div>
-        </div>` : `<button class="btn ghost auto" style="margin-top:10px;" onclick="renderView('mgmt-concerns')">← Back to All Reported Concerns</button>`}
-      </div>
+        </div>
+      </div>` : `
+      <div class="no-print">
+        <table style="margin-bottom:12px;">
+          <tr><td class="muted" style="vertical-align:top; width:160px;">Investigation Notes</td><td style="white-space:pre-wrap;">${c.investigationNotes||'—'}</td></tr>
+          <tr><td class="muted">Investigated By</td><td>${c.investigatedBy||'—'}</td></tr>
+          <tr><td class="muted" style="vertical-align:top;">Action Taken</td><td style="white-space:pre-wrap;">${c.actionTaken||'—'}</td></tr>
+          <tr><td class="muted">Status</td><td>${concernStatusPill(c.status)}</td></tr>
+        </table>
+        ${(c.investigationLastUpdatedBy || c.investigationLastUpdatedAt) ? `<p class="muted" style="font-size:11.5px;">${c.investigationLastUpdatedBy ? `Last Updated By: ${c.investigationLastUpdatedBy}<br>` : ''}${c.investigationLastUpdatedAt ? `Last Updated: ${fmtDateTime(c.investigationLastUpdatedAt)}<br>` : ''}${c.statusLastChangedAt ? `Status Last Changed: ${fmtDateTime(c.statusLastChangedAt)}` : ''}</p>` : ''}
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-top:12px;">
+          <button class="btn ghost auto" onclick="renderView('mgmt-concerns')">← Back to All Reported Concerns</button>
+          ${canEditInvestigation ? `<button class="btn edit auto" onclick="enterConcernInvEditMode()">✏️ Edit</button>` : ''}
+        </div>
+      </div>`}
       <table class="print-only">
         <tr><td class="muted" style="vertical-align:top;">Investigation Notes</td><td style="white-space:pre-wrap;">${c.investigationNotes||'—'}</td></tr>
         <tr><td class="muted">Investigated By</td><td>${c.investigatedBy||'—'}</td></tr>
@@ -7775,6 +7797,7 @@ async function reviewSuggestion(id, el){
 
 function openConcernDetail(id){
   discDetailConcernId = id;
+  concernInvEditMode = null; // re-initialize view/edit default for this record
   renderView('mgmt-concern-detail');
 }
 
@@ -7802,6 +7825,10 @@ function hasUnsavedConcernInvestigationChanges(){
     || document.getElementById('concernInvBy').value !== concernInvSnapshot.investigatedBy
     || document.getElementById('concernActionTaken').value !== concernInvSnapshot.actionTaken
     || document.getElementById('concernStatusSelect').value !== concernInvSnapshot.status;
+}
+function enterConcernInvEditMode(){
+  concernInvEditMode = true;
+  renderView('mgmt-concern-detail');
 }
 function cancelConcernInvestigation(){
   if(hasUnsavedConcernInvestigationChanges()){
@@ -7858,7 +7885,10 @@ async function saveConcernInvestigation(mode, navigateAway){
     }
     await btnSentEl(btn, mode === 'draft' ? 'Draft Saved' : 'Saved');
     if(navigateAway){ renderView('mgmt-concerns'); }
-    else { renderView('mgmt-concern-detail'); }
+    else {
+      if(mode === 'final') concernInvEditMode = false; // Save Changes returns to the read-only view; Save Draft stays in edit mode since the work isn't finished
+      renderView('mgmt-concern-detail');
+    }
   } catch(e){
     err.textContent = e.message || "Couldn't save — please try again.";
     err.style.display = 'block';
