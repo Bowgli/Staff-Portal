@@ -161,6 +161,19 @@
   td{padding:11px 10px; border-bottom:1px solid var(--line); color:var(--text);}
   tr:last-child td{border-bottom:none;}
   .table-scroll{overflow-x:auto;}
+  /* Turns a plain table into stacked cards on narrow portrait phones —
+     CSS-only, no JS: each row becomes a card, each cell's data-label
+     attribute becomes its visible label. Opt-in via .mobile-card-table
+     (needs a real <thead>/<tbody>) so existing tables/pages are
+     completely unaffected. */
+  @media(max-width:600px){
+    .mobile-card-table thead{ display:none; }
+    .mobile-card-table, .mobile-card-table tbody{ display:block; width:100%; }
+    .mobile-card-table tr{ display:block; width:100%; margin-bottom:12px; padding:12px 14px; background:var(--panel-2); border-radius:10px; border:1px solid var(--line); }
+    .mobile-card-table td{ display:block; width:100%; padding:5px 0; border:none; text-align:left; }
+    .mobile-card-table td[data-label]::before{ content: attr(data-label); display:block; font-size:10px; text-transform:uppercase; letter-spacing:0.4px; color:var(--text-faint); margin-bottom:2px; }
+    .mobile-card-table td:empty{ display:none; }
+  }
 
   .pill{display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; white-space:nowrap;}
   .pill.ok{background:var(--teal-soft); color:var(--teal);}
@@ -4969,8 +4982,9 @@ function probationMonitoringSection(){
   return `
     <div class="card" style="margin-bottom:16px;">
       <h3><span class="ic">⚠️</span> Probation Monitoring</h3>
-      <table>
-        <tr><th>Employee</th><th>Position</th><th>Probation Period</th><th>Progress</th><th></th></tr>
+      <table class="mobile-card-table">
+        <thead><tr><th>Employee</th><th>Position</th><th>Probation Period</th><th>Progress</th><th></th></tr></thead>
+        <tbody>
         ${probationary.map(e=>{
           const months = Math.max(0, monthsSinceHired(e.dateHired));
           const monthsLabel = months >= 3 ? '3 Months Completed' : `${months} Month${months===1?'':'s'} Completed`;
@@ -4992,17 +5006,18 @@ function probationMonitoringSection(){
           const bar = '█'.repeat(filledBars) + '░'.repeat(20 - filledBars);
 
           return `<tr>
-            <td>${e.name}</td>
-            <td class="muted">${e.position}</td>
-            <td class="muted" style="font-size:12px; white-space:nowrap;">${fmtDiscDate(e.dateHired)} – ${fmtDiscDate(endDateStr)}</td>
-            <td>
+            <td data-label="Employee">${e.name}</td>
+            <td class="muted" data-label="Position">${e.position}</td>
+            <td class="muted" data-label="Probation Period" style="font-size:12px; white-space:nowrap;">${fmtDiscDate(e.dateHired)} – ${fmtDiscDate(endDateStr)}</td>
+            <td data-label="Progress">
               <div style="font-size:12.5px; margin-bottom:3px;">${monthsLabel} · ${daysCompleted} / ${totalDays} Days</div>
               <div class="mono" style="font-size:12px; letter-spacing:-1px; color:var(--gold);" title="${pct}% complete">${bar} ${pct}%</div>
               <div class="muted" style="font-size:11px; margin-top:2px;">${daysRemaining} Day${daysRemaining===1?'':'s'} Remaining</div>
             </td>
-            <td><button class="${actionClass}" style="padding:5px 10px;" onclick="openEmployeeProfile('${e.name.replace(/'/g,"\\'")}')">${actionLabel}</button></td>
+            <td data-label=""><button class="${actionClass}" style="padding:5px 10px;" onclick="openEmployeeProfile('${e.name.replace(/'/g,"\\'")}')">${actionLabel}</button></td>
           </tr>`;
         }).join('')}
+        </tbody>
       </table>
     </div>`;
 }
