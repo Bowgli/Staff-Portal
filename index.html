@@ -1430,20 +1430,13 @@ const EMPLOYEE_POSITIONS = ["Shift Manager","Supervisor","Technical Manager","Gr
 // from the existing Status field (Active/On Leave/Furlough/Resigned/
 // Terminated) — Master Schedule availability keeps reading Status
 // alone; this never factors into it. Probation End Date is computed
-// on the fly from Date Hired rather than stored, so it's always
-// correct and never needs its own persisted/edited field.
-// Standardized to a fixed 90 CALENDAR-DAY probation period for every
-// employee, regardless of start month — NOT "+3 calendar months",
-// since months have different lengths (28-31 days) and that caused
-// some employees to show 89-92 total days instead of a consistent 90.
-// Date Hired counts as Day 1, so Day 90 (the end date) is
-// Date Hired + 89 days.
-const PROBATION_DAYS = 90;
+// on the fly from Date Hired + 3 months rather than stored, so it's
+// always correct and never needs its own persisted/edited field.
 function computeProbationEndDate(dateHired){
   if(!dateHired) return '';
   const d = new Date(dateHired + 'T00:00:00');
   if(isNaN(d.getTime())) return '';
-  d.setDate(d.getDate() + (PROBATION_DAYS - 1));
+  d.setMonth(d.getMonth() + 3);
   return d.toISOString().slice(0,10);
 }
 function employmentStatusPill(employmentStatus, dateHired){
@@ -1999,7 +1992,7 @@ async function doLoginWithCredentials(u, p){
     const r = await fastLogin(u, p);
     if(!r.ok) return {success:false, error: r.error || "Incorrect username or password."};
     if(r.role === 'management'){
-      CURRENT_USER = {role:'management', displayName:r.displayName, username:r.username, accessLevel: r.accessLevel || 'full', mgmtRole: r.mgmtRole || 'full', lastNotifSeenAt: r.lastNotifSeenAt || ''};
+      CURRENT_USER = {role:'management', displayName:r.displayName, username:r.username, accessLevel: r.accessLevel || 'full', mgmtRole: r.mgmtRole || 'full'};
     } else {
       CURRENT_USER = {role:'employee', employeeName:r.employeeName, mgmtRole: r.mgmtRole || null, displayName: r.fullName, username: r.username || '', lastNotifSeenAt: r.lastNotifSeenAt || ''};
       CURRENT_EMPLOYEE = {
@@ -2415,86 +2408,6 @@ let mgmtSuggestionsSnapshot = null; // Map: id -> {status}
 let mgmtDiscResponseSnapshot = null; // Map: caseId -> whether EmployeeResponse is filled in
 let mgmtEvaluationsSnapshot = null; // Set of evaluation IDs already seen
 let mgmtNominationsSnapshot = null; // Set of nomination IDs already seen
-let mgmtCatchupDoneThisSession = false; // ensures the login catch-up pass below only ever runs once per login, even if seedMgmtPollingBaseline() is re-run during data-recovery retries
-
-/* ============================================================
-   NOTIFICATION RECIPIENT ROUTING
-   Decides, for the account CURRENTLY LOGGED IN to THIS browser
-   session, whether a given new Request/Concern/Suggestion is one
-   THEY should be popped-up + sounded for. Nothing is ever sent to
-   "everyone" — each open management/hybrid session independently
-   evaluates the same new item against its own identity, so a
-   Supervisor's browser and the Administrator's browser can react
-   differently to the exact same submission without any new
-   network calls or server-side "targeting" work.
-
-   Rules (see task write-up):
-   - Anonymous Concern/Suggestion: Administrator ("full") only —
-     never routed to a Supervisor/Shift Manager, and identity is
-     never looked up for these (the app already doesn't expose who
-     it was, by design, for privacy).
-   - Identified submission: routed to whichever Supervisor/Shift
-     Manager is on duty (same venue, overlapping shift) with the
-     submitting employee right now, reusing the identical schedule
-     matching already used by "My Team on Duty".
-   - If no on-duty Supervisor/Shift Manager can be identified for
-     an identified submission, Administrator is the fallback so
-     nothing is silently dropped.
-   ============================================================ */
-
-// Concerns/Suggestions store the submitter's FULL name (From is
-// CURRENT_EMPLOYEE.fullName), while the schedule/roster is keyed by
-// the shorter roster name — this bridges the two using the account
-// list that already links them, without touching either data shape.
-function employeeScheduleNameFromFullName(fullName){
-  const acct = EMPLOYEE_ACCOUNTS.find(a => a.fullName === fullName);
-  return acct ? acct.employeeName : fullName;
-}
-
-// Same venue + overlapping-shift matching as renderTeamOnDuty()
-// above, restricted to Shift Manager / Supervisor positions, and
-// returning accounts (not names) so callers can compare usernames
-// directly. Returns [] when the employee isn't found on today's
-// schedule, isn't working today, or has no Shift Manager/Supervisor
-// working alongside them — any of which mean "nobody identified".
-function findOnDutySupervisorAccounts(employeeName){
-  const myRow = findMyScheduleRow(employeeName);
-  const todayIndex = SCHEDULE_DAYS.findIndex(isScheduleDayToday);
-  if(!myRow || todayIndex === -1) return [];
-  const myCell = parseScheduleCell(myRow.cells[todayIndex]);
-  if(myCell.type !== 'shift' || !myCell.time) return [];
-
-  const accounts = [];
-  SCHEDULE_ROWS.forEach(row=>{
-    if(row.name === myRow.name) return;
-    const cell = parseScheduleCell(row.cells[todayIndex]);
-    if(cell.type !== 'shift' || !cell.time) return;
-    if(cell.venue !== myCell.venue) return;
-    if(!isMeaningfulShiftOverlap(myCell.time, cell.time)) return;
-    const position = (cell.position || row.role || '').trim();
-    if(position !== 'Shift Manager' && position !== 'Supervisor') return;
-    const acct = findAccountByEmployeeName(row.name);
-    // Only an account that actually has management access (a hybrid
-    // Shift Manager/Supervisor login) can receive this — a
-    // Supervisor without their own account simply can't be notified.
-    if(acct && acct.mgmtRole) accounts.push(acct);
-  });
-  return accounts;
-}
-
-// The single gate every toast decision below goes through.
-// submitterName/byFullName let callers pass either the schedule
-// name (Requests) or the full name (Concerns/Suggestions) as-is.
-function isNotificationRecipientMe(submitterName, {anonymous, byFullName} = {}){
-  if(!CURRENT_USER || !CURRENT_USER.username) return false;
-  const iAmAdmin = currentMgmtRole() === 'full';
-  if(anonymous) return iAmAdmin; // privacy rule — Supervisors/Shift Managers never see who, or that it's for them
-
-  const scheduleName = byFullName ? employeeScheduleNameFromFullName(submitterName) : submitterName;
-  const onDuty = findOnDutySupervisorAccounts(scheduleName);
-  if(!onDuty.length) return iAmAdmin; // nobody identified — Administrator is the fallback
-  return onDuty.some(a => a.username === CURRENT_USER.username);
-}
 
 async function initMgmtAudio(){
   try{
@@ -2630,6 +2543,38 @@ function monthsSinceHired(dateHired){
 // later login or refresh, by this account or any other. Runs once
 // per management session rather than on every 30-second poll, since
 // probation milestones don't change that often.
+// Reminds management, once per real login session, about items still
+// awaiting review (pending requests, open concerns, new suggestions)
+// — so nothing gets forgotten between visits. Uses sessionStorage
+// (not localStorage) so it fires again on a genuinely NEW session
+// (new tab/browser launch) but never repeats on a mere page refresh
+// or a later login within the same still-open browser session — that
+// repeating-on-every-refresh behavior was the reported bug.
+function checkCatchupReminders(){
+  let alreadyShown = false;
+  try{ alreadyShown = sessionStorage.getItem('sv_mgmt_catchup_shown') === '1'; }catch(e){}
+  if(alreadyShown) return;
+  try{ sessionStorage.setItem('sv_mgmt_catchup_shown', '1'); }catch(e){} // mark BEFORE showing — a rare failed render still shouldn't loop forever on refresh
+
+  const catchupRequests = ALL_REQUESTS.filter(r=>r.Status==='pending');
+  const catchupConcerns = MOCK.concernsLog.filter(c=>c.status==='Open' || c.status==='Submitted');
+  const catchupSuggestions = MOCK.suggestionsLog.filter(s=>s.status==='new');
+  if(catchupRequests.length || catchupConcerns.length || catchupSuggestions.length){
+    if(soundAlertsEnabled()) playAlertTone();
+    if(catchupRequests.length){
+      const detail = catchupRequests.length===1 ? `${catchupRequests[0].EmployeeName} — ${catchupRequests[0].Type}` : catchupRequests.map(r=>`${r.EmployeeName} (${r.Type})`).join(', ');
+      showMgmtToast('📝', catchupRequests.length===1?'Request Awaiting Review':`${catchupRequests.length} Requests Awaiting Review`, `${detail} — tap to view`, 'mgmt-requests');
+    }
+    if(catchupConcerns.length){
+      const detail = catchupConcerns.length===1 ? `${catchupConcerns[0].from} — concern still open` : catchupConcerns.map(c=>c.from).join(', ');
+      showMgmtToast('⚠️', catchupConcerns.length===1?'Concern Awaiting Review':`${catchupConcerns.length} Concerns Awaiting Review`, `${detail} — tap to view`, 'mgmt-concerns');
+    }
+    if(catchupSuggestions.length){
+      const detail = catchupSuggestions.map(s=>s.from).join(', ');
+      showMgmtToast('💡', catchupSuggestions.length===1?'Suggestion Awaiting Review':`${catchupSuggestions.length} Suggestions Awaiting Review`, `${detail} — tap to view`, 'mgmt-suggestions');
+    }
+  }
+}
 async function checkProbationMilestones(){
   if(!USE_REMOTE()) return;
   const due = [];
@@ -2681,42 +2626,6 @@ async function seedMgmtPollingBaseline(){
   mgmtDiscResponseSnapshot = new Map(ALL_DISCIPLINARY_RECORDS.map(d=>[d.ID, !!d.EmployeeResponse]));
   mgmtEvaluationsSnapshot = new Set(ALL_EVALUATIONS.map(e=>e.ID));
   mgmtNominationsSnapshot = new Set(ALL_NOMINATIONS.map(n=>n.ID));
-
-  // Login catch-up: surface anything still-open that arrived while
-  // this account was logged out, instead of silently treating it as
-  // "already known" just because it existed at login time. Only
-  // items still pending/open/new are worth catching up on — anything
-  // already resolved has nothing left to act on. Gated so it can
-  // only fire once per login (see mgmtCatchupDoneThisSession above).
-  if(!mgmtCatchupDoneThisSession && CURRENT_USER){
-    mgmtCatchupDoneThisSession = true;
-    const seenAt = CURRENT_USER.lastNotifSeenAt ? new Date(CURRENT_USER.lastNotifSeenAt).getTime() : 0;
-    const isUnseen = (dateVal) => { const t = new Date(dateVal).getTime(); return isNaN(seenAt) || isNaN(t) || t > seenAt; };
-
-    const catchupRequests = ALL_REQUESTS.filter(r => r.Status==='pending' && isUnseen(r.Date) && isNotificationRecipientMe(r.EmployeeName, {}));
-    const catchupConcerns = MOCK.concernsLog.filter(c => c.status==='Open' && isUnseen(c.date) && isNotificationRecipientMe(c.from, {anonymous: c.from==='Anonymous', byFullName:true}));
-    const catchupSuggestions = MOCK.suggestionsLog.filter(s => s.status==='new' && isUnseen(s.date) && isNotificationRecipientMe(s.from, {anonymous: s.from==='Anonymous', byFullName:true}));
-
-    if(catchupRequests.length || catchupConcerns.length || catchupSuggestions.length){
-      if(soundAlertsEnabled()) playAlertTone();
-      if(catchupRequests.length){
-        const detail = catchupRequests.length===1 ? `${catchupRequests[0].EmployeeName} — ${catchupRequests[0].Type}` : catchupRequests.map(r=>`${r.EmployeeName} (${r.Type})`).join(', ');
-        showMgmtToast('📝', catchupRequests.length===1?'Request Awaiting Review':`${catchupRequests.length} Requests Awaiting Review`, `${detail} — tap to view`, 'mgmt-requests');
-      }
-      if(catchupConcerns.length){
-        const detail = catchupConcerns.length===1 ? `${catchupConcerns[0].from} — concern still open` : catchupConcerns.map(c=>c.from).join(', ');
-        showMgmtToast('⚠️', catchupConcerns.length===1?'Concern Awaiting Review':`${catchupConcerns.length} Concerns Awaiting Review`, `${detail} — tap to view`, 'mgmt-concerns');
-      }
-      if(catchupSuggestions.length){
-        const detail = catchupSuggestions.map(s=>s.from).join(', ');
-        showMgmtToast('💡', catchupSuggestions.length===1?'Suggestion Awaiting Review':`${catchupSuggestions.length} Suggestions Awaiting Review`, `${detail} — tap to view`, 'mgmt-suggestions');
-      }
-    }
-    // Mark seen right after catching up (not before) — reuses the
-    // exact same persisted mechanism already used for employees, so
-    // no new backend endpoint is needed.
-    markNotificationsSeenNow();
-  }
 }
 async function startMgmtPolling(){
   if(mgmtPollInterval || !USE_REMOTE()) return;
@@ -2796,39 +2705,25 @@ async function startMgmtPolling(){
     const newNominationRecords = ALL_NOMINATIONS.filter(n => !mgmtNominationsSnapshot.has(n.ID));
     mgmtNominationsSnapshot = new Set(ALL_NOMINATIONS.map(n=>n.ID));
 
-    // Routing gate — narrows each list to what THIS session's account
-    // should actually be popped up for (see isNotificationRecipientMe).
-    // Requests are never anonymous; Concerns/Suggestions use their
-    // "from" field (identified name, or "Anonymous") and store the
-    // submitter's FULL name, hence byFullName:true.
-    const myNewRequestsList = newRequestsList.filter(r => isNotificationRecipientMe(r.employeeName, {}));
-    const myContentEditedRequests = contentEditedRequests.filter(r => isNotificationRecipientMe(r.employeeName, {}));
-    const myNewConcerns = newConcerns.filter(c => isNotificationRecipientMe(c.from, {anonymous: c.from === 'Anonymous', byFullName: true}));
-    const myContentEditedConcerns = contentEditedConcerns.filter(c => isNotificationRecipientMe(c.from, {anonymous: c.from === 'Anonymous', byFullName: true}));
-    const myNewSuggestionsList = newSuggestionsList.filter(s => isNotificationRecipientMe(s.from, {anonymous: s.from === 'Anonymous', byFullName: true}));
-
-    const anythingToNotify = myNewRequestsList.length || myNewConcerns.length || myNewSuggestionsList.length || newEvaluationRecords.length || newDiscResponseRecords.length || newNominationRecords.length || myContentEditedRequests.length || myContentEditedConcerns.length;
+    const anythingToNotify = newRequestsList.length || newConcerns.length || newSuggestionsList.length || newEvaluationRecords.length || newDiscResponseRecords.length || newNominationRecords.length || contentEditedRequests.length || contentEditedConcerns.length;
     if(anythingToNotify){
       if(soundAlertsEnabled()) playAlertTone();
-      if(myNewRequestsList.length){
-        const detail = myNewRequestsList.length===1 ? `${myNewRequestsList[0].employeeName} — ${myNewRequestsList[0].type}` : myNewRequestsList.map(r=>`${r.employeeName} (${r.type})`).join(', ');
-        showMgmtToast('📝', myNewRequestsList.length===1?'New Request Submitted':`${myNewRequestsList.length} New Requests`, `${detail} — tap to view`, 'mgmt-requests');
-      } else if(myContentEditedRequests.length){
+      if(newRequestsList.length){
+        const detail = newRequestsList.length===1 ? `${newRequestsList[0].employeeName} — ${newRequestsList[0].type}` : newRequestsList.map(r=>`${r.employeeName} (${r.type})`).join(', ');
+        showMgmtToast('📝', newRequestsList.length===1?'New Request Submitted':`${newRequestsList.length} New Requests`, `${detail} — tap to view`, 'mgmt-requests');
+      } else if(contentEditedRequests.length){
         showMgmtToast('📝', 'Request Updated', 'An employee updated a submitted request — tap to view', 'mgmt-requests');
       }
-      if(myNewConcerns.length){
-        // Anonymous concerns route to Administrator only, so it's
-        // safe here to show "Anonymous" verbatim — this toast is
-        // never rendered for a Supervisor/Shift Manager session.
-        const detail = myNewConcerns.length===1 ? `${myNewConcerns[0].from} submitted a new concern` : myNewConcerns.map(c=>c.from).join(', ');
-        showMgmtToast('⚠️', myNewConcerns.length===1?'New Concern Submitted':`${myNewConcerns.length} New Concerns`, `${detail} — tap to view`, 'mgmt-concerns');
-      } else if(myContentEditedConcerns.length){
+      if(newConcerns.length){
+        const detail = newConcerns.length===1 ? `${newConcerns[0].from} submitted a new concern` : newConcerns.map(c=>c.from).join(', ');
+        showMgmtToast('⚠️', newConcerns.length===1?'New Concern Submitted':`${newConcerns.length} New Concerns`, `${detail} — tap to view`, 'mgmt-concerns');
+      } else if(contentEditedConcerns.length){
         showMgmtToast('⚠️', 'Concern Updated', 'An employee updated a submitted concern — tap to view', 'mgmt-concerns');
       }
-      if(myNewSuggestionsList.length){
-        const s0 = myNewSuggestionsList[0];
-        const snippet = myNewSuggestionsList.length===1 ? (s0.idea||'').slice(0,60) : myNewSuggestionsList.map(s=>s.from).join(', ');
-        showMgmtToast('💡', myNewSuggestionsList.length===1?'New Suggestion':`${myNewSuggestionsList.length} New Suggestions`, `${snippet}${myNewSuggestionsList.length===1 && (s0.idea||'').length>60?'…':''} — tap to view`, 'mgmt-suggestions');
+      if(newSuggestionsList.length){
+        const s0 = newSuggestionsList[0];
+        const snippet = newSuggestionsList.length===1 ? (s0.idea||'').slice(0,60) : newSuggestionsList.map(s=>s.from).join(', ');
+        showMgmtToast('💡', newSuggestionsList.length===1?'New Suggestion':`${newSuggestionsList.length} New Suggestions`, `${snippet}${newSuggestionsList.length===1 && (s0.idea||'').length>60?'…':''} — tap to view`, 'mgmt-suggestions');
       }
       if(newEvaluationRecords.length){
         const detail = newEvaluationRecords.map(e=>e.EmployeeName).join(', ');
@@ -3158,12 +3053,12 @@ function stopSessionTimeout(){
 function logout(){
   CURRENT_USER = null;
   CURRENT_EMPLOYEE = null;
-  mgmtCatchupDoneThisSession = false;
   stopMgmtPolling();
   stopEmpPolling();
   stopSessionTimeout();
   try{ localStorage.removeItem(SESSION_KEY); } catch(e){}
   try{ localStorage.removeItem(LAST_VIEW_KEY); } catch(e){}
+  try{ sessionStorage.removeItem('sv_mgmt_catchup_shown'); } catch(e){} // so logging back in (even in the same tab) shows the catch-up reminder again, like a genuinely new session should
   document.getElementById('loginUser').value = '';
   document.getElementById('loginPass').value = '';
   document.getElementById('appRoot').style.display = 'none';
@@ -3865,6 +3760,7 @@ function setRole(role){
     initMgmtAudio();
     startMgmtPolling();
     checkProbationMilestones();
+    checkCatchupReminders();
     document.getElementById('soundAlertToggle').style.display = 'block';
     updateSoundAlertUI();
   }
@@ -5134,13 +5030,10 @@ function probationMonitoringSection(){
           // queries, just date arithmetic against today.
           const endDateStr = computeProbationEndDate(e.dateHired);
           const hired = new Date(e.dateHired + 'T00:00:00');
+          const end = new Date(endDateStr + 'T00:00:00');
           const today = new Date(); today.setHours(0,0,0,0);
-          // Fixed 90-day total for every employee (see computeProbationEndDate),
-          // never derived from a month-based date subtraction.
-          const totalDays = PROBATION_DAYS;
-          // Inclusive counting: the hire date itself is Day 1, so add 1 to the
-          // raw day difference (e.g. hired today = Day 1, hired yesterday = Day 2).
-          const daysCompleted = Math.min(totalDays, Math.max(1, Math.round((today - hired) / 86400000) + 1));
+          const totalDays = Math.max(1, Math.round((end - hired) / 86400000));
+          const daysCompleted = Math.min(totalDays, Math.max(0, Math.round((today - hired) / 86400000)));
           const daysRemaining = Math.max(0, totalDays - daysCompleted);
           const pct = Math.min(100, Math.round((daysCompleted / totalDays) * 100));
           const filledBars = Math.round(pct / 5); // 20-segment bar
@@ -6048,7 +5941,7 @@ const BUILDERS = {
           </select>
           <label>Date Hired</label>
           <input type="date" id="empProfileDateHired" value="${e.dateHired||''}" onchange="updateProbationEndDatePreview()">
-          <label>Probation End Date <span class="muted">(auto-calculated — Date Hired + 90 days)</span></label>
+          <label>Probation End Date <span class="muted">(auto-calculated — Date Hired + 3 months)</span></label>
           <input type="text" id="empProfileProbationEnd" value="${e.employmentStatus==='Probationary' ? (computeProbationEndDate(e.dateHired) ? fmtDiscDate(computeProbationEndDate(e.dateHired)) : '—') : '—'}" readonly style="opacity:0.7;">
           <p id="empProfileErr" class="login-err"></p>
           <div style="display:flex; gap:8px; margin-top:8px;">
