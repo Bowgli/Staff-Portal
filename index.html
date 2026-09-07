@@ -839,6 +839,39 @@ async function confirmAndDelete(el, message, action){
     btnResetEl(el); // harmless if the row/button no longer exists after a re-render
   }
 }
+// Which live-list statuses are eligible for manual archiving — kept
+// in sync with CONCERN_TERMINAL_STATUSES_/REQUEST_TERMINAL_STATUSES_
+// on the server, which enforces this same rule again regardless of
+// what the UI shows, so a direct API call can't bypass it either.
+const CONCERN_ARCHIVABLE_STATUSES = new Set(["Resolved","Closed","No Action Needed","Withdrawn"]);
+const REQUEST_ARCHIVABLE_STATUSES = new Set(["approved","declined"]);
+async function archiveRecordNow(module, id, el){
+  const messages = {
+    concern: "Archive Record?\n\nThis concern has been marked as completed/closed.\n\nArchiving will remove it from the active list, but the record will remain safely stored in Archived Records for authorized Admin viewing, searching, and printing.",
+    request: "Archive Record?\n\nThis request has been marked as completed.\n\nArchiving will remove it from the active list, but the record will remain safely stored in Archived Records for authorized Admin viewing, searching, and printing.",
+    suggestion: "Archive Record?\n\nThis suggestion has been marked as reviewed.\n\nArchiving will remove it from the active list, but the record will remain safely stored in Archived Records for authorized Admin viewing, searching, and printing.",
+  };
+  await confirmAndDelete(el, messages[module] || "Archive this record?", async ()=>{
+    const r = await apiPost('archiveRecord', {module, id, username: CURRENT_USER.username});
+    if(!r.ok){ alert(r.error || "Couldn't archive."); return; }
+    // Invalidate any cached archive list so the next "View Archived"
+    // click re-fetches fresh data including this newly-archived item.
+    if(module === 'concern'){ MOCK.concernsLog = MOCK.concernsLog.filter(c=>c.id!==id); concernsArchiveData = null; renderView('mgmt-concerns'); }
+    if(module === 'request'){ ALL_REQUESTS = ALL_REQUESTS.filter(r=>r.ID!==id); requestsArchiveData = null; renderView('mgmt-requests'); }
+    if(module === 'suggestion'){ MOCK.suggestionsLog = MOCK.suggestionsLog.filter(s=>s.id!==id); suggestionsArchiveData = null; renderView('mgmt-suggestions'); }
+  });
+}
+async function restoreRecordNow(module, id, el){
+  await confirmAndDelete(el, "Restore this record back to the active list?", async ()=>{
+    const r = await apiPost('restoreRecord', {module, id, username: CURRENT_USER.username});
+    if(!r.ok){ alert(r.error || "Couldn't restore."); return; }
+    if(module === 'concern'){ concernsArchiveData = null; concernsArchiveShown = false; }
+    if(module === 'request'){ requestsArchiveData = null; requestsArchiveShown = false; }
+    if(module === 'suggestion'){ suggestionsArchiveData = null; suggestionsArchiveShown = false; }
+    await loadRemoteData(); // the restored record needs to come back through the normal live-data load to reappear correctly
+    renderView(module === 'concern' ? 'mgmt-concerns' : module === 'request' ? 'mgmt-requests' : 'mgmt-suggestions');
+  });
+}
 
 /* --- Management accounts. Fixed/provisioned separately — not
    self-service. Replace with real auth before going live. --- */
@@ -4084,11 +4117,22 @@ let discDetailConcernId = null; // which concern mgmt-concern-detail is showing
 let concernsArchiveShown = false, concernsArchiveData = null, concernsArchiveLoading = false;
 let requestsArchiveShown = false, requestsArchiveData = null, requestsArchiveLoading = false;
 let suggestionsArchiveShown = false, suggestionsArchiveData = null, suggestionsArchiveLoading = false;
+let archivedRequestDetailIdx = null; // which entry in requestsArchiveData is being viewed
+let archivedSuggestionDetailIdx = null; // which entry in suggestionsArchiveData is being viewed
+function viewArchivedRequestDetail(idx){
+  archivedRequestDetailIdx = idx;
+  renderView('archived-request-detail');
+}
+function viewArchivedSuggestionDetail(idx){
+  archivedSuggestionDetailIdx = idx;
+  renderView('archived-suggestion-detail');
+}
 async function toggleConcernsArchive(){
+  if(!isFullAdmin()) return; // Archive is Admin-only — defense in depth even though the button itself is already hidden for other roles
   if(!concernsArchiveShown && concernsArchiveData === null){
     concernsArchiveLoading = true;
     renderView('mgmt-concerns');
-    const raw = await safeApiGet('concernsArchive', []);
+    const raw = await safeApiGet('concernsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), []);
     concernsArchiveData = raw.map(c => Object.assign(mapConcernRowBase_(c), {
       investigationNotes:c.InvestigationNotes, investigatedBy:c.InvestigatedBy, actionTaken:c.ActionTaken,
       investigationLastUpdatedBy:c.InvestigationLastUpdatedBy, investigationLastUpdatedAt:c.InvestigationLastUpdatedAt,
@@ -4102,10 +4146,11 @@ async function toggleConcernsArchive(){
   renderView('mgmt-concerns');
 }
 async function toggleRequestsArchive(){
+  if(!isFullAdmin()) return;
   if(!requestsArchiveShown && requestsArchiveData === null){
     requestsArchiveLoading = true;
     renderView('mgmt-requests');
-    const raw = await safeApiGet('requestsArchive', []);
+    const raw = await safeApiGet('requestsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), []);
     requestsArchiveData = raw.map(r => ({id:r.ID, employeeName:r.EmployeeName, type:r.Type, details:r.Details, date:r.Date, status:r.Status, actionBy:r.ActionBy, archived:true}));
     requestsArchiveLoading = false;
   }
@@ -4113,10 +4158,11 @@ async function toggleRequestsArchive(){
   renderView('mgmt-requests');
 }
 async function toggleSuggestionsArchive(){
+  if(!isFullAdmin()) return;
   if(!suggestionsArchiveShown && suggestionsArchiveData === null){
     suggestionsArchiveLoading = true;
     renderView('mgmt-suggestions');
-    const raw = await safeApiGet('suggestionsArchive', []);
+    const raw = await safeApiGet('suggestionsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), []);
     suggestionsArchiveData = raw.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID, archived:true}));
     suggestionsArchiveLoading = false;
   }
@@ -4926,6 +4972,15 @@ function isViewAllowedForRole(id){
 }
 function isLimitedAdmin(){
   return currentMgmtRole() === 'limited';
+}
+// Archive-related features (View Archived, Archive, Restore) are
+// deliberately restricted to full-access Admin accounts only —
+// Shift Manager and Supervisor currently DO have access to the
+// Manage Requests / Concerns Log pages themselves (see
+// MGMT_ROLE_PERMISSIONS above), so without this explicit check they
+// would also see the Archive-specific buttons on those same pages.
+function isFullAdmin(){
+  return currentMgmtRole() === 'full';
 }
 
 function renderNav(){
@@ -7022,18 +7077,19 @@ const BUILDERS = {
         </div>
       </div>
       <button class="btn reset auto" style="margin-top:8px;" onclick="resetReqFilter()">↻ Reset Filters</button>
-      <button class="btn ghost auto no-print" style="margin-top:8px; margin-left:8px;" ${requestsArchiveLoading?'disabled':''} onclick="toggleRequestsArchive()">${requestsArchiveLoading?'Loading Archive…':(requestsArchiveShown?'📦 Hide Archived':'📦 View Archived')}</button>
+      ${isFullAdmin() ? `<button class="btn ghost auto no-print" style="margin-top:8px; margin-left:8px;" ${requestsArchiveLoading?'disabled':''} onclick="toggleRequestsArchive()">${requestsArchiveLoading?'Loading Archive…':(requestsArchiveShown?'📦 Hide Archived':'📦 View Archived')}</button>` : ''}
     </div>
-    ${requestsArchiveShown && requestsArchiveData ? `
+    ${isFullAdmin() && requestsArchiveShown && requestsArchiveData ? `
     <div class="card no-print" style="margin-bottom:16px;">
       <h3><span class="ic">📦</span> Archived Requests</h3>
       <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Finished requests moved out of the live list after being resolved for a while — read-only, for reference.</p>
       <table>
-        <tr><th>Employee</th><th>Type</th><th>Details</th><th>Date</th><th>Status</th><th>Action By</th></tr>
-        ${requestsArchiveData.map(r=>`<tr>
+        <tr><th>Employee</th><th>Type</th><th>Details</th><th>Date</th><th>Status</th><th>Action By</th><th></th></tr>
+        ${requestsArchiveData.map((r,idx)=>`<tr>
           <td>${r.employeeName}</td><td>${r.type}</td><td class="muted">${r.details||''}</td><td>${fmtDateTime(r.date)}</td>
           <td>${r.status}</td><td class="muted">${r.actionBy||'—'}</td>
-        </tr>`).join('') || `<tr><td colspan="6" class="muted">No archived requests yet.</td></tr>`}
+          <td><button class="btn info auto" style="padding:5px 10px;" onclick="viewArchivedRequestDetail(${idx})">View</button> <button class="btn ghost auto" style="padding:5px 10px;" onclick="restoreRecordNow('request','${r.id}', this)">↩️ Restore</button></td>
+        </tr>`).join('') || `<tr><td colspan="7" class="muted">No archived requests yet.</td></tr>`}
       </table>
     </div>` : ''}
     <div class="card print-doc">
@@ -7044,7 +7100,7 @@ const BUILDERS = {
       <div class="print-only" style="display:none;" id="reqPrintHeader"></div>
       <p class="muted no-print" style="margin-bottom:12px;">Status can be changed anytime — handy for an accidental click or if the staff member changes their mind on a swap.</p>
       <table class="no-print">
-        <tr><th>Employee</th><th>Type</th><th>Details</th><th>Date</th><th>Status</th><th>Action By</th></tr>
+        <tr><th>Employee</th><th>Type</th><th>Details</th><th>Date</th><th>Status</th><th>Action By</th>${isFullAdmin()?'<th></th>':''}</tr>
         ${filtered.map(r=>`<tr><td>${r.EmployeeName}</td><td>${r.Type}${r.Type==='Schedule Swap' && r.SwapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.SwapDay)}${r.TheirDay && r.TheirDay!==r.SwapDay ? ' ↔ '+fmtDayLabel(r.TheirDay) : ''} ↔ ${r.SwapWithName}</span>` : ''}</td><td class="muted">${r.Details||''}</td><td>${fmtDateTime(r.Date)}</td>
           <td>
             ${savingRequestIds.has(r.ID) ? `<span class="btn-spinner"></span><span class="muted" style="font-size:12px;">Saving...</span>` : `
@@ -7056,7 +7112,8 @@ const BUILDERS = {
               <option value="needs-clarification" ${r.Status==='needs-clarification'?'selected':''}>Needs Clarification</option>
             </select>`}
           </td>
-          <td class="muted">${r.Status !== 'pending' && r.ActionBy ? r.ActionBy : '—'}</td></tr>`).join('') || `<tr><td colspan="6" class="muted">No matching requests.</td></tr>`}
+          <td class="muted">${r.Status !== 'pending' && r.ActionBy ? r.ActionBy : '—'}</td>
+          ${isFullAdmin() ? `<td>${REQUEST_ARCHIVABLE_STATUSES.has(r.Status) ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="archiveRecordNow('request','${r.ID}', this)">📦 Archive</button>` : ''}</td>` : ''}</tr>`).join('') || `<tr><td colspan="${isFullAdmin()?7:6}" class="muted">No matching requests.</td></tr>`}
       </table>
       <table class="print-only" style="display:none;" id="reqPrintTable">
         <tr><th>Date Submitted</th><th>Employee</th><th>Request Type</th><th>Date/Period</th><th>Details</th><th>Status</th></tr>
@@ -7065,8 +7122,60 @@ const BUILDERS = {
     </div>`;
   },
 
+  "archived-request-detail": ()=>{
+    if(!isFullAdmin()) return `<div class="card"><p class="muted">🔒 Archive access is limited to Admin accounts.</p></div>`;
+    const r = (requestsArchiveData || [])[archivedRequestDetailIdx];
+    if(!r) return `<div class="card"><p class="muted">Archived request not found — it may have been re-fetched. Go back and click View again.</p><button class="btn ghost auto" onclick="renderView('mgmt-requests')">← Back</button></div>`;
+    return `
+    <div class="no-print" style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+      <button class="btn ghost auto" onclick="renderView('mgmt-requests')">← Back to Manage Requests</button>
+      <button class="btn auto" onclick="printWithPageSettings('letter','portrait','0.75in')">🖨️ Print</button>
+    </div>
+    <div style="background:var(--panel-2); border:1px solid var(--line); padding:10px 14px; border-radius:8px; margin-bottom:16px; font-size:13px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+      <span>📦 <strong>Archived Record</strong> — this request has been moved to archive and is read-only.</span>
+      ${isFullAdmin() ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="restoreRecordNow('request','${r.id}', this)">↩️ Restore</button>` : ''}
+    </div>
+    <div class="print-doc">
+    <div class="card">
+      <h3>Archived Request</h3>
+      <table>
+        <tr><td class="muted">Employee</td><td>${r.employeeName}</td></tr>
+        <tr><td class="muted">Type</td><td>${r.type}</td></tr>
+        <tr><td class="muted" style="vertical-align:top;">Details</td><td style="white-space:pre-wrap;">${r.details||'—'}</td></tr>
+        <tr><td class="muted">Date Submitted</td><td>${fmtDateTime(r.date)}</td></tr>
+        <tr><td class="muted">Final Status</td><td>${r.status}</td></tr>
+        <tr><td class="muted">Action By</td><td>${r.actionBy||'—'}</td></tr>
+      </table>
+    </div>
+    </div>`;
+  },
+  "archived-suggestion-detail": ()=>{
+    if(!isFullAdmin()) return `<div class="card"><p class="muted">🔒 Archive access is limited to Admin accounts.</p></div>`;
+    const s = (suggestionsArchiveData || [])[archivedSuggestionDetailIdx];
+    if(!s) return `<div class="card"><p class="muted">Archived suggestion not found — it may have been re-fetched. Go back and click View again.</p><button class="btn ghost auto" onclick="renderView('mgmt-suggestions')">← Back</button></div>`;
+    return `
+    <div class="no-print" style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+      <button class="btn ghost auto" onclick="renderView('mgmt-suggestions')">← Back to Suggestions Log</button>
+      <button class="btn auto" onclick="printWithPageSettings('letter','portrait','0.75in')">🖨️ Print</button>
+    </div>
+    <div style="background:var(--panel-2); border:1px solid var(--line); padding:10px 14px; border-radius:8px; margin-bottom:16px; font-size:13px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+      <span>📦 <strong>Archived Record</strong> — this suggestion has been moved to archive and is read-only.</span>
+      ${isFullAdmin() ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="restoreRecordNow('suggestion','${s.id}', this)">↩️ Restore</button>` : ''}
+    </div>
+    <div class="print-doc">
+    <div class="card">
+      <h3>Archived Suggestion</h3>
+      <table>
+        <tr><td class="muted">From</td><td>${s.from}</td></tr>
+        <tr><td class="muted" style="vertical-align:top;">Idea</td><td style="white-space:pre-wrap;">${s.idea||'—'}</td></tr>
+        <tr><td class="muted">Date Submitted</td><td>${fmtDateTime(s.date)}</td></tr>
+        <tr><td class="muted">Final Status</td><td>${s.status==='new'?'New':'Reviewed'}</td></tr>
+      </table>
+    </div>
+    </div>`;
+  },
   "mgmt-concerns": ()=>{
-    const baseList = concernsArchiveShown && concernsArchiveData ? MOCK.concernsLog.concat(concernsArchiveData) : MOCK.concernsLog;
+    const baseList = isFullAdmin() && concernsArchiveShown && concernsArchiveData ? MOCK.concernsLog.concat(concernsArchiveData) : MOCK.concernsLog;
     const filtered = baseList.filter(c=>{
       if(concernFilter.employee && !(c.from||'').toLowerCase().includes(concernFilter.employee.toLowerCase())) return false;
       if(concernFilter.venue !== 'All' && c.venue !== concernFilter.venue) return false;
@@ -7121,7 +7230,7 @@ const BUILDERS = {
       </div>
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
         <button class="btn reset auto" onclick="resetConcernFilter()">↻ Reset Filters</button>
-        <button class="btn ghost auto" ${concernsArchiveLoading?'disabled':''} onclick="toggleConcernsArchive()">${concernsArchiveLoading?'Loading Archive…':(concernsArchiveShown?'📦 Hide Archived':'📦 View Archived')}</button>
+        ${isFullAdmin() ? `<button class="btn ghost auto" ${concernsArchiveLoading?'disabled':''} onclick="toggleConcernsArchive()">${concernsArchiveLoading?'Loading Archive…':(concernsArchiveShown?'📦 Hide Archived':'📦 View Archived')}</button>` : ''}
       </div>
     </div>
     <div class="card table-scroll">
@@ -7136,7 +7245,7 @@ const BUILDERS = {
           <td class="muted">${c.venue||'—'}</td>
           <td>${fmtDateTime(c.date)}</td>
           <td>${concernStatusPill(c.status)}</td>
-          <td><button class="btn info auto" style="padding:5px 10px;" onclick="openConcernDetail('${c.id}')">View Report</button></td>
+          <td><button class="btn info auto" style="padding:5px 10px;" onclick="openConcernDetail('${c.id}')">View Report</button>${(isFullAdmin() && !c.archived && CONCERN_ARCHIVABLE_STATUSES.has(c.status)) ? ` <button class="btn ghost auto" style="padding:5px 10px;" onclick="archiveRecordNow('concern','${c.id}', this)">📦 Archive</button>` : ''}${(isFullAdmin() && c.archived) ? ` <button class="btn ghost auto" style="padding:5px 10px;" onclick="restoreRecordNow('concern','${c.id}', this)">↩️ Restore</button>` : ''}</td>
         </tr>`).join('') || `<tr><td colspan="7" class="muted">No matching concerns.</td></tr>`}
       </table>
     </div>`;
@@ -7168,7 +7277,7 @@ const BUILDERS = {
     const hasLegacyContent = !!(c.investigatedBy || c.investigationNotes || c.actionTaken);
     const hasOwner = !!c.investigationCreatedByAccount || hasLegacyContent;
     const isOwner = !!c.investigationCreatedByAccount && String(c.investigationCreatedByAccount).toLowerCase() === String(CURRENT_USER.username||'').toLowerCase();
-    const canEditInvestigation = isAdmin || !hasOwner || isOwner;
+    const canEditInvestigation = (isAdmin || !hasOwner || isOwner) && !c.archived; // an archived record is always read-only, regardless of ownership — the whole point of Archive is "inactive historical record," never editable
     // View/Edit toggle — defaults to Edit only when there's nothing
     // saved yet (a brand-new investigation), otherwise opens in
     // read-only View mode so existing notes can't be changed by
@@ -7182,6 +7291,10 @@ const BUILDERS = {
       <button class="btn ghost auto" onclick="cancelConcernInvestigation()">← Back to All Reported Concerns</button>
       <button class="btn auto" onclick="printWithPageSettings('letter','portrait','0.75in')">🖨️ Print Report</button>
     </div>
+    ${c.archived ? `<div class="no-print" style="background:var(--panel-2); border:1px solid var(--line); padding:10px 14px; border-radius:8px; margin-bottom:16px; font-size:13px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+      <span>📦 <strong>Archived Record</strong> — this report has been moved to archive and is read-only.</span>
+      ${isFullAdmin() ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="restoreRecordNow('concern','${c.id}', this)">↩️ Restore</button>` : ''}
+    </div>` : ''}
 
     <div class="print-doc">
     <div class="card" style="margin-bottom:16px;">
@@ -7263,17 +7376,17 @@ const BUILDERS = {
   },
 
   "mgmt-suggestions": ()=>{
-    const baseList = suggestionsArchiveShown && suggestionsArchiveData ? MOCK.suggestionsLog.concat(suggestionsArchiveData) : MOCK.suggestionsLog;
+    const baseList = isFullAdmin() && suggestionsArchiveShown && suggestionsArchiveData ? MOCK.suggestionsLog.concat(suggestionsArchiveData) : MOCK.suggestionsLog;
     return `
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:4px;">
         <h3 style="margin:0;"><span class="ic">💡</span> All Suggestions</h3>
-        <button class="btn ghost auto" ${suggestionsArchiveLoading?'disabled':''} onclick="toggleSuggestionsArchive()">${suggestionsArchiveLoading?'Loading Archive…':(suggestionsArchiveShown?'📦 Hide Archived':'📦 View Archived')}</button>
+        ${isFullAdmin() ? `<button class="btn ghost auto" ${suggestionsArchiveLoading?'disabled':''} onclick="toggleSuggestionsArchive()">${suggestionsArchiveLoading?'Loading Archive…':(suggestionsArchiveShown?'📦 Hide Archived':'📦 View Archived')}</button>` : ''}
       </div>
       <table>
         <tr><th>From</th><th>Idea</th><th>Date</th><th>Status</th><th></th></tr>
-        ${baseList.map(s=>`<tr><td>${s.from}${s.archived?' <span class="muted" title="Archived" style="font-size:11px;">📦</span>':''}</td><td>${s.idea}</td><td>${fmtDateTime(s.date)}</td><td><span class="pill ${s.status==='new'?'warn':'ok'}">${s.status==='new'?'New':'Reviewed'}</span></td>
-          <td>${s.status==='new' ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="reviewSuggestion('${s.id}', this)">Mark Reviewed</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="5" class="muted">No suggestions yet.</td></tr>`}
+        ${baseList.map((s,idx)=>`<tr><td>${s.from}${s.archived?' <span class="muted" title="Archived" style="font-size:11px;">📦</span>':''}</td><td>${s.idea}</td><td>${fmtDateTime(s.date)}</td><td><span class="pill ${s.status==='new'?'warn':'ok'}">${s.status==='new'?'New':'Reviewed'}</span></td>
+          <td>${s.archived ? `<button class="btn info auto" style="padding:5px 10px;" onclick="viewArchivedSuggestionDetail(${idx - MOCK.suggestionsLog.length})">View</button> <button class="btn ghost auto" style="padding:5px 10px;" onclick="restoreRecordNow('suggestion','${s.id}', this)">↩️ Restore</button>` : `${s.status==='new' ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="reviewSuggestion('${s.id}', this)">Mark Reviewed</button>` : (s.status==='reviewed' ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="archiveRecordNow('suggestion','${s.id}', this)">📦 Archive</button>` : '')}`}</td></tr>`).join('') || `<tr><td colspan="5" class="muted">No suggestions yet.</td></tr>`}
       </table>
     </div>`;
   },
@@ -8486,7 +8599,13 @@ function attendanceCounts(records){
 // never at login, and never for every employee at once.
 async function employeeYearAttendanceWithArchive(name, year){
   const local = employeeYearAttendance(name, year);
-  const archived = await safeApiGet('attendanceArchiveByEmployee&name=' + encodeURIComponent(name), []);
+  // Attendance Archive access is Admin-only (see isAdminUsername_ in
+  // Code.gs) — a non-Admin caller here safely gets back an empty
+  // list (handled by safeApiGet's fallback below) rather than an
+  // error, so Individual Employee Print Log still works for her, just
+  // limited to the recent ~90 days already loaded locally instead of
+  // reaching into archived history.
+  const archived = await safeApiGet('attendanceArchiveByEmployee&name=' + encodeURIComponent(name) + '&username=' + encodeURIComponent((CURRENT_USER && CURRENT_USER.username) || ''), []);
   const fromArchive = archived
     .filter(a => !isNaN(new Date(a.Day)) && new Date(a.Day).getFullYear() === year)
     .map((a, idx) => ({name:a.EmployeeName, date:a.Day, time:a.Time, status:a.Status, remarks:a.Remarks, id:a.ID, loggedBy:a.LoggedBy, _idx: idx}));
