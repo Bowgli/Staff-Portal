@@ -4074,6 +4074,55 @@ function concernStatusPill(status){
   return `<span class="pill ${map[status]||'warn'}">${status||'Submitted'}</span>`;
 }
 let discDetailConcernId = null; // which concern mgmt-concern-detail is showing
+// "View Archived" toggles for Concerns Log / Manage Requests /
+// Suggestions Log — fetched ONLY on demand (first click), then
+// cached here so re-toggling never re-fetches. This is deliberately
+// separate from the eager login-time load: archived data is exactly
+// what the archiving feature moves OUT of that fast path, so pulling
+// it back in automatically would undo the performance fix. null =
+// not fetched yet; an array (even empty) = already fetched.
+let concernsArchiveShown = false, concernsArchiveData = null, concernsArchiveLoading = false;
+let requestsArchiveShown = false, requestsArchiveData = null, requestsArchiveLoading = false;
+let suggestionsArchiveShown = false, suggestionsArchiveData = null, suggestionsArchiveLoading = false;
+async function toggleConcernsArchive(){
+  if(!concernsArchiveShown && concernsArchiveData === null){
+    concernsArchiveLoading = true;
+    renderView('mgmt-concerns');
+    const raw = await safeApiGet('concernsArchive', []);
+    concernsArchiveData = raw.map(c => Object.assign(mapConcernRowBase_(c), {
+      investigationNotes:c.InvestigationNotes, investigatedBy:c.InvestigatedBy, actionTaken:c.ActionTaken,
+      investigationLastUpdatedBy:c.InvestigationLastUpdatedBy, investigationLastUpdatedAt:c.InvestigationLastUpdatedAt,
+      statusLastChangedAt:c.StatusLastChangedAt,
+      investigationCreatedByAccount:c.InvestigationCreatedByAccount, investigationCreatedAt:c.InvestigationCreatedAt,
+      archived: true
+    }));
+    concernsArchiveLoading = false;
+  }
+  concernsArchiveShown = !concernsArchiveShown;
+  renderView('mgmt-concerns');
+}
+async function toggleRequestsArchive(){
+  if(!requestsArchiveShown && requestsArchiveData === null){
+    requestsArchiveLoading = true;
+    renderView('mgmt-requests');
+    const raw = await safeApiGet('requestsArchive', []);
+    requestsArchiveData = raw.map(r => ({id:r.ID, employeeName:r.EmployeeName, type:r.Type, details:r.Details, date:r.Date, status:r.Status, actionBy:r.ActionBy, archived:true}));
+    requestsArchiveLoading = false;
+  }
+  requestsArchiveShown = !requestsArchiveShown;
+  renderView('mgmt-requests');
+}
+async function toggleSuggestionsArchive(){
+  if(!suggestionsArchiveShown && suggestionsArchiveData === null){
+    suggestionsArchiveLoading = true;
+    renderView('mgmt-suggestions');
+    const raw = await safeApiGet('suggestionsArchive', []);
+    suggestionsArchiveData = raw.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID, archived:true}));
+    suggestionsArchiveLoading = false;
+  }
+  suggestionsArchiveShown = !suggestionsArchiveShown;
+  renderView('mgmt-suggestions');
+}
 let concernInvEditMode = null; // null = not yet decided for this record; true/false once initialized — see mgmt-concern-detail
 const DISC_POSITIONS = ["Shift Manager","Supervisor","Cashier","Membership","Slot Attendant","Slot Technician Supervisor","Assistant Slot Technician Supervisor","Slot Technician","Security"];
 const DISC_LEVELS = ["Level 1 – Coaching / Verbal Reminder","Level 2 – Written Warning","Level 3 – Written Warning + Suspension","Level 4 – Final Review","Level 5 – Employment Decision"];
@@ -6973,7 +7022,20 @@ const BUILDERS = {
         </div>
       </div>
       <button class="btn reset auto" style="margin-top:8px;" onclick="resetReqFilter()">↻ Reset Filters</button>
+      <button class="btn ghost auto no-print" style="margin-top:8px; margin-left:8px;" ${requestsArchiveLoading?'disabled':''} onclick="toggleRequestsArchive()">${requestsArchiveLoading?'Loading Archive…':(requestsArchiveShown?'📦 Hide Archived':'📦 View Archived')}</button>
     </div>
+    ${requestsArchiveShown && requestsArchiveData ? `
+    <div class="card no-print" style="margin-bottom:16px;">
+      <h3><span class="ic">📦</span> Archived Requests</h3>
+      <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Finished requests moved out of the live list after being resolved for a while — read-only, for reference.</p>
+      <table>
+        <tr><th>Employee</th><th>Type</th><th>Details</th><th>Date</th><th>Status</th><th>Action By</th></tr>
+        ${requestsArchiveData.map(r=>`<tr>
+          <td>${r.employeeName}</td><td>${r.type}</td><td class="muted">${r.details||''}</td><td>${fmtDateTime(r.date)}</td>
+          <td>${r.status}</td><td class="muted">${r.actionBy||'—'}</td>
+        </tr>`).join('') || `<tr><td colspan="6" class="muted">No archived requests yet.</td></tr>`}
+      </table>
+    </div>` : ''}
     <div class="card print-doc">
       <div class="no-print" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:4px;">
         <h3 style="margin:0;"><span class="ic">📝</span> All Requests</h3>
@@ -7004,7 +7066,8 @@ const BUILDERS = {
   },
 
   "mgmt-concerns": ()=>{
-    const filtered = MOCK.concernsLog.filter(c=>{
+    const baseList = concernsArchiveShown && concernsArchiveData ? MOCK.concernsLog.concat(concernsArchiveData) : MOCK.concernsLog;
+    const filtered = baseList.filter(c=>{
       if(concernFilter.employee && !(c.from||'').toLowerCase().includes(concernFilter.employee.toLowerCase())) return false;
       if(concernFilter.venue !== 'All' && c.venue !== concernFilter.venue) return false;
       if(concernFilter.topic !== 'All' && concernCategoryType(c.topic) !== concernFilter.topic) return false;
@@ -7056,15 +7119,18 @@ const BUILDERS = {
           <input type="date" value="${concernFilter.dateTo}" onchange="setConcernFilter('dateTo', this.value)">
         </div>
       </div>
-      <button class="btn reset auto" style="margin-top:8px;" onclick="resetConcernFilter()">↻ Reset Filters</button>
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
+        <button class="btn reset auto" onclick="resetConcernFilter()">↻ Reset Filters</button>
+        <button class="btn ghost auto" ${concernsArchiveLoading?'disabled':''} onclick="toggleConcernsArchive()">${concernsArchiveLoading?'Loading Archive…':(concernsArchiveShown?'📦 Hide Archived':'📦 View Archived')}</button>
+      </div>
     </div>
     <div class="card table-scroll">
       <h3><span class="ic">⚠️</span> All Reported Concerns</h3>
-      <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Showing ${filtered.length} of ${MOCK.concernsLog.length} concerns</p>
+      <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Showing ${filtered.length} of ${baseList.length} concerns${concernsArchiveShown ? ' (including archived)' : ''}</p>
       <table>
         <tr><th>Ref No.</th><th>Category</th><th>Subject</th><th>Venue</th><th>Date Submitted</th><th>Status</th><th></th></tr>
         ${filtered.map(c=>`<tr>
-          <td class="mono">${c.refNo||'—'}</td>
+          <td class="mono">${c.refNo||'—'}${c.archived?' <span class="muted" title="Archived — moved out of the live list after being finished for a while" style="font-size:11px;">📦</span>':''}</td>
           <td>${c.topic}</td>
           <td class="muted">${c.coworkerName || '—'}</td>
           <td class="muted">${c.venue||'—'}</td>
@@ -7196,15 +7262,21 @@ const BUILDERS = {
     </div>`;
   },
 
-  "mgmt-suggestions": ()=>`
+  "mgmt-suggestions": ()=>{
+    const baseList = suggestionsArchiveShown && suggestionsArchiveData ? MOCK.suggestionsLog.concat(suggestionsArchiveData) : MOCK.suggestionsLog;
+    return `
     <div class="card">
-      <h3><span class="ic">💡</span> All Suggestions</h3>
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:4px;">
+        <h3 style="margin:0;"><span class="ic">💡</span> All Suggestions</h3>
+        <button class="btn ghost auto" ${suggestionsArchiveLoading?'disabled':''} onclick="toggleSuggestionsArchive()">${suggestionsArchiveLoading?'Loading Archive…':(suggestionsArchiveShown?'📦 Hide Archived':'📦 View Archived')}</button>
+      </div>
       <table>
         <tr><th>From</th><th>Idea</th><th>Date</th><th>Status</th><th></th></tr>
-        ${MOCK.suggestionsLog.map(s=>`<tr><td>${s.from}</td><td>${s.idea}</td><td>${fmtDateTime(s.date)}</td><td><span class="pill ${s.status==='new'?'warn':'ok'}">${s.status==='new'?'New':'Reviewed'}</span></td>
+        ${baseList.map(s=>`<tr><td>${s.from}${s.archived?' <span class="muted" title="Archived" style="font-size:11px;">📦</span>':''}</td><td>${s.idea}</td><td>${fmtDateTime(s.date)}</td><td><span class="pill ${s.status==='new'?'warn':'ok'}">${s.status==='new'?'New':'Reviewed'}</span></td>
           <td>${s.status==='new' ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="reviewSuggestion('${s.id}', this)">Mark Reviewed</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="5" class="muted">No suggestions yet.</td></tr>`}
       </table>
-    </div>`,
+    </div>`;
+  },
 
   "mgmt-recognition": ()=>`
     <div class="card" style="max-width:520px; margin-bottom:16px;">
@@ -8142,7 +8214,7 @@ async function resolveConcernInvUnsaved(action){
 // Status dropdown, so the existing status workflow is untouched.
 async function saveConcernInvestigation(mode, navigateAway){
   mode = mode || 'final';
-  const c = MOCK.concernsLog.find(c=>c.id===discDetailConcernId);
+  const c = MOCK.concernsLog.find(c=>c.id===discDetailConcernId) || (concernsArchiveData && concernsArchiveData.find(c=>c.id===discDetailConcernId));
   const err = document.getElementById('concernInvErr');
   err.style.display = 'none';
   const status = document.getElementById('concernStatusSelect').value;
