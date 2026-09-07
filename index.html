@@ -2568,6 +2568,39 @@ function monthsSinceHired(dateHired){
 // repeated logins/refreshes never re-show the same reminder — it
 // only fires again once something genuinely NEW appears or an old
 // item gets resolved (changing the set).
+// Employee-side counterpart to checkCatchupReminders() above — makes
+// sure a status update (or new announcement/recognition) isn't
+// silently missed just because the employee was offline when it
+// happened. Reuses computeRecentActivity() (the exact same source
+// already powering the Notification Bell/history) and the existing
+// per-account LastNotifSeenAt timestamp — no new data source, no new
+// backend field. Only items newer than that timestamp qualify; a
+// localStorage signature (keyed per-account, mirroring the
+// management catch-up) then makes sure the same still-unseen set
+// isn't re-toasted on every refresh/login before the employee
+// actually opens Notifications (which is what advances
+// LastNotifSeenAt in the first place).
+function checkEmployeeCatchupNotifications(){
+  if(!CURRENT_EMPLOYEE || !CURRENT_USER) return;
+  const seenAt = CURRENT_USER.lastNotifSeenAt ? new Date(CURRENT_USER.lastNotifSeenAt).getTime() : 0;
+  const activity = computeRecentActivity();
+  const unseen = activity.filter(a => { const t = new Date(a.rawDate).getTime(); return !isNaN(t) && (isNaN(seenAt) ? true : t > seenAt); });
+  if(!unseen.length) return;
+
+  const storageKey = 'sv_emp_catchup_sig_' + (CURRENT_USER.username || CURRENT_EMPLOYEE.name);
+  const signature = unseen.map(a=>a.navType+':'+a.refId).sort().join(',');
+  let lastSignature = null;
+  try{ lastSignature = localStorage.getItem(storageKey); }catch(e){}
+  if(signature === lastSignature) return; // this exact still-unseen set was already announced — don't repeat every refresh/login
+  try{ localStorage.setItem(storageKey, signature); }catch(e){}
+
+  if(soundAlertsEnabled()) playAlertTone();
+  const icons = {request:'📝', concern:'⚠️', suggestion:'💡', recognition:'🏆', announcement:'📢'};
+  const views = {request:'requests', concern:'concern', suggestion:'suggestion', recognition:'recognition', announcement:'announcements'};
+  unseen.slice(0,3).forEach(item => {
+    showMgmtToast(icons[item.navType] || '🔔', 'Update Available', `${item.title} — tap to view`, views[item.navType] || 'home');
+  });
+}
 function checkCatchupReminders(){
   const catchupRequests = ALL_REQUESTS.filter(r=>r.Status==='pending');
   const catchupConcerns = MOCK.concernsLog.filter(c=>c.status==='Open' || c.status==='Submitted');
@@ -3733,8 +3766,17 @@ function computeRecentActivity(){
     }
   });
   MY_CONCERNS.forEach(c=>{
-    if(c.status==='Resolved' || c.status==='No Action Needed'){
-      items.push({title:`Your concern "${c.topic}" was marked ${c.status.toLowerCase()}`, time:fmtDateTime(c.date), rawDate:c.date, navType:'concern', refId:c.id});
+    // Any progress past the initial submitted state is worth
+    // surfacing here — not just the final outcome — so an employee
+    // who was offline when it moved to, say, "Under Review" still
+    // sees that it's being looked at, not only once it's fully closed.
+    if(c.status && c.status !== 'Submitted' && c.status !== 'Open'){
+      items.push({title:`Your concern "${c.topic}" is now ${c.status}`, time:fmtDateTime(c.date), rawDate:c.date, navType:'concern', refId:c.id});
+    }
+  });
+  MY_SUGGESTIONS.forEach(s=>{
+    if(s.status === 'reviewed'){
+      items.push({title:`Your suggestion has been marked as Reviewed`, time:fmtDateTime(s.date), rawDate:s.date, navType:'suggestion', refId:s.id});
     }
   });
   MOCK.recognition.forEach(r=>{
@@ -3745,11 +3787,11 @@ function computeRecentActivity(){
   MOCK.announcements.forEach(a=>{
     items.push({title:`New announcement: ${a.title}`, time:fmtDateTime(a.date), rawDate:a.date, navType:'announcement', refId:a.id});
   });
-  // Each source (requests, concerns, recognition, announcements) was
-  // simply appended one after another — never actually interleaved
-  // by when things happened. Sort by the real timestamp (not the
-  // formatted display string) so Latest → Oldest is always correct
-  // across all four sources together.
+  // Each source (requests, concerns, suggestions, recognition,
+  // announcements) was simply appended one after another — never
+  // actually interleaved by when things happened. Sort by the real
+  // timestamp (not the formatted display string) so Latest → Oldest
+  // is always correct across all sources together.
   items.sort((a,b)=>{
     const ta = new Date(a.rawDate).getTime();
     const tb = new Date(b.rawDate).getTime();
@@ -3785,6 +3827,7 @@ function openNotificationItem(navType, refId){
   if(navType==='announcement'){ expandedAnnouncement = refId; renderView('announcements'); return; }
   if(navType==='request'){ renderView('requests'); return; }
   if(navType==='concern'){ renderView('concern'); return; }
+  if(navType==='suggestion'){ renderView('suggestion'); return; }
   if(navType==='recognition'){ renderView('recognition'); return; }
 }
 
@@ -3900,6 +3943,7 @@ function setRole(role){
     stopMgmtPolling();
     initMgmtAudio(); // unlocks audio for the employee-side alert tone too — needs a real click, same as management
     startEmpPolling();
+    checkEmployeeCatchupNotifications();
     document.getElementById('soundAlertToggle').style.display = 'none';
   } else {
     const mgmtInitials = (CURRENT_USER.displayName || "Management").split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
