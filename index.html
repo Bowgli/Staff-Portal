@@ -1430,13 +1430,20 @@ const EMPLOYEE_POSITIONS = ["Shift Manager","Supervisor","Technical Manager","Gr
 // from the existing Status field (Active/On Leave/Furlough/Resigned/
 // Terminated) — Master Schedule availability keeps reading Status
 // alone; this never factors into it. Probation End Date is computed
-// on the fly from Date Hired + 3 months rather than stored, so it's
-// always correct and never needs its own persisted/edited field.
+// on the fly from Date Hired rather than stored, so it's always
+// correct and never needs its own persisted/edited field.
+//
+// Standardized to a fixed 90 CALENDAR days for every employee,
+// regardless of start month — adding calendar months (e.g. "+3
+// months") gives an inconsistent total (89–92 days depending on which
+// months are involved), which was the reported bug. Day 1 is the
+// start date itself, so Day 90 falls 89 days after it.
+const PROBATION_TOTAL_DAYS = 90;
 function computeProbationEndDate(dateHired){
   if(!dateHired) return '';
   const d = new Date(dateHired + 'T00:00:00');
   if(isNaN(d.getTime())) return '';
-  d.setMonth(d.getMonth() + 3);
+  d.setDate(d.getDate() + PROBATION_TOTAL_DAYS - 1);
   return d.toISOString().slice(0,10);
 }
 function employmentStatusPill(employmentStatus, dateHired){
@@ -5036,13 +5043,15 @@ function probationMonitoringSection(){
 
           // Everything below is derived purely from Date Hired (already
           // loaded with the roster) — no extra fields, no extra
-          // queries, just date arithmetic against today.
+          // queries, just date arithmetic against today. Standardized
+          // to a fixed 90-day total for every employee (see
+          // PROBATION_TOTAL_DAYS), with the start date counting as
+          // Day 1 — so completed = (today − start) + 1, capped at 90.
           const endDateStr = computeProbationEndDate(e.dateHired);
           const hired = new Date(e.dateHired + 'T00:00:00');
-          const end = new Date(endDateStr + 'T00:00:00');
           const today = new Date(); today.setHours(0,0,0,0);
-          const totalDays = Math.max(1, Math.round((end - hired) / 86400000));
-          const daysCompleted = Math.min(totalDays, Math.max(0, Math.round((today - hired) / 86400000)));
+          const totalDays = PROBATION_TOTAL_DAYS;
+          const daysCompleted = Math.min(totalDays, Math.max(1, Math.round((today - hired) / 86400000) + 1));
           const daysRemaining = Math.max(0, totalDays - daysCompleted);
           const pct = Math.min(100, Math.round((daysCompleted / totalDays) * 100));
           const filledBars = Math.round(pct / 5); // 20-segment bar
