@@ -2543,22 +2543,32 @@ function monthsSinceHired(dateHired){
 // later login or refresh, by this account or any other. Runs once
 // per management session rather than on every 30-second poll, since
 // probation milestones don't change that often.
-// Reminds management, once per real login session, about items still
-// awaiting review (pending requests, open concerns, new suggestions)
-// — so nothing gets forgotten between visits. Uses sessionStorage
-// (not localStorage) so it fires again on a genuinely NEW session
-// (new tab/browser launch) but never repeats on a mere page refresh
-// or a later login within the same still-open browser session — that
-// repeating-on-every-refresh behavior was the reported bug.
+// Reminds management about items still awaiting review (pending
+// requests, open concerns, new suggestions) — but only when the
+// actual SET of pending items has changed since the last time this
+// was shown, not merely because the account logged in again. Uses
+// localStorage (persists across logout/login and browser restarts,
+// unlike sessionStorage) keyed to a "signature" of exactly which
+// items are currently pending: as long as that set stays the same,
+// repeated logins/refreshes never re-show the same reminder — it
+// only fires again once something genuinely NEW appears or an old
+// item gets resolved (changing the set).
 function checkCatchupReminders(){
-  let alreadyShown = false;
-  try{ alreadyShown = sessionStorage.getItem('sv_mgmt_catchup_shown') === '1'; }catch(e){}
-  if(alreadyShown) return;
-  try{ sessionStorage.setItem('sv_mgmt_catchup_shown', '1'); }catch(e){} // mark BEFORE showing — a rare failed render still shouldn't loop forever on refresh
-
   const catchupRequests = ALL_REQUESTS.filter(r=>r.Status==='pending');
   const catchupConcerns = MOCK.concernsLog.filter(c=>c.status==='Open' || c.status==='Submitted');
   const catchupSuggestions = MOCK.suggestionsLog.filter(s=>s.status==='new');
+
+  const signature = [
+    catchupRequests.map(r=>r.ID).sort().join(','),
+    catchupConcerns.map(c=>c.id).sort().join(','),
+    catchupSuggestions.map(s=>s.id).sort().join(','),
+  ].join('|');
+
+  let lastSignature = null;
+  try{ lastSignature = localStorage.getItem('sv_mgmt_catchup_sig'); }catch(e){}
+  if(signature === lastSignature) return; // exact same pending items as last time we reminded — nothing new to say
+  try{ localStorage.setItem('sv_mgmt_catchup_sig', signature); }catch(e){}
+
   if(catchupRequests.length || catchupConcerns.length || catchupSuggestions.length){
     if(soundAlertsEnabled()) playAlertTone();
     if(catchupRequests.length){
@@ -3058,7 +3068,6 @@ function logout(){
   stopSessionTimeout();
   try{ localStorage.removeItem(SESSION_KEY); } catch(e){}
   try{ localStorage.removeItem(LAST_VIEW_KEY); } catch(e){}
-  try{ sessionStorage.removeItem('sv_mgmt_catchup_shown'); } catch(e){} // so logging back in (even in the same tab) shows the catch-up reminder again, like a genuinely new session should
   document.getElementById('loginUser').value = '';
   document.getElementById('loginPass').value = '';
   document.getElementById('appRoot').style.display = 'none';
