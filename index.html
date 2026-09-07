@@ -856,6 +856,7 @@ let EMPLOYEE_ACCOUNTS = [
   // starts empty — employees register themselves; management seeds
   // one here if a specific employee needs help getting started.
 ];
+let ACCOUNT_ROLE_BY_EMPLOYEE = {}; // employeeName -> raw account Role ('shift-manager'|'supervisor'|'management'|'management-limited'|''), for notification routing only
 function findAccountByUsername(u){
   return EMPLOYEE_ACCOUNTS.find(a => a.username.toLowerCase()===u.toLowerCase())
       || MANAGEMENT_USERS.find(a => a.username.toLowerCase()===u.toLowerCase());
@@ -2350,6 +2351,13 @@ async function loadRemoteData(){
     EMPLOYEE_ROSTER.length = 0;
     const acctByName = {};
     accountsStatus.forEach(a => { acctByName[a.employeeName] = a; });
+    // Which account Role (if any) is linked to each employee name —
+    // used to find the actual on-duty Supervisor/Shift Manager for
+    // notification routing, kept separate from Position/Employee
+    // Status per the same "these are independent concepts" principle
+    // already established for Employment Status.
+    ACCOUNT_ROLE_BY_EMPLOYEE = {};
+    accountsStatus.forEach(a => { if(a.employeeName) ACCOUNT_ROLE_BY_EMPLOYEE[a.employeeName] = a.role || ''; });
     roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, position:r.Position, status:r.Status||"Active", employmentStatus:r.EmploymentStatus||'', probationMilestonesSent:r.ProbationMilestonesSent||'[]', attendance:"—", dateHired:r.DateHired||'', phone:(acctByName[r.Name]&&acctByName[r.Name].phone)||'', email:(acctByName[r.Name]&&acctByName[r.Name].email)||'', photoFileId:(acctByName[r.Name]&&acctByName[r.Name].photoFileId)||''}));
     SCHEDULE_DAYS = schedule.days || [];
     SCHEDULE_ROWS = schedule.rows || [];
@@ -2626,6 +2634,48 @@ async function checkProbationMilestones(){
     employee.probationMilestonesSent = JSON.stringify(sentArr);
   }
 }
+// Finds which OTHER employees are scheduled to work with the given
+// employee right now (same venue, overlapping shift, today) AND hold
+// a Supervisor or Shift Manager account — reusing the exact same
+// "who's working together" cross-reference already used for My Team
+// on Duty, so a new submission gets routed to whoever is actually on
+// duty for that person right now, not broadcast to every Supervisor/
+// Shift Manager account that exists. Checked against the ACCOUNT
+// Role, never the roster Position — Position and System
+// Role/Permission stay independent, same as elsewhere in this file.
+function findOnDutyManagerNamesFor(employeeName){
+  const todayIndex = SCHEDULE_DAYS.findIndex(isScheduleDayToday);
+  if(todayIndex === -1) return [];
+  const empRow = SCHEDULE_ROWS.find(r=>r.name===employeeName);
+  if(!empRow) return [];
+  const empCell = parseScheduleCell(empRow.cells[todayIndex]);
+  if(empCell.type !== 'shift' || !empCell.time) return [];
+  const names = [];
+  SCHEDULE_ROWS.forEach(row=>{
+    if(row.name === employeeName) return;
+    const role = ACCOUNT_ROLE_BY_EMPLOYEE[row.name];
+    if(role !== 'shift-manager' && role !== 'supervisor') return;
+    const cell = parseScheduleCell(row.cells[todayIndex]);
+    if(cell.type !== 'shift' || !cell.time) return;
+    if(cell.venue !== empCell.venue) return;
+    if(!isMeaningfulShiftOverlap(empCell.time, cell.time)) return;
+    names.push(row.name);
+  });
+  return names;
+}
+// The actual routing decision for a Request/Concern/Suggestion
+// notification: identified submissions go only to the on-duty
+// Supervisor/Shift Manager (falling back to a full-access Admin if
+// none is found on today's schedule); anonymous Concerns/Suggestions
+// always go to a full-access Admin only, regardless of anyone's duty
+// assignment, to protect the reporter's identity.
+function shouldNotifyMeAboutSubmission(employeeName, isAnonymous){
+  const isAdmin = CURRENT_USER.mgmtRole === 'full';
+  if(isAnonymous) return isAdmin;
+  const onDutyNames = findOnDutyManagerNamesFor(employeeName);
+  if(onDutyNames.length) return onDutyNames.includes(CURRENT_USER.employeeName);
+  return isAdmin; // nobody identifiable as on duty — Admin is the fallback recipient
+}
 async function seedMgmtPollingBaseline(){
   // Use the same server-fresh source the comparison loop below uses
   // — capturing the baseline from local arrays instead could
@@ -2722,25 +2772,36 @@ async function startMgmtPolling(){
     const newNominationRecords = ALL_NOMINATIONS.filter(n => !mgmtNominationsSnapshot.has(n.ID));
     mgmtNominationsSnapshot = new Set(ALL_NOMINATIONS.map(n=>n.ID));
 
-    const anythingToNotify = newRequestsList.length || newConcerns.length || newSuggestionsList.length || newEvaluationRecords.length || newDiscResponseRecords.length || newNominationRecords.length || contentEditedRequests.length || contentEditedConcerns.length;
+    // Routing filter — only requests/concerns/suggestions actually
+    // relevant to THIS account (on-duty Supervisor/Shift Manager, or
+    // Admin as fallback / for anonymous ones) reach the toast step;
+    // everything else in newRequestsList/newConcerns/newSuggestionsList
+    // still gets recorded in the snapshots above so it's never
+    // mistaken for "new" again later, it just doesn't interrupt an
+    // account that isn't the intended recipient.
+    const myNewRequests = newRequestsList.filter(r => shouldNotifyMeAboutSubmission(r.employeeName, false));
+    const myNewConcerns = newConcerns.filter(c => shouldNotifyMeAboutSubmission(c.from, c.from === 'Anonymous'));
+    const myNewSuggestions = newSuggestionsList.filter(s => shouldNotifyMeAboutSubmission(s.from, s.from === 'Anonymous'));
+
+    const anythingToNotify = myNewRequests.length || myNewConcerns.length || myNewSuggestions.length || newEvaluationRecords.length || newDiscResponseRecords.length || newNominationRecords.length || contentEditedRequests.length || contentEditedConcerns.length;
     if(anythingToNotify){
       if(soundAlertsEnabled()) playAlertTone();
-      if(newRequestsList.length){
-        const detail = newRequestsList.length===1 ? `${newRequestsList[0].employeeName} — ${newRequestsList[0].type}` : newRequestsList.map(r=>`${r.employeeName} (${r.type})`).join(', ');
-        showMgmtToast('📝', newRequestsList.length===1?'New Request Submitted':`${newRequestsList.length} New Requests`, `${detail} — tap to view`, 'mgmt-requests');
+      if(myNewRequests.length){
+        const detail = myNewRequests.length===1 ? `${myNewRequests[0].employeeName} — ${myNewRequests[0].type}` : myNewRequests.map(r=>`${r.employeeName} (${r.type})`).join(', ');
+        showMgmtToast('📝', myNewRequests.length===1?'New Request Submitted':`${myNewRequests.length} New Requests`, `${detail} — tap to view`, 'mgmt-requests');
       } else if(contentEditedRequests.length){
         showMgmtToast('📝', 'Request Updated', 'An employee updated a submitted request — tap to view', 'mgmt-requests');
       }
-      if(newConcerns.length){
-        const detail = newConcerns.length===1 ? `${newConcerns[0].from} submitted a new concern` : newConcerns.map(c=>c.from).join(', ');
-        showMgmtToast('⚠️', newConcerns.length===1?'New Concern Submitted':`${newConcerns.length} New Concerns`, `${detail} — tap to view`, 'mgmt-concerns');
+      if(myNewConcerns.length){
+        const detail = myNewConcerns.length===1 ? `${myNewConcerns[0].from} submitted a new concern` : myNewConcerns.map(c=>c.from).join(', ');
+        showMgmtToast('⚠️', myNewConcerns.length===1?'New Concern Submitted':`${myNewConcerns.length} New Concerns`, `${detail} — tap to view`, 'mgmt-concerns');
       } else if(contentEditedConcerns.length){
         showMgmtToast('⚠️', 'Concern Updated', 'An employee updated a submitted concern — tap to view', 'mgmt-concerns');
       }
-      if(newSuggestionsList.length){
-        const s0 = newSuggestionsList[0];
-        const snippet = newSuggestionsList.length===1 ? (s0.idea||'').slice(0,60) : newSuggestionsList.map(s=>s.from).join(', ');
-        showMgmtToast('💡', newSuggestionsList.length===1?'New Suggestion':`${newSuggestionsList.length} New Suggestions`, `${snippet}${newSuggestionsList.length===1 && (s0.idea||'').length>60?'…':''} — tap to view`, 'mgmt-suggestions');
+      if(myNewSuggestions.length){
+        const s0 = myNewSuggestions[0];
+        const snippet = myNewSuggestions.length===1 ? (s0.idea||'').slice(0,60) : myNewSuggestions.map(s=>s.from).join(', ');
+        showMgmtToast('💡', myNewSuggestions.length===1?'New Suggestion':`${myNewSuggestions.length} New Suggestions`, `${snippet}${myNewSuggestions.length===1 && (s0.idea||'').length>60?'…':''} — tap to view`, 'mgmt-suggestions');
       }
       if(newEvaluationRecords.length){
         const detail = newEvaluationRecords.map(e=>e.EmployeeName).join(', ');
@@ -2823,12 +2884,20 @@ function diffIdStatusMap(currentMap, previousMap){
   return { anyDiff, statusChangedId };
 }
 let empPendingRequestsBaseline = new Set(); // set of request IDs already accounted for — not just a count, so we always know exactly WHICH ones are genuinely new
+let empOthersConcernsBaseline = new Set(); // same idea, for Concerns from OTHER employees — hybrid accounts only
+let empOthersSuggestionsBaseline = new Set(); // same idea, for Suggestions from OTHER employees — hybrid accounts only
 /* True for any hybrid employee account (Shift Manager, or any future
    role) whose management permissions include Manage Requests — not
    hardcoded to one role name, so it keeps working if more roles are
    added later. */
 function hasMgmtRequestsAccess(){
   return !!(CURRENT_USER && CURRENT_USER.mgmtRole && isViewAllowedForRole('mgmt-requests'));
+}
+function hasMgmtConcernsAccess(){
+  return !!(CURRENT_USER && CURRENT_USER.mgmtRole && isViewAllowedForRole('mgmt-concerns'));
+}
+function hasMgmtSuggestionsAccess(){
+  return !!(CURRENT_USER && CURRENT_USER.mgmtRole && isViewAllowedForRole('mgmt-suggestions'));
 }
 // Baseline seeding split out from startEmpPolling() so it can be
 // re-run by the post-login recovery flow (see finishLogin() below)
@@ -2859,6 +2928,16 @@ async function seedEmpPollingBaseline(){
     const initialScoped = await safeApiGet('myRequestsScoped&name=' + encodeURIComponent(CURRENT_EMPLOYEE.name), []);
     initialScoped.forEach(r=>{ if(r.Type === 'Schedule Swap' && r.SwapWithName === CURRENT_EMPLOYEE.name) empSwapPartnerBaseline.set(r.ID, r.Status); });
   }
+  // Concerns/Suggestions from OTHER employees — same "only other
+  // people's, never my own" idea as pending requests above. Hybrid
+  // accounts already have MOCK.concernsLog/suggestionsLog loaded in
+  // full at login, so this needs no extra fetch to seed from.
+  if(hasMgmtConcernsAccess()){
+    empOthersConcernsBaseline = new Set(MOCK.concernsLog.filter(c => (c.status === 'Submitted' || c.status === 'Open') && c.from !== CURRENT_EMPLOYEE.fullName).map(c=>c.id));
+  }
+  if(hasMgmtSuggestionsAccess()){
+    empOthersSuggestionsBaseline = new Set(MOCK.suggestionsLog.filter(s => s.status === 'new' && s.from !== CURRENT_EMPLOYEE.fullName).map(s=>s.id));
+  }
 }
 async function startEmpPolling(){
   if(empPollInterval || !USE_REMOTE()) return;
@@ -2866,20 +2945,25 @@ async function startEmpPolling(){
   empPollInterval = setInterval(async ()=>{
     if(document.hidden) return; // skip while this tab isn't the active/visible one
     const needsFullRequests = hasMgmtRequestsAccess(); // hybrid roles also watch for new requests from OTHER employees — a plain employee only ever needs her own, via the scoped endpoint below
-    const [requests, nextSchedule, myDisc, announcements, myConcerns, mySuggestions, myRecognition] = await Promise.all([
+    const needsFullConcerns = hasMgmtConcernsAccess();
+    const needsFullSuggestions = hasMgmtSuggestionsAccess();
+    const [requests, nextSchedule, myDisc, announcements, myConcerns, mySuggestions, myRecognition, concernsAll, suggestionsAll] = await Promise.all([
       needsFullRequests ? safeApiGet('requests', null) : safeApiGet('myRequestsScoped&name=' + encodeURIComponent(CURRENT_EMPLOYEE.name), null),
       safeApiGet('nextSchedule', null),
       safeApiGet('myDisciplinaryRecords&name=' + encodeURIComponent(CURRENT_EMPLOYEE.fullName), null),
       safeApiGet('announcements', null),
       safeApiGet('myConcerns&name=' + encodeURIComponent(CURRENT_EMPLOYEE.fullName), null),
       safeApiGet('mySuggestions&name=' + encodeURIComponent(CURRENT_EMPLOYEE.fullName), null),
-      safeApiGet('myRecognition&name=' + encodeURIComponent(CURRENT_EMPLOYEE.name), null)
+      safeApiGet('myRecognition&name=' + encodeURIComponent(CURRENT_EMPLOYEE.name), null),
+      needsFullConcerns ? safeApiGet('concerns', null) : Promise.resolve(null),
+      needsFullSuggestions ? safeApiGet('suggestions', null) : Promise.resolve(null)
     ]);
 
     let changed = false;
     let requestStatusChanged = false, scheduleJustPublished = false, discChanged = false, newAnnouncements = 0, newPendingRequests = 0;
     let changedRequestDetail = '', newAnnouncementTitles = [], newPendingRequestNames = [];
     let swapApproved = false, swapDetail = '';
+    let newOthersConcerns = 0, newOthersConcernNames = [], newOthersSuggestions = 0, newOthersSuggestionNames = [];
 
     if(requests){
       const currentSnap = new Map();
@@ -2995,6 +3079,10 @@ async function startEmpPolling(){
     // reuses the "requests" list already fetched above, so no extra
     // call needed. Her own submissions don't count here; those are
     // already covered separately by requestStatusChanged above.
+    // Routed the same way as the pure-Admin/Management polling loop:
+    // only the on-duty Supervisor/Shift Manager for that employee (or
+    // an Admin fallback) actually gets notified — not every hybrid
+    // account with request access.
     if(hasMgmtRequestsAccess() && requests){
       const othersPending = requests.filter(r => r.Status === 'pending' && r.EmployeeName !== CURRENT_EMPLOYEE.name);
       const currentIds = new Set(othersPending.map(r=>r.ID));
@@ -3003,9 +3091,51 @@ async function startEmpPolling(){
       if(newlyAdded.length > 0 || sizeChanged){
         empPendingRequestsBaseline = currentIds;
         if(newlyAdded.length > 0){
-          newPendingRequests = newlyAdded.length;
-          newPendingRequestNames = newlyAdded.map(r=>`${r.EmployeeName} (${r.Type})`);
-          changed = true;
+          const eligible = newlyAdded.filter(r => shouldNotifyMeAboutSubmission(r.EmployeeName, false));
+          if(eligible.length > 0){
+            newPendingRequests = eligible.length;
+            newPendingRequestNames = eligible.map(r=>`${r.EmployeeName} (${r.Type})`);
+            changed = true;
+          }
+        }
+      }
+    }
+    // Same idea, for Concerns and Suggestions from other employees —
+    // a hybrid account only ever sees these two lists in full when
+    // she actually has Manage Concerns / Manage Suggestions access.
+    if(hasMgmtConcernsAccess() && concernsAll){
+      const mapped = concernsAll.map(c=>({id:c.ID, from:c.From, status:c.Status}));
+      const othersOpen = mapped.filter(c => (c.status === 'Submitted' || c.status === 'Open') && c.from !== CURRENT_EMPLOYEE.fullName);
+      const currentIds = new Set(othersOpen.map(c=>c.id));
+      const newlyAdded = othersOpen.filter(c => !empOthersConcernsBaseline.has(c.id));
+      const sizeChanged = currentIds.size !== empOthersConcernsBaseline.size;
+      if(newlyAdded.length > 0 || sizeChanged){
+        empOthersConcernsBaseline = currentIds;
+        if(newlyAdded.length > 0){
+          const eligible = newlyAdded.filter(c => shouldNotifyMeAboutSubmission(c.from, c.from === 'Anonymous'));
+          if(eligible.length > 0){
+            newOthersConcerns = eligible.length;
+            newOthersConcernNames = eligible.map(c=>c.from);
+            changed = true;
+          }
+        }
+      }
+    }
+    if(hasMgmtSuggestionsAccess() && suggestionsAll){
+      const mapped = suggestionsAll.map(s=>({id:s.ID, from:s.From, status:s.Status||'reviewed'}));
+      const othersNew = mapped.filter(s => s.status === 'new' && s.from !== CURRENT_EMPLOYEE.fullName);
+      const currentIds = new Set(othersNew.map(s=>s.id));
+      const newlyAdded = othersNew.filter(s => !empOthersSuggestionsBaseline.has(s.id));
+      const sizeChanged = currentIds.size !== empOthersSuggestionsBaseline.size;
+      if(newlyAdded.length > 0 || sizeChanged){
+        empOthersSuggestionsBaseline = currentIds;
+        if(newlyAdded.length > 0){
+          const eligible = newlyAdded.filter(s => shouldNotifyMeAboutSubmission(s.from, s.from === 'Anonymous'));
+          if(eligible.length > 0){
+            newOthersSuggestions = eligible.length;
+            newOthersSuggestionNames = eligible.map(s=>s.from);
+            changed = true;
+          }
         }
       }
     }
@@ -3015,7 +3145,7 @@ async function startEmpPolling(){
     await loadRemoteData(); // picks up everything, including any Schedule change from an approved swap or a fresh publish
 
     // Let them know something new arrived, wherever they currently are.
-    const notifyWorthy = newAnnouncements > 0 || scheduleJustPublished || requestStatusChanged || discChanged || newPendingRequests > 0 || concernChanged || suggestionChanged || swapApproved || newRecognitionRecords.length > 0;
+    const notifyWorthy = newAnnouncements > 0 || scheduleJustPublished || requestStatusChanged || discChanged || newPendingRequests > 0 || newOthersConcerns > 0 || newOthersSuggestions > 0 || concernChanged || suggestionChanged || swapApproved || newRecognitionRecords.length > 0;
     if(notifyWorthy) playAlertTone();
     if(newAnnouncements > 0){
       const title = newAnnouncementTitles.length===1 ? newAnnouncementTitles[0] : newAnnouncementTitles.join(', ');
@@ -3034,6 +3164,14 @@ async function startEmpPolling(){
     if(newPendingRequests > 0){
       const detail = newPendingRequestNames.length===1 ? newPendingRequestNames[0] : newPendingRequestNames.join(', ');
       showMgmtToast('📝', newPendingRequests===1?'New Request':`${newPendingRequests} New Requests`, `${detail || 'A new request came in'} — tap to view`, 'mgmt-requests');
+    }
+    if(newOthersConcerns > 0){
+      const detail = newOthersConcernNames.length===1 ? `${newOthersConcernNames[0]} submitted a new concern` : newOthersConcernNames.join(', ');
+      showMgmtToast('⚠️', newOthersConcerns===1?'New Concern Submitted':`${newOthersConcerns} New Concerns`, `${detail} — tap to view`, 'mgmt-concerns');
+    }
+    if(newOthersSuggestions > 0){
+      const detail = newOthersSuggestionNames.join(', ');
+      showMgmtToast('💡', newOthersSuggestions===1?'New Suggestion':`${newOthersSuggestions} New Suggestions`, `${detail || 'A new suggestion came in'} — tap to view`, 'mgmt-suggestions');
     }
 
     if(['home','requests','schedule','my-disciplinary','announcements','mgmt-requests','concern','suggestion','recognition'].includes(activeView)) renderView(activeView);
