@@ -2601,36 +2601,62 @@ function checkEmployeeCatchupNotifications(){
     showMgmtToast(icons[item.navType] || '🔔', 'Update Available', `${item.title} — tap to view`, views[item.navType] || 'home');
   });
 }
+// Reminds management about items still awaiting review (pending
+// requests, open concerns, new suggestions) — but ONLY the ones that
+// genuinely haven't been announced to this account before, never the
+// whole outstanding set just because one new item came in. Submission
+// Status (Pending/Open/New) and notification-seen state are tracked
+// completely separately here: an item's OWN status can stay Pending
+// forever — and correctly keep showing in Manage Requests, the
+// dashboard counters, etc. — while its notification is only ever
+// popped up the first time it's noticed, never again on a later
+// login. Persisted in localStorage (survives logout/login and
+// browser restarts) as the actual set of IDs already announced, not
+// just a single "have I shown anything before" flag — that's what
+// lets a single new arrival be identified precisely instead of
+// re-announcing everything.
 function checkCatchupReminders(){
   const catchupRequests = ALL_REQUESTS.filter(r=>r.Status==='pending');
   const catchupConcerns = MOCK.concernsLog.filter(c=>c.status==='Open' || c.status==='Submitted');
   const catchupSuggestions = MOCK.suggestionsLog.filter(s=>s.status==='new');
 
-  const signature = [
-    catchupRequests.map(r=>r.ID).sort().join(','),
-    catchupConcerns.map(c=>c.id).sort().join(','),
-    catchupSuggestions.map(s=>s.id).sort().join(','),
-  ].join('|');
+  let announced = {};
+  try{ announced = JSON.parse(localStorage.getItem('sv_mgmt_catchup_announced') || '{}'); }catch(e){ announced = {}; }
+  const announcedRequests = new Set(announced.requests || []);
+  const announcedConcerns = new Set(announced.concerns || []);
+  const announcedSuggestions = new Set(announced.suggestions || []);
 
-  let lastSignature = null;
-  try{ lastSignature = localStorage.getItem('sv_mgmt_catchup_sig'); }catch(e){}
-  if(signature === lastSignature) return; // exact same pending items as last time we reminded — nothing new to say
-  try{ localStorage.setItem('sv_mgmt_catchup_sig', signature); }catch(e){}
+  const newRequests = catchupRequests.filter(r => !announcedRequests.has(r.ID));
+  const newConcerns = catchupConcerns.filter(c => !announcedConcerns.has(c.id));
+  const newSuggestions = catchupSuggestions.filter(s => !announcedSuggestions.has(s.id));
 
-  if(catchupRequests.length || catchupConcerns.length || catchupSuggestions.length){
-    if(soundAlertsEnabled()) playAlertTone();
-    if(catchupRequests.length){
-      const detail = catchupRequests.length===1 ? `${catchupRequests[0].EmployeeName} — ${catchupRequests[0].Type}` : catchupRequests.map(r=>`${r.EmployeeName} (${r.Type})`).join(', ');
-      showMgmtToast('📝', catchupRequests.length===1?'Request Awaiting Review':`${catchupRequests.length} Requests Awaiting Review`, `${detail} — tap to view`, 'mgmt-requests');
-    }
-    if(catchupConcerns.length){
-      const detail = catchupConcerns.length===1 ? `${catchupConcerns[0].from} — concern still open` : catchupConcerns.map(c=>c.from).join(', ');
-      showMgmtToast('⚠️', catchupConcerns.length===1?'Concern Awaiting Review':`${catchupConcerns.length} Concerns Awaiting Review`, `${detail} — tap to view`, 'mgmt-concerns');
-    }
-    if(catchupSuggestions.length){
-      const detail = catchupSuggestions.map(s=>s.from).join(', ');
-      showMgmtToast('💡', catchupSuggestions.length===1?'Suggestion Awaiting Review':`${catchupSuggestions.length} Suggestions Awaiting Review`, `${detail} — tap to view`, 'mgmt-suggestions');
-    }
+  if(!newRequests.length && !newConcerns.length && !newSuggestions.length) return; // nothing genuinely new to announce
+
+  // Record the FULL current outstanding set as "already announced" —
+  // this is what stops an item that stays Pending/Open/New forever
+  // from ever being re-toasted on a later login, while its actual
+  // status is left completely untouched (still Pending/Open/New,
+  // still correctly counted everywhere that reads status directly).
+  try{
+    localStorage.setItem('sv_mgmt_catchup_announced', JSON.stringify({
+      requests: catchupRequests.map(r=>r.ID),
+      concerns: catchupConcerns.map(c=>c.id),
+      suggestions: catchupSuggestions.map(s=>s.id),
+    }));
+  }catch(e){}
+
+  if(soundAlertsEnabled()) playAlertTone();
+  if(newRequests.length){
+    const detail = newRequests.length===1 ? `${newRequests[0].EmployeeName} — ${newRequests[0].Type}` : newRequests.map(r=>`${r.EmployeeName} (${r.Type})`).join(', ');
+    showMgmtToast('📝', newRequests.length===1?'Request Awaiting Review':`${newRequests.length} Requests Awaiting Review`, `${detail} — tap to view`, 'mgmt-requests');
+  }
+  if(newConcerns.length){
+    const detail = newConcerns.length===1 ? `${newConcerns[0].from} — concern still open` : newConcerns.map(c=>c.from).join(', ');
+    showMgmtToast('⚠️', newConcerns.length===1?'Concern Awaiting Review':`${newConcerns.length} Concerns Awaiting Review`, `${detail} — tap to view`, 'mgmt-concerns');
+  }
+  if(newSuggestions.length){
+    const detail = newSuggestions.map(s=>s.from).join(', ');
+    showMgmtToast('💡', newSuggestions.length===1?'Suggestion Awaiting Review':`${newSuggestions.length} Suggestions Awaiting Review`, `${detail} — tap to view`, 'mgmt-suggestions');
   }
 }
 async function checkProbationMilestones(){
