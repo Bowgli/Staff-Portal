@@ -2780,13 +2780,16 @@ async function startMgmtPolling(){
     // new submission is never masked just because something else
     // also changed in the same 30-second window.
     const concernsNow = new Map(MOCK.concernsLog.map(c=>[c.id, {status:c.status, topic:c.topic, from:c.from}]));
-    const newConcerns = [], contentEditedConcerns = [];
+    const newConcerns = [], contentEditedConcerns = [], withdrawnConcerns = [];
     concernsNow.forEach((cur, id)=>{
       const prev = mgmtConcernsSnapshot.get(id);
       if(!prev) newConcerns.push(cur);
       else if(prev.status === cur.status && prev.topic !== cur.topic) contentEditedConcerns.push(cur);
-      // a status change alone (prev.status !== cur.status) is an
-      // Admin/Hybrid action — never toasted here, only to the employee
+      // A status change is normally an Admin/Hybrid action (never
+      // toasted here, only to the employee) — EXCEPT "Withdrawn",
+      // which only ever happens from the reporter's own side (Your
+      // Concern History), so management should hear about that one.
+      else if(prev.status !== cur.status && cur.status === 'Withdrawn') withdrawnConcerns.push(cur);
     });
     mgmtConcernsSnapshot = concernsNow;
 
@@ -2841,8 +2844,9 @@ async function startMgmtPolling(){
     const myNewRequests = newRequestsList.filter(r => shouldNotifyMeAboutSubmission(r.employeeName, false));
     const myNewConcerns = newConcerns.filter(c => shouldNotifyMeAboutSubmission(c.from, c.from === 'Anonymous'));
     const myNewSuggestions = newSuggestionsList.filter(s => shouldNotifyMeAboutSubmission(s.from, s.from === 'Anonymous'));
+    const myWithdrawnConcerns = withdrawnConcerns.filter(c => shouldNotifyMeAboutSubmission(c.from, c.from === 'Anonymous'));
 
-    const anythingToNotify = myNewRequests.length || myNewConcerns.length || myNewSuggestions.length || newEvaluationRecords.length || newDiscResponseRecords.length || newNominationRecords.length || contentEditedRequests.length || contentEditedConcerns.length;
+    const anythingToNotify = myNewRequests.length || myNewConcerns.length || myNewSuggestions.length || myWithdrawnConcerns.length || newEvaluationRecords.length || newDiscResponseRecords.length || newNominationRecords.length || contentEditedRequests.length || contentEditedConcerns.length;
     if(anythingToNotify){
       if(soundAlertsEnabled()) playAlertTone();
       if(myNewRequests.length){
@@ -2854,6 +2858,9 @@ async function startMgmtPolling(){
       if(myNewConcerns.length){
         const detail = myNewConcerns.length===1 ? `${myNewConcerns[0].from} submitted a new concern` : myNewConcerns.map(c=>c.from).join(', ');
         showMgmtToast('⚠️', myNewConcerns.length===1?'New Concern Submitted':`${myNewConcerns.length} New Concerns`, `${detail} — tap to view`, 'mgmt-concerns');
+      } else if(myWithdrawnConcerns.length){
+        const detail = myWithdrawnConcerns.length===1 ? `${myWithdrawnConcerns[0].from} withdrew their concern` : myWithdrawnConcerns.map(c=>c.from).join(', ');
+        showMgmtToast('↩️', myWithdrawnConcerns.length===1?'Concern Withdrawn':`${myWithdrawnConcerns.length} Concerns Withdrawn`, `${detail} — tap to view`, 'mgmt-concerns');
       } else if(contentEditedConcerns.length){
         showMgmtToast('⚠️', 'Concern Updated', 'An employee updated a submitted concern — tap to view', 'mgmt-concerns');
       }
@@ -3796,7 +3803,11 @@ function computeRecentActivity(){
     // surfacing here — not just the final outcome — so an employee
     // who was offline when it moved to, say, "Under Review" still
     // sees that it's being looked at, not only once it's fully closed.
-    if(c.status && c.status !== 'Submitted' && c.status !== 'Open'){
+    // "Withdrawn" is excluded on purpose — that's always the
+    // employee's OWN action (self-service, from Your Concern
+    // History), so notifying her about it would just be telling her
+    // about something she already knows she just did.
+    if(c.status && c.status !== 'Submitted' && c.status !== 'Open' && c.status !== 'Withdrawn'){
       items.push({title:`Your concern "${c.topic}" is now ${c.status}`, time:fmtDateTime(c.date), rawDate:c.date, navType:'concern', refId:c.id});
     }
   });
@@ -7747,6 +7758,11 @@ async function withdrawMyConcern(id, el){
       const r = await apiPost('withdrawConcern', {id});
       if(!r.ok){ alert(r.error || "Couldn't withdraw."); return; }
       await refreshMyConcerns();
+      // Update her OWN baseline immediately — otherwise the next poll
+      // comparison sees "status changed" and mistakes her own action
+      // for a management update, self-notifying her about her own
+      // withdrawal.
+      if(empConcernsBaseline) empConcernsBaseline.set(id, 'Withdrawn');
     } else {
       const c = MY_CONCERNS.find(x=>x.id===id);
       if(c) c.status = 'Withdrawn';
