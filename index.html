@@ -4152,11 +4152,21 @@ function viewArchivedSuggestionDetail(idx){
   archivedSuggestionDetailIdx = idx;
   renderView('archived-suggestion-detail');
 }
-async function toggleConcernsArchive(){
+let concernsArchiveSearch = ''; // search box on the dedicated Archived Concerns page
+function setConcernsArchiveSearch(v){
+  concernsArchiveSearch = v;
+  renderView('mgmt-concerns-archived');
+}
+let requestsArchiveSearch = ''; // search box on the dedicated Archived Requests page
+function setRequestsArchiveSearch(v){
+  requestsArchiveSearch = v;
+  renderView('mgmt-requests-archived');
+}
+async function openConcernsArchivedPage(){
   if(!isFullAdmin()) return; // Archive is Admin-only — defense in depth even though the button itself is already hidden for other roles
-  if(!concernsArchiveShown && concernsArchiveData === null){
+  if(concernsArchiveData === null){
     concernsArchiveLoading = true;
-    renderView('mgmt-concerns');
+    renderView('mgmt-concerns-archived');
     const raw = await safeApiGet('concernsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), []);
     concernsArchiveData = raw.map(c => Object.assign(mapConcernRowBase_(c), {
       investigationNotes:c.InvestigationNotes, investigatedBy:c.InvestigatedBy, actionTaken:c.ActionTaken,
@@ -4167,32 +4177,34 @@ async function toggleConcernsArchive(){
     }));
     concernsArchiveLoading = false;
   }
-  concernsArchiveShown = !concernsArchiveShown;
-  renderView('mgmt-concerns');
+  renderView('mgmt-concerns-archived');
 }
-async function toggleRequestsArchive(){
+async function openRequestsArchivedPage(){
   if(!isFullAdmin()) return;
-  if(!requestsArchiveShown && requestsArchiveData === null){
+  if(requestsArchiveData === null){
     requestsArchiveLoading = true;
-    renderView('mgmt-requests');
+    renderView('mgmt-requests-archived');
     const raw = await safeApiGet('requestsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), []);
     requestsArchiveData = raw.map(r => ({id:r.ID, employeeName:r.EmployeeName, type:r.Type, details:r.Details, date:r.Date, status:r.Status, actionBy:r.ActionBy, archived:true}));
     requestsArchiveLoading = false;
   }
-  requestsArchiveShown = !requestsArchiveShown;
-  renderView('mgmt-requests');
+  renderView('mgmt-requests-archived');
 }
-async function toggleSuggestionsArchive(){
+let suggestionsArchiveSearch = ''; // search box on the dedicated Archived Suggestions page
+function setSuggestionsArchiveSearch(v){
+  suggestionsArchiveSearch = v;
+  renderView('mgmt-suggestions-archived');
+}
+async function openSuggestionsArchivedPage(){
   if(!isFullAdmin()) return;
-  if(!suggestionsArchiveShown && suggestionsArchiveData === null){
+  if(suggestionsArchiveData === null){
     suggestionsArchiveLoading = true;
-    renderView('mgmt-suggestions');
+    renderView('mgmt-suggestions-archived');
     const raw = await safeApiGet('suggestionsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), []);
     suggestionsArchiveData = raw.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID, archived:true}));
     suggestionsArchiveLoading = false;
   }
-  suggestionsArchiveShown = !suggestionsArchiveShown;
-  renderView('mgmt-suggestions');
+  renderView('mgmt-suggestions-archived');
 }
 let concernInvEditMode = null; // null = not yet decided for this record; true/false once initialized — see mgmt-concern-detail
 const DISC_POSITIONS = ["Shift Manager","Supervisor","Cashier","Membership","Slot Attendant","Slot Technician Supervisor","Assistant Slot Technician Supervisor","Slot Technician","Security"];
@@ -7102,21 +7114,8 @@ const BUILDERS = {
         </div>
       </div>
       <button class="btn reset auto" style="margin-top:8px;" onclick="resetReqFilter()">↻ Reset Filters</button>
-      ${isFullAdmin() ? `<button class="btn ghost auto no-print" style="margin-top:8px; margin-left:8px;" ${requestsArchiveLoading?'disabled':''} onclick="toggleRequestsArchive()">${requestsArchiveLoading?'Loading Archive…':(requestsArchiveShown?'📦 Hide Archived':'📦 View Archived')}</button>` : ''}
+      ${isFullAdmin() ? `<button class="btn ghost auto no-print" style="margin-top:8px; margin-left:8px;" onclick="openRequestsArchivedPage()">📁 Archived Requests</button>` : ''}
     </div>
-    ${isFullAdmin() && requestsArchiveShown && requestsArchiveData ? `
-    <div class="card no-print" style="margin-bottom:16px;">
-      <h3><span class="ic">📦</span> Archived Requests</h3>
-      <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Finished requests moved out of the live list after being resolved for a while — read-only, for reference.</p>
-      <table>
-        <tr><th>Employee</th><th>Type</th><th>Details</th><th>Date</th><th>Status</th><th>Action By</th><th></th></tr>
-        ${requestsArchiveData.map((r,idx)=>`<tr>
-          <td>${r.employeeName}</td><td>${r.type}</td><td class="muted">${r.details||''}</td><td>${fmtDateTime(r.date)}</td>
-          <td>${r.status}</td><td class="muted">${r.actionBy||'—'}</td>
-          <td><button class="btn info auto" style="padding:5px 10px;" onclick="viewArchivedRequestDetail(${idx})">View</button> <button class="btn ghost auto" style="padding:5px 10px;" onclick="restoreRecordNow('request','${r.id}', this)">↩️ Restore</button></td>
-        </tr>`).join('') || `<tr><td colspan="7" class="muted">No archived requests yet.</td></tr>`}
-      </table>
-    </div>` : ''}
     <div class="card print-doc">
       <div class="no-print" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:4px;">
         <h3 style="margin:0;"><span class="ic">📝</span> All Requests</h3>
@@ -7144,6 +7143,29 @@ const BUILDERS = {
         <tr><th>Date Submitted</th><th>Employee</th><th>Request Type</th><th>Date/Period</th><th>Details</th><th>Status</th></tr>
       </table>
       <p class="print-only" style="display:none; font-weight:600; margin-top:8px;" id="reqPrintTotal"></p>
+    </div>`;
+  },
+
+  "mgmt-requests-archived": ()=>{
+    if(!isFullAdmin()) return `<div class="card"><p class="muted">🔒 Archive access is limited to Admin accounts.</p></div>`;
+    const filtered = (requestsArchiveData || []).filter(r => !requestsArchiveSearch || (r.employeeName||'').toLowerCase().includes(requestsArchiveSearch.toLowerCase()) || (r.type||'').toLowerCase().includes(requestsArchiveSearch.toLowerCase()));
+    return `
+    <div class="no-print" style="margin-bottom:16px;">
+      <button class="btn ghost auto" onclick="renderView('mgmt-requests')">← Back to Manage Requests</button>
+    </div>
+    <div class="card no-print">
+      <h3><span class="ic">📁</span> All Archived Requests</h3>
+      <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Finished requests moved out of the active list — still fully viewable, searchable, and printable.</p>
+      <input type="text" placeholder="🔍 Search by employee name or type..." value="${requestsArchiveSearch}" oninput="setRequestsArchiveSearch(this.value)" style="margin-bottom:12px;">
+      ${requestsArchiveLoading ? `<p class="muted">Loading archived requests…</p>` : `
+      <table>
+        <tr><th>Employee</th><th>Type</th><th>Details</th><th>Date</th><th>Status</th><th>Action By</th><th></th></tr>
+        ${filtered.map((r)=>`<tr>
+          <td>${r.employeeName}</td><td>${r.type}</td><td class="muted">${r.details||''}</td><td>${fmtDateTime(r.date)}</td>
+          <td>${r.status}</td><td class="muted">${r.actionBy||'—'}</td>
+          <td><button class="btn info auto" style="padding:5px 10px;" onclick="viewArchivedRequestDetail(${(requestsArchiveData||[]).indexOf(r)})">View</button> <button class="btn ghost auto" style="padding:5px 10px;" onclick="restoreRecordNow('request','${r.id}', this)">↩️ Restore</button></td>
+        </tr>`).join('') || `<tr><td colspan="7" class="muted">No archived requests${requestsArchiveSearch?' match that search':' yet'}.</td></tr>`}
+      </table>`}
     </div>`;
   },
 
@@ -7200,8 +7222,7 @@ const BUILDERS = {
     </div>`;
   },
   "mgmt-concerns": ()=>{
-    const baseList = isFullAdmin() && concernsArchiveShown && concernsArchiveData ? MOCK.concernsLog.concat(concernsArchiveData) : MOCK.concernsLog;
-    const filtered = baseList.filter(c=>{
+    const filtered = MOCK.concernsLog.filter(c=>{
       if(concernFilter.employee && !(c.from||'').toLowerCase().includes(concernFilter.employee.toLowerCase())) return false;
       if(concernFilter.venue !== 'All' && c.venue !== concernFilter.venue) return false;
       if(concernFilter.topic !== 'All' && concernCategoryType(c.topic) !== concernFilter.topic) return false;
@@ -7255,30 +7276,57 @@ const BUILDERS = {
       </div>
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
         <button class="btn reset auto" onclick="resetConcernFilter()">↻ Reset Filters</button>
-        ${isFullAdmin() ? `<button class="btn ghost auto" ${concernsArchiveLoading?'disabled':''} onclick="toggleConcernsArchive()">${concernsArchiveLoading?'Loading Archive…':(concernsArchiveShown?'📦 Hide Archived':'📦 View Archived')}</button>` : ''}
+        ${isFullAdmin() ? `<button class="btn ghost auto" onclick="openConcernsArchivedPage()">📁 Archived Concerns</button>` : ''}
       </div>
     </div>
     <div class="card table-scroll">
       <h3><span class="ic">⚠️</span> All Reported Concerns</h3>
-      <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Showing ${filtered.length} of ${baseList.length} concerns${concernsArchiveShown ? ' (including archived)' : ''}</p>
+      <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Showing ${filtered.length} of ${MOCK.concernsLog.length} active concerns</p>
       <table>
         <tr><th>Ref No.</th><th>Category</th><th>Subject</th><th>Venue</th><th>Date Submitted</th><th>Status</th><th></th></tr>
         ${filtered.map(c=>`<tr>
-          <td class="mono">${c.refNo||'—'}${c.archived?' <span class="muted" title="Archived — moved out of the live list after being finished for a while" style="font-size:11px;">📦</span>':''}</td>
+          <td class="mono">${c.refNo||'—'}</td>
           <td>${c.topic}</td>
           <td class="muted">${c.coworkerName || '—'}</td>
           <td class="muted">${c.venue||'—'}</td>
           <td>${fmtDateTime(c.date)}</td>
           <td>${concernStatusPill(c.status)}</td>
-          <td><button class="btn info auto" style="padding:5px 10px;" onclick="openConcernDetail('${c.id}')">View Report</button>${(isFullAdmin() && !c.archived && CONCERN_ARCHIVABLE_STATUSES.has(c.status)) ? ` <button class="btn ghost auto" style="padding:5px 10px;" onclick="archiveRecordNow('concern','${c.id}', this)">📦 Archive</button>` : ''}${(isFullAdmin() && c.archived) ? ` <button class="btn ghost auto" style="padding:5px 10px;" onclick="restoreRecordNow('concern','${c.id}', this)">↩️ Restore</button>` : ''}</td>
+          <td><button class="btn info auto" style="padding:5px 10px;" onclick="openConcernDetail('${c.id}')">View Report</button>${(isFullAdmin() && CONCERN_ARCHIVABLE_STATUSES.has(c.status)) ? ` <button class="btn ghost auto" style="padding:5px 10px;" onclick="archiveRecordNow('concern','${c.id}', this)">📦 Archive</button>` : ''}</td>
         </tr>`).join('') || `<tr><td colspan="7" class="muted">No matching concerns.</td></tr>`}
       </table>
     </div>`;
   },
 
+  "mgmt-concerns-archived": ()=>{
+    if(!isFullAdmin()) return `<div class="card"><p class="muted">🔒 Archive access is limited to Admin accounts.</p></div>`;
+    const filtered = (concernsArchiveData || []).filter(c => !concernsArchiveSearch || (c.refNo||'').toLowerCase().includes(concernsArchiveSearch.toLowerCase()) || (c.from||'').toLowerCase().includes(concernsArchiveSearch.toLowerCase()));
+    return `
+    <div class="no-print" style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+      <button class="btn ghost auto" onclick="renderView('mgmt-concerns')">← Back to All Reported Concerns</button>
+    </div>
+    <div class="card table-scroll">
+      <h3><span class="ic">📁</span> All Archived Concerns</h3>
+      <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Finished (Resolved/Closed/Withdrawn) concerns moved out of the active list — still fully viewable, searchable, and printable.</p>
+      <input type="text" placeholder="🔍 Search by Ref No. or submitter name..." value="${concernsArchiveSearch}" oninput="setConcernsArchiveSearch(this.value)" style="margin-bottom:12px;">
+      ${concernsArchiveLoading ? `<p class="muted">Loading archived concerns…</p>` : `
+      <table>
+        <tr><th>Ref No.</th><th>Category</th><th>Subject</th><th>Venue</th><th>Date Submitted</th><th>Status</th><th></th></tr>
+        ${filtered.map(c=>`<tr>
+          <td class="mono">${c.refNo||'—'}</td>
+          <td>${c.topic}</td>
+          <td class="muted">${c.coworkerName || '—'}</td>
+          <td class="muted">${c.venue||'—'}</td>
+          <td>${fmtDateTime(c.date)}</td>
+          <td>${concernStatusPill(c.status)}</td>
+          <td><button class="btn info auto" style="padding:5px 10px;" onclick="openConcernDetail('${c.id}')">View Report</button> <button class="btn ghost auto" style="padding:5px 10px;" onclick="restoreRecordNow('concern','${c.id}', this)">↩️ Restore</button></td>
+        </tr>`).join('') || `<tr><td colspan="7" class="muted">No archived concerns${concernsArchiveSearch?' match that search':' yet'}.</td></tr>`}
+      </table>`}
+    </div>`;
+  },
+
   "mgmt-concern-detail": ()=>{
-    const c = MOCK.concernsLog.find(x=>x.id===discDetailConcernId);
-    if(!c) return `<div class="empty"><div class="ic">⚠️</div>Concern not found.</div>`;
+    const c = MOCK.concernsLog.find(x=>x.id===discDetailConcernId) || (concernsArchiveData && concernsArchiveData.find(x=>x.id===discDetailConcernId));
+    if(!c) return `<div class="empty"><div class="ic">⚠️</div>Concern not found. If this is an archived report, open it from 📁 Archived Concerns instead of a direct link.</div>`;
     const type = concernCategoryType(c.topic);
     // Ownership: the account that FIRST saved an investigation on this
     // report owns it (tracked by username, not the typed name) — only
@@ -7401,18 +7449,38 @@ const BUILDERS = {
   },
 
   "mgmt-suggestions": ()=>{
-    const baseList = isFullAdmin() && suggestionsArchiveShown && suggestionsArchiveData ? MOCK.suggestionsLog.concat(suggestionsArchiveData) : MOCK.suggestionsLog;
     return `
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:4px;">
         <h3 style="margin:0;"><span class="ic">💡</span> All Suggestions</h3>
-        ${isFullAdmin() ? `<button class="btn ghost auto" ${suggestionsArchiveLoading?'disabled':''} onclick="toggleSuggestionsArchive()">${suggestionsArchiveLoading?'Loading Archive…':(suggestionsArchiveShown?'📦 Hide Archived':'📦 View Archived')}</button>` : ''}
+        ${isFullAdmin() ? `<button class="btn ghost auto" onclick="openSuggestionsArchivedPage()">📁 Archived Suggestions</button>` : ''}
       </div>
+      <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Showing ${MOCK.suggestionsLog.length} active suggestions</p>
       <table>
         <tr><th>From</th><th>Idea</th><th>Date</th><th>Status</th><th></th></tr>
-        ${baseList.map((s,idx)=>`<tr><td>${s.from}${s.archived?' <span class="muted" title="Archived" style="font-size:11px;">📦</span>':''}</td><td>${s.idea}</td><td>${fmtDateTime(s.date)}</td><td><span class="pill ${s.status==='new'?'warn':'ok'}">${s.status==='new'?'New':'Reviewed'}</span></td>
-          <td>${s.archived ? `<button class="btn info auto" style="padding:5px 10px;" onclick="viewArchivedSuggestionDetail(${idx - MOCK.suggestionsLog.length})">View</button> <button class="btn ghost auto" style="padding:5px 10px;" onclick="restoreRecordNow('suggestion','${s.id}', this)">↩️ Restore</button>` : `${s.status==='new' ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="reviewSuggestion('${s.id}', this)">Mark Reviewed</button>` : (s.status==='reviewed' ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="archiveRecordNow('suggestion','${s.id}', this)">📦 Archive</button>` : '')}`}</td></tr>`).join('') || `<tr><td colspan="5" class="muted">No suggestions yet.</td></tr>`}
+        ${MOCK.suggestionsLog.map(s=>`<tr><td>${s.from}</td><td>${s.idea}</td><td>${fmtDateTime(s.date)}</td><td><span class="pill ${s.status==='new'?'warn':'ok'}">${s.status==='new'?'New':'Reviewed'}</span></td>
+          <td>${s.status==='new' ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="reviewSuggestion('${s.id}', this)">Mark Reviewed</button>` : (isFullAdmin() && s.status==='reviewed' ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="archiveRecordNow('suggestion','${s.id}', this)">📦 Archive</button>` : '')}</td></tr>`).join('') || `<tr><td colspan="5" class="muted">No suggestions yet.</td></tr>`}
       </table>
+    </div>`;
+  },
+
+  "mgmt-suggestions-archived": ()=>{
+    if(!isFullAdmin()) return `<div class="card"><p class="muted">🔒 Archive access is limited to Admin accounts.</p></div>`;
+    const filtered = (suggestionsArchiveData || []).filter(s => !suggestionsArchiveSearch || (s.from||'').toLowerCase().includes(suggestionsArchiveSearch.toLowerCase()) || (s.idea||'').toLowerCase().includes(suggestionsArchiveSearch.toLowerCase()));
+    return `
+    <div class="no-print" style="margin-bottom:16px;">
+      <button class="btn ghost auto" onclick="renderView('mgmt-suggestions')">← Back to All Suggestions</button>
+    </div>
+    <div class="card">
+      <h3><span class="ic">📁</span> All Archived Suggestions</h3>
+      <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Reviewed suggestions moved out of the active list — still fully viewable, searchable, and printable.</p>
+      <input type="text" placeholder="🔍 Search by name or idea..." value="${suggestionsArchiveSearch}" oninput="setSuggestionsArchiveSearch(this.value)" style="margin-bottom:12px;">
+      ${suggestionsArchiveLoading ? `<p class="muted">Loading archived suggestions…</p>` : `
+      <table>
+        <tr><th>From</th><th>Idea</th><th>Date</th><th>Status</th><th></th></tr>
+        ${filtered.map((s,idx)=>`<tr><td>${s.from}</td><td>${s.idea}</td><td>${fmtDateTime(s.date)}</td><td><span class="pill ok">Reviewed</span></td>
+          <td><button class="btn info auto" style="padding:5px 10px;" onclick="viewArchivedSuggestionDetail(${(suggestionsArchiveData||[]).indexOf(s)})">View</button> <button class="btn ghost auto" style="padding:5px 10px;" onclick="restoreRecordNow('suggestion','${s.id}', this)">↩️ Restore</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">No archived suggestions${suggestionsArchiveSearch?' match that search':' yet'}.</td></tr>`}
+      </table>`}
     </div>`;
   },
 
