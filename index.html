@@ -4507,6 +4507,14 @@ function openEmployeeProfile(name, sourceView, sourceLabel){
 function setEmployeeProfileTab(tab){
   employeeProfileTab = tab;
   renderView('mgmt-employee-profile');
+  // Complete Attendance History is now the single, primary attendance
+  // view here (the old "recent/active-only" summary was removed since
+  // it could look like a full history when it wasn't) — load it the
+  // moment the tab is actually opened, not before, and only once per
+  // employee (not re-fetched on every tab re-render).
+  if(tab === 'attendance' && empProfileFullAttendanceFor !== viewingEmployeeName){
+    openFullAttendanceHistory(viewingEmployeeName);
+  }
 }
 
 function toggleEmployeeProfileEdit(on){
@@ -4998,6 +5006,11 @@ async function confirmManagementReview(){
   }
 }
 
+let attendancePrintPrefillValue = null; // "Name — Position", set right before navigating from Employee Profile's Complete Attendance History → View Detailed Attendance Records, consumed once by the mgmt-attendance render below
+function openDetailedAttendanceRecords(name, position){
+  attendancePrintPrefillValue = `${name} — ${position}`;
+  renderView('mgmt-attendance');
+}
 let empProfileFullAttendanceFor = null; // which employee's full (active+archived) history is currently expanded inline on their Profile → Attendance tab, or null if still showing the recent-only view
 let empProfileFullAttendanceData = null; // {year, records} once loaded
 let empProfileFullAttendanceLoading = false;
@@ -6398,15 +6411,10 @@ const BUILDERS = {
     const e = EMPLOYEE_ROSTER.find(r=>r.name===name);
     if(!e) return `<div class="empty"><div class="ic">🚧</div>Employee not found. <button class="btn ghost auto" onclick="renderView('${employeeProfileSource ? employeeProfileSource.view : 'mgmt-employees'}')">Back to ${employeeProfileSource ? employeeProfileSource.label : 'Staff Directory'}</button></div>`;
 
-    const myAttendance = ATTENDANCE_LOG.filter(a=>a.name===name).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
     const myEvaluations = ALL_EVALUATIONS.filter(ev=>ev.EmployeeName===name);
     const myDisc = ALL_DISCIPLINARY_RECORDS.filter(d=>d.EmployeeName===name && d.Status !== 'Draft');
     const myRecognition = MOCK.recognition.filter(r=>r.employeeName===name);
     const myNominations = ALL_NOMINATIONS.filter(n=>n.NomineeName===name);
-    const absences = myAttendance.filter(a=>a.status==='Absent').length;
-    const lates = myAttendance.filter(a=>a.status==='Late').length;
-    const undertimes = myAttendance.filter(a=>a.status==='Undertime').length;
-    const leaves = myAttendance.filter(a=>a.status==='On Leave' || a.status==='Leave').length;
 
     const tabs = [
       {id:'performance', ic:'📊', label:'Performance'},
@@ -6494,16 +6502,15 @@ const BUILDERS = {
         </table>` : `<p class="muted">No records available</p>`}
       ` : ''}
       ${employeeProfileTab==='attendance' ? `
-        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:16px;">
-          <h3 style="margin:0;"><span class="ic">📅</span> Attendance Report</h3>
-          ${empProfileFullAttendanceFor !== e.name ? `<button class="btn ghost auto no-print" onclick="openFullAttendanceHistory('${e.name}')">📋 View Complete Attendance History</button>` : ''}
-        </div>
-        ${empProfileFullAttendanceFor === e.name ? (
-          empProfileFullAttendanceLoading ? `<p class="muted" style="margin-top:12px;">Loading complete attendance history…</p>` :
+        <h3 style="margin:0 0 16px;"><span class="ic">📅</span> Complete Attendance History</h3>
+        ${empProfileFullAttendanceLoading ? `<p class="muted">Loading complete attendance history…</p>` :
           (empProfileFullAttendanceData && empProfileFullAttendanceData.records.length ? (()=>{
             const fullCounts = attendanceCounts(empProfileFullAttendanceData.records);
             return `
-            <p style="font-weight:600; margin-bottom:6px;">${e.name} — ${empProfileFullAttendanceData.year}</p>
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
+              <p style="font-weight:600; margin:0;">${e.name} — ${empProfileFullAttendanceData.year}</p>
+              <button class="btn ghost auto no-print" onclick="openDetailedAttendanceRecords('${e.name}', '${e.position}')">🔗 View Detailed Attendance Records</button>
+            </div>
             <p class="muted" style="margin-bottom:12px;">Absences: ${fullCounts.Absent} · Late: ${fullCounts.Late} · Undertime: ${fullCounts.Undertime} · Over Breaktime: ${fullCounts["Over Breaktime"]} · Total entries: ${empProfileFullAttendanceData.records.length}</p>
             <div class="table-scroll">
               <table>
@@ -6511,20 +6518,10 @@ const BUILDERS = {
                 ${empProfileFullAttendanceData.records.map(a=>`<tr><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td><td class="muted">${a.loggedBy||'—'}</td></tr>`).join('')}
               </table>
             </div>`;
-          })() : `<p class="muted" style="margin-top:12px;">No attendance entries found for ${e.name} in ${empProfileFullAttendanceData ? empProfileFullAttendanceData.year : new Date().getFullYear()}.</p>`)
-        ) : `
-        <div class="grid grid-4" style="margin-bottom:16px;">
-          <div class="card stat-card"><div class="num">${absences}</div><div class="label">Absences</div></div>
-          <div class="card stat-card"><div class="num">${lates}</div><div class="label">Late</div></div>
-          <div class="card stat-card"><div class="num">${undertimes}</div><div class="label">Undertime</div></div>
-          <div class="card stat-card"><div class="num">${leaves}</div><div class="label">Leave</div></div>
-        </div>
-        ${myAttendance.length ? `
-        <table>
-          <tr><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th></tr>
-          ${myAttendance.map(a=>`<tr><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td></tr>`).join('')}
-        </table>` : `<p class="muted">No records available</p>`}
-        `}
+          })() : `
+            <p class="muted" style="margin-bottom:12px;">No attendance entries found for ${e.name} in ${empProfileFullAttendanceData ? empProfileFullAttendanceData.year : new Date().getFullYear()}.</p>
+            <button class="btn ghost auto no-print" onclick="openDetailedAttendanceRecords('${e.name}', '${e.position}')">🔗 View Detailed Attendance Records</button>
+          `)}
       ` : ''}
       ${employeeProfileTab==='disciplinary' ? `
         <h3><span class="ic">⚠️</span> Disciplinary Report</h3>
@@ -6657,6 +6654,13 @@ const BUILDERS = {
   },
 
   "mgmt-attendance": ()=>{
+    // Consumed once — set by openDetailedAttendanceRecords() when
+    // arriving here from Employee Profile's Complete Attendance
+    // History, then immediately cleared so a LATER, unrelated visit
+    // to this page (e.g. via the sidebar) never shows a stale
+    // pre-fill from a previous employee's profile.
+    const prefillValue = attendancePrintPrefillValue;
+    attendancePrintPrefillValue = null;
     const now = new Date();
     const localDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
     const localTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
@@ -6726,12 +6730,13 @@ const BUILDERS = {
       <div class="grid grid-2">
         <div>
           <label>Employee</label>
-          ${employeePickerHtml('attendancePrintEmp', EMPLOYEE_ROSTER)}
+          ${employeePickerHtml('attendancePrintEmp', EMPLOYEE_ROSTER, prefillValue ? `value="${prefillValue}"` : '')}
         </div>
         <div>
           <label>Year</label>
           <select id="attendancePrintYear">
-            ${printYears.map(y=>`<option ${y===now.getFullYear()?'selected':''}>${y}</option>`).join('')}
+            <option value="all">All Years</option>
+            ${printYears.map(y=>`<option value="${y}" ${y===now.getFullYear()?'selected':''}>${y}</option>`).join('')}
           </select>
         </div>
       </div>
@@ -8836,7 +8841,7 @@ function renderAttendanceLogRows(){
    exactly what prints. */
 function employeeYearAttendance(name, year){
   return ATTENDANCE_LOG
-    .filter(a => a.name === name && !isNaN(new Date(a.date)) && new Date(a.date).getFullYear() === year)
+    .filter(a => a.name === name && !isNaN(new Date(a.date)) && (year === 'all' || new Date(a.date).getFullYear() === year))
     .map((a, idx) => Object.assign({}, a, {_idx: idx}))
     .sort((a,b)=>{
       const ak = (a.date||'') + ' ' + (a.time||'');
@@ -8869,7 +8874,7 @@ async function employeeYearAttendanceWithArchive(name, year){
   // not this per-employee history lookup.
   const archived = await safeApiGet('attendanceArchiveByEmployee&name=' + encodeURIComponent(name), []);
   const fromArchive = archived
-    .filter(a => !isNaN(new Date(a.Day)) && new Date(a.Day).getFullYear() === year)
+    .filter(a => !isNaN(new Date(a.Day)) && (year === 'all' || new Date(a.Day).getFullYear() === year))
     .map((a, idx) => ({name:a.EmployeeName, date:a.Day, time:a.Time, status:a.Status, remarks:a.Remarks, id:a.ID, loggedBy:a.LoggedBy, _idx: idx}));
   const seen = new Set();
   return [...local, ...fromArchive]
@@ -8898,18 +8903,20 @@ async function searchEmployeePrintLog(){
   const preview = document.getElementById('attendancePrintPreview');
   const name = readEmployeePicker('attendancePrintEmp');
   if(!name){ err.textContent = "Type an employee name and pick a real match from the suggestions."; err.style.display='block'; preview.innerHTML=''; return; }
-  const year = Number(document.getElementById('attendancePrintYear').value);
+  const yearRaw = document.getElementById('attendancePrintYear').value;
+  const year = yearRaw === 'all' ? 'all' : Number(yearRaw);
+  const yearLabel = year === 'all' ? 'All Years' : year;
 
   preview.innerHTML = `<p class="muted" style="margin-top:12px;">Searching...</p>`;
   const records = await employeeYearAttendanceWithArchive(name, year);
   if(!records.length){
-    preview.innerHTML = `<p class="muted" style="margin-top:12px;">No attendance entries found for ${name} in ${year}.</p>`;
+    preview.innerHTML = `<p class="muted" style="margin-top:12px;">No attendance entries found for ${name} in ${yearLabel}.</p>`;
     return;
   }
   const counts = attendanceCounts(records);
   preview.innerHTML = `
     <div style="margin-top:16px;">
-      <p style="font-weight:600; margin-bottom:6px;">${name} — ${year}</p>
+      <p style="font-weight:600; margin-bottom:6px;">${name} — ${yearLabel}</p>
       <p class="muted" style="margin-bottom:12px;">Absences: ${counts.Absent} · Late: ${counts.Late} · Undertime: ${counts.Undertime} · Over Breaktime: ${counts["Over Breaktime"]} · Total entries: ${records.length}</p>
       <div class="table-scroll">
         <table>
@@ -8924,11 +8931,13 @@ async function printEmployeeLog(){
   err.style.display = 'none';
   const name = readEmployeePicker('attendancePrintEmp');
   if(!name){ err.textContent = "Type an employee name and pick a real match from the suggestions."; err.style.display='block'; return; }
-  const year = Number(document.getElementById('attendancePrintYear').value);
+  const yearRaw = document.getElementById('attendancePrintYear').value;
+  const year = yearRaw === 'all' ? 'all' : Number(yearRaw);
+  const yearLabel = year === 'all' ? 'All Years' : year;
 
   const records = await employeeYearAttendanceWithArchive(name, year);
   const counts = attendanceCounts(records);
-  document.getElementById('attendancePrintTitle').textContent = `Attendance Log — ${name} — ${year}`;
+  document.getElementById('attendancePrintTitle').textContent = `Attendance Log — ${name} — ${yearLabel}`;
   // Summary lives OUTSIDE the table now (a plain paragraph, not a
   // table row) — it only needs to appear once, not repeat on every
   // page the way the actual column header does.
