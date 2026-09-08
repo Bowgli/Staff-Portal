@@ -770,6 +770,17 @@ function bustCache_(action){
   return action + '&_cb=' + Date.now();
 }
 async function apiPost(action, payload){
+  if(!action){
+    // Defensive guard — every real caller in this codebase passes a
+    // literal action string, so this should never fire from Staff
+    // Portal's own code. If it ever does, this throws a clear,
+    // traceable error (with a stack trace pointing at the actual
+    // caller) instead of silently sending a body with no "action" key
+    // at all, which is what previously showed up as the confusing
+    // "Unknown action: undefined" from the server.
+    console.error('apiPost called with no action — payload was:', payload);
+    throw new Error("Internal error: no action specified for this request. Please refresh and try again.");
+  }
   const res = await fetchWithTimeout(SHEET_API_URL, {
     method: "POST",
     body: JSON.stringify(Object.assign({action}, payload))
@@ -5019,18 +5030,28 @@ async function openFullAttendanceHistory(name){
   empProfileFullAttendanceData = null;
   empProfileFullAttendanceLoading = true;
   renderView('mgmt-employee-profile');
-  const year = new Date().getFullYear();
-  // Reuses the EXACT same data-retrieval function as the Individual
-  // Employee Print Log (Attendance page) — same active+archived
-  // merge logic, so results here are guaranteed identical to a
-  // manual search there for the same employee/year. No separate
-  // calculation or filtering logic is introduced.
-  const records = await employeeYearAttendanceWithArchive(name, year);
-  if(empProfileFullAttendanceFor === name){ // guards against a stale response landing after the user already navigated to a different employee
-    empProfileFullAttendanceData = {year, records};
-    empProfileFullAttendanceLoading = false;
-    renderView('mgmt-employee-profile');
-  }
+  // Debounced — if the user quickly browses several employees'
+  // Attendance tabs in a row, only the one they actually settle on
+  // fires a real server call. Without this, each quick click fired
+  // its own Apps Script execution immediately; a fast burst of them
+  // queues up behind Apps Script's per-account concurrency limit,
+  // which was slowing down (and occasionally timing out) OTHER,
+  // unrelated requests too — including Save Changes on this same
+  // page. The loading state above still shows instantly either way.
+  debounce('empProfileAttendanceFetch', async ()=>{
+    const year = new Date().getFullYear();
+    // Reuses the EXACT same data-retrieval function as the Individual
+    // Employee Print Log (Attendance page) — same active+archived
+    // merge logic, so results here are guaranteed identical to a
+    // manual search there for the same employee/year. No separate
+    // calculation or filtering logic is introduced.
+    const records = await employeeYearAttendanceWithArchive(name, year);
+    if(empProfileFullAttendanceFor === name){ // guards against a stale response landing after the user already navigated to a different employee
+      empProfileFullAttendanceData = {year, records};
+      empProfileFullAttendanceLoading = false;
+      renderView('mgmt-employee-profile');
+    }
+  }, 400);
 }
 function employeePickerHtml(inputId, roster, extraAttrs){
   const dlId = inputId + 'List';
