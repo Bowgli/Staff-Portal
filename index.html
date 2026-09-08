@@ -4492,10 +4492,12 @@ function viewEmployeeDisciplinaryHistory(employeeName){
   renderView('mgmt-disciplinary');
 }
 
-function openEmployeeProfile(name){
+let employeeProfileSource = null; // {view, label} of the page the user opened this profile FROM — read by the Back button on mgmt-employee-profile below. Reset to null (→ defaults to Staff Directory) on every fresh call so a stale source from a previous visit is never carried over by mistake.
+function openEmployeeProfile(name, sourceView, sourceLabel){
   viewingEmployeeName = name;
   employeeProfileTab = 'performance';
   employeeProfileEditMode = false;
+  employeeProfileSource = sourceView ? {view: sourceView, label: sourceLabel || 'Back'} : null;
   renderView('mgmt-employee-profile');
 }
 
@@ -5525,7 +5527,7 @@ function probationMonitoringSection(){
               <div class="mono" style="font-size:12px; letter-spacing:-1px; color:var(--gold);" title="${pct}% complete">${bar} ${pct}%</div>
               <div class="muted" style="font-size:11px; margin-top:2px;">${daysRemaining} Day${daysRemaining===1?'':'s'} Remaining</div>
             </td>
-            <td data-label=""><button class="${actionClass}" style="padding:5px 10px;" onclick="openEmployeeProfile('${e.name.replace(/'/g,"\\'")}')">${actionLabel}</button></td>
+            <td data-label=""><button class="${actionClass}" style="padding:5px 10px;" onclick="openEmployeeProfile('${e.name.replace(/'/g,"\\'")}', 'mgmt-home', 'Probation Monitoring')">${actionLabel}</button></td>
           </tr>`;
         }).join('')}
         </tbody>
@@ -6366,7 +6368,7 @@ const BUILDERS = {
   "mgmt-employee-profile": ()=>{
     const name = viewingEmployeeName;
     const e = EMPLOYEE_ROSTER.find(r=>r.name===name);
-    if(!e) return `<div class="empty"><div class="ic">🚧</div>Employee not found. <button class="btn ghost auto" onclick="renderView('mgmt-employees')">Back to Staff Directory</button></div>`;
+    if(!e) return `<div class="empty"><div class="ic">🚧</div>Employee not found. <button class="btn ghost auto" onclick="renderView('${employeeProfileSource ? employeeProfileSource.view : 'mgmt-employees'}')">Back to ${employeeProfileSource ? employeeProfileSource.label : 'Staff Directory'}</button></div>`;
 
     const myAttendance = ATTENDANCE_LOG.filter(a=>a.name===name).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
     const myEvaluations = ALL_EVALUATIONS.filter(ev=>ev.EmployeeName===name);
@@ -6387,7 +6389,7 @@ const BUILDERS = {
 
     return `
     <div class="no-print" style="margin-bottom:16px;">
-      <button class="btn ghost auto" onclick="renderView('mgmt-employees')">← Back to Staff Directory</button>
+      <button class="btn ghost auto" onclick="renderView('${employeeProfileSource ? employeeProfileSource.view : 'mgmt-employees'}')">← Back to ${employeeProfileSource ? employeeProfileSource.label : 'Staff Directory'}</button>
     </div>
     <div class="grid grid-2" style="margin-bottom:16px;">
       <div class="card">
