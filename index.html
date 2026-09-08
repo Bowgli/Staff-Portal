@@ -991,13 +991,29 @@ function setEmployeesSearch(val){
   const input = document.querySelector('#content input[placeholder^="🔍"]');
   if(input){ input.focus(); if(cursorPos != null) input.setSelectionRange(cursorPos, cursorPos); }
 }
+// Shared debounce helper — the text filter inputs below used to
+// call renderView() (which rebuilds the ENTIRE page's HTML) on every
+// single keystroke via oninput. That's fine for a handful of rows,
+// but as Requests/Concerns grow it visibly lags, feeling like the
+// field "locks up" the more you type. Debouncing waits for a short
+// pause in typing before actually re-rendering, so the full rebuild
+// happens once per pause instead of once per keystroke — typing
+// itself is never blocked, only the (expensive) re-render is
+// deferred.
+const _debounceTimers = {};
+function debounce(key, fn, delay){
+  clearTimeout(_debounceTimers[key]);
+  _debounceTimers[key] = setTimeout(fn, delay || 300);
+}
 function setReqFilter(field, val){
   reqFilter[field] = val;
   if(field === 'employee'){
-    const cursorPos = document.activeElement && document.activeElement.selectionStart;
-    renderView('mgmt-requests');
-    const input = document.querySelector('#content input[placeholder="Search employee name..."]');
-    if(input){ input.focus(); if(cursorPos != null) input.setSelectionRange(cursorPos, cursorPos); }
+    debounce('reqFilterEmployee', ()=>{
+      const cursorPos = document.activeElement && document.activeElement.selectionStart;
+      renderView('mgmt-requests');
+      const input = document.querySelector('#content input[data-filter="reqEmployee"]');
+      if(input){ input.focus(); if(cursorPos != null) input.setSelectionRange(cursorPos, cursorPos); }
+    });
   } else {
     renderView('mgmt-requests');
   }
@@ -1009,10 +1025,12 @@ function resetReqFilter(){
 function setConcernFilter(field, val){
   concernFilter[field] = val;
   if(field === 'employee'){
-    const cursorPos = document.activeElement && document.activeElement.selectionStart;
-    renderView('mgmt-concerns');
-    const input = document.querySelector('#content input[placeholder="Search submitter name..."]');
-    if(input){ input.focus(); if(cursorPos != null) input.setSelectionRange(cursorPos, cursorPos); }
+    debounce('concernFilterEmployee', ()=>{
+      const cursorPos = document.activeElement && document.activeElement.selectionStart;
+      renderView('mgmt-concerns');
+      const input = document.querySelector('#content input[data-filter="concernPerson"]');
+      if(input){ input.focus(); if(cursorPos != null) input.setSelectionRange(cursorPos, cursorPos); }
+    });
   } else {
     renderView('mgmt-concerns');
   }
@@ -7133,7 +7151,10 @@ const BUILDERS = {
       <div class="grid grid-2">
         <div>
           <label>Employee</label>
-          <input type="text" placeholder="Search employee name..." value="${reqFilter.employee}" oninput="setReqFilter('employee', this.value)">
+          <input type="text" list="reqEmployeeDatalist" data-filter="reqEmployee" placeholder="Search or select employee..." value="${reqFilter.employee}" oninput="setReqFilter('employee', this.value)">
+          <datalist id="reqEmployeeDatalist">
+            ${EMPLOYEE_ROSTER.map(e=>`<option value="${e.name}">`).join('')}
+          </datalist>
         </div>
         <div>
           <label>Request Type</label>
@@ -7275,7 +7296,12 @@ const BUILDERS = {
   },
   "mgmt-concerns": ()=>{
     const filtered = MOCK.concernsLog.filter(c=>{
-      if(concernFilter.employee && !(c.from||'').toLowerCase().includes(concernFilter.employee.toLowerCase())) return false;
+      if(concernFilter.employee){
+        const q = concernFilter.employee.toLowerCase();
+        const matchesSubmitter = (c.from||'').toLowerCase().includes(q);
+        const matchesSubject = (c.coworkerName||'').toLowerCase().includes(q);
+        if(!matchesSubmitter && !matchesSubject) return false;
+      }
       if(concernFilter.venue !== 'All' && c.venue !== concernFilter.venue) return false;
       if(concernFilter.topic !== 'All' && concernCategoryType(c.topic) !== concernFilter.topic) return false;
       if(concernFilter.status !== 'All' && c.status !== concernFilter.status) return false;
@@ -7288,8 +7314,11 @@ const BUILDERS = {
       <h3>Filter Concerns</h3>
       <div class="grid grid-3">
         <div>
-          <label>Employee</label>
-          <input type="text" placeholder="Search submitter name..." value="${concernFilter.employee}" oninput="setConcernFilter('employee', this.value)">
+          <label>Search Person</label>
+          <input type="text" list="concernPersonDatalist" data-filter="concernPerson" placeholder="Search submitter or subject person..." value="${concernFilter.employee}" oninput="setConcernFilter('employee', this.value)">
+          <datalist id="concernPersonDatalist">
+            ${EMPLOYEE_ROSTER.map(e=>`<option value="${e.name}">`).join('')}
+          </datalist>
         </div>
         <div>
           <label>Venue</label>
