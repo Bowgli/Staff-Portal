@@ -4499,6 +4499,8 @@ function openEmployeeProfile(name, sourceView, sourceLabel){
   employeeProfileTab = 'performance';
   employeeProfileEditMode = false;
   employeeProfileSource = sourceView ? {view: sourceView, label: sourceLabel || 'Back'} : null;
+  empProfileFullAttendanceFor = null; // don't carry over a previously-viewed employee's expanded attendance history
+  empProfileFullAttendanceData = null;
   renderView('mgmt-employee-profile');
 }
 
@@ -4996,12 +4998,26 @@ async function confirmManagementReview(){
   }
 }
 
-let attendancePrintPrefillValue = null; // "Name — Position", set right before navigating from Employee Profile → View Complete Attendance History, consumed once by the mgmt-attendance render below
-let attendancePrintAutoSearch = false; // paired with the prefill above — when true, the render hook triggers the EXISTING Search / View Records function once automatically, right after arriving, instead of making the user click it themselves
-function openFullAttendanceHistory(name, position){
-  attendancePrintPrefillValue = `${name} — ${position}`;
-  attendancePrintAutoSearch = true;
-  renderView('mgmt-attendance');
+let empProfileFullAttendanceFor = null; // which employee's full (active+archived) history is currently expanded inline on their Profile → Attendance tab, or null if still showing the recent-only view
+let empProfileFullAttendanceData = null; // {year, records} once loaded
+let empProfileFullAttendanceLoading = false;
+async function openFullAttendanceHistory(name){
+  empProfileFullAttendanceFor = name;
+  empProfileFullAttendanceData = null;
+  empProfileFullAttendanceLoading = true;
+  renderView('mgmt-employee-profile');
+  const year = new Date().getFullYear();
+  // Reuses the EXACT same data-retrieval function as the Individual
+  // Employee Print Log (Attendance page) — same active+archived
+  // merge logic, so results here are guaranteed identical to a
+  // manual search there for the same employee/year. No separate
+  // calculation or filtering logic is introduced.
+  const records = await employeeYearAttendanceWithArchive(name, year);
+  if(empProfileFullAttendanceFor === name){ // guards against a stale response landing after the user already navigated to a different employee
+    empProfileFullAttendanceData = {year, records};
+    empProfileFullAttendanceLoading = false;
+    renderView('mgmt-employee-profile');
+  }
 }
 function employeePickerHtml(inputId, roster, extraAttrs){
   const dlId = inputId + 'List';
@@ -5273,10 +5289,6 @@ function renderView(id, fromHistory){
     if(emp && emp.photoFileId) loadVisiblePhotos([{fileId: emp.photoFileId, elId: 'empProfilePhotoBig'}]);
   }
   if(id === 'mgmt-concern-detail') captureConcernInvestigationSnapshot();
-  if(id === 'mgmt-attendance' && attendancePrintAutoSearch){
-    attendancePrintAutoSearch = false; // one-shot — a later, unrelated visit to this page never auto-searches again
-    searchEmployeePrintLog();
-  }
 
   if(!fromHistory){
     // a normal (forward) navigation — remember it and push a browser
@@ -6484,8 +6496,23 @@ const BUILDERS = {
       ${employeeProfileTab==='attendance' ? `
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:16px;">
           <h3 style="margin:0;"><span class="ic">📅</span> Attendance Report</h3>
-          <button class="btn ghost auto no-print" onclick="openFullAttendanceHistory('${e.name}', '${e.position}')">📋 View Complete Attendance History</button>
+          ${empProfileFullAttendanceFor !== e.name ? `<button class="btn ghost auto no-print" onclick="openFullAttendanceHistory('${e.name}')">📋 View Complete Attendance History</button>` : ''}
         </div>
+        ${empProfileFullAttendanceFor === e.name ? (
+          empProfileFullAttendanceLoading ? `<p class="muted" style="margin-top:12px;">Loading complete attendance history…</p>` :
+          (empProfileFullAttendanceData && empProfileFullAttendanceData.records.length ? (()=>{
+            const fullCounts = attendanceCounts(empProfileFullAttendanceData.records);
+            return `
+            <p style="font-weight:600; margin-bottom:6px;">${e.name} — ${empProfileFullAttendanceData.year}</p>
+            <p class="muted" style="margin-bottom:12px;">Absences: ${fullCounts.Absent} · Late: ${fullCounts.Late} · Undertime: ${fullCounts.Undertime} · Over Breaktime: ${fullCounts["Over Breaktime"]} · Total entries: ${empProfileFullAttendanceData.records.length}</p>
+            <div class="table-scroll">
+              <table>
+                <tr><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th><th>Logged By</th></tr>
+                ${empProfileFullAttendanceData.records.map(a=>`<tr><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td><td class="muted">${a.loggedBy||'—'}</td></tr>`).join('')}
+              </table>
+            </div>`;
+          })() : `<p class="muted" style="margin-top:12px;">No attendance entries found for ${e.name} in ${empProfileFullAttendanceData ? empProfileFullAttendanceData.year : new Date().getFullYear()}.</p>`)
+        ) : `
         <div class="grid grid-4" style="margin-bottom:16px;">
           <div class="card stat-card"><div class="num">${absences}</div><div class="label">Absences</div></div>
           <div class="card stat-card"><div class="num">${lates}</div><div class="label">Late</div></div>
@@ -6497,6 +6524,7 @@ const BUILDERS = {
           <tr><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th></tr>
           ${myAttendance.map(a=>`<tr><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td></tr>`).join('')}
         </table>` : `<p class="muted">No records available</p>`}
+        `}
       ` : ''}
       ${employeeProfileTab==='disciplinary' ? `
         <h3><span class="ic">⚠️</span> Disciplinary Report</h3>
@@ -6629,13 +6657,6 @@ const BUILDERS = {
   },
 
   "mgmt-attendance": ()=>{
-    // Consumed once — set by openFullAttendanceHistory() when arriving
-    // here from Employee Profile → View Complete Attendance History,
-    // then immediately cleared so a LATER, unrelated visit to this
-    // page (e.g. via the sidebar) never shows a stale pre-fill from a
-    // previous employee's profile.
-    const prefillValue = attendancePrintPrefillValue;
-    attendancePrintPrefillValue = null;
     const now = new Date();
     const localDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
     const localTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
@@ -6705,7 +6726,7 @@ const BUILDERS = {
       <div class="grid grid-2">
         <div>
           <label>Employee</label>
-          ${employeePickerHtml('attendancePrintEmp', EMPLOYEE_ROSTER, prefillValue ? `value="${prefillValue}"` : '')}
+          ${employeePickerHtml('attendancePrintEmp', EMPLOYEE_ROSTER)}
         </div>
         <div>
           <label>Year</label>
