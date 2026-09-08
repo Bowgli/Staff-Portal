@@ -4168,14 +4168,23 @@ async function openConcernsArchivedPage(){
     if(concernsArchiveData === null){
       concernsArchiveLoading = true;
       renderView('mgmt-concerns-archived');
-      const raw = await safeApiGet('concernsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), []);
-      concernsArchiveData = raw.map(c => Object.assign(mapConcernRowBase_(c), {
-        investigationNotes:c.InvestigationNotes, investigatedBy:c.InvestigatedBy, actionTaken:c.ActionTaken,
-        investigationLastUpdatedBy:c.InvestigationLastUpdatedBy, investigationLastUpdatedAt:c.InvestigationLastUpdatedAt,
-        statusLastChangedAt:c.StatusLastChangedAt,
-        investigationCreatedByAccount:c.InvestigationCreatedByAccount, investigationCreatedAt:c.InvestigationCreatedAt,
-        archived: true
-      }));
+      const raw = await apiGet('concernsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''));
+      if(!Array.isArray(raw)){
+        // Backend returned {error:"..."} instead of a list — surface it
+        // instead of silently treating it as "genuinely empty", which
+        // was hiding the real cause when this failed before.
+        console.error('concernsArchive did not return a list:', raw);
+        alert((raw && raw.error) || "Couldn't load Archived Concerns — unexpected response from the server.");
+        concernsArchiveData = [];
+      } else {
+        concernsArchiveData = raw.map(c => Object.assign(mapConcernRowBase_(c), {
+          investigationNotes:c.InvestigationNotes, investigatedBy:c.InvestigatedBy, actionTaken:c.ActionTaken,
+          investigationLastUpdatedBy:c.InvestigationLastUpdatedBy, investigationLastUpdatedAt:c.InvestigationLastUpdatedAt,
+          statusLastChangedAt:c.StatusLastChangedAt,
+          investigationCreatedByAccount:c.InvestigationCreatedByAccount, investigationCreatedAt:c.InvestigationCreatedAt,
+          archived: true
+        }));
+      }
     }
   } catch(e){
     console.error('openConcernsArchivedPage failed:', e);
@@ -4191,8 +4200,14 @@ async function openRequestsArchivedPage(){
     if(requestsArchiveData === null){
       requestsArchiveLoading = true;
       renderView('mgmt-requests-archived');
-      const raw = await safeApiGet('requestsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), []);
-      requestsArchiveData = raw.map(r => ({id:r.ID, employeeName:r.EmployeeName, type:r.Type, details:r.Details, date:r.Date, status:r.Status, actionBy:r.ActionBy, archived:true}));
+      const raw = await apiGet('requestsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''));
+      if(!Array.isArray(raw)){
+        console.error('requestsArchive did not return a list:', raw);
+        alert((raw && raw.error) || "Couldn't load Archived Requests — unexpected response from the server.");
+        requestsArchiveData = [];
+      } else {
+        requestsArchiveData = raw.map(r => ({id:r.ID, employeeName:r.EmployeeName, type:r.Type, details:r.Details, date:r.Date, status:r.Status, actionBy:r.ActionBy, archived:true}));
+      }
     }
   } catch(e){
     console.error('openRequestsArchivedPage failed:', e);
@@ -4213,8 +4228,14 @@ async function openSuggestionsArchivedPage(){
     if(suggestionsArchiveData === null){
       suggestionsArchiveLoading = true;
       renderView('mgmt-suggestions-archived');
-      const raw = await safeApiGet('suggestionsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), []);
-      suggestionsArchiveData = raw.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID, archived:true}));
+      const raw = await apiGet('suggestionsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''));
+      if(!Array.isArray(raw)){
+        console.error('suggestionsArchive did not return a list:', raw);
+        alert((raw && raw.error) || "Couldn't load Archived Suggestions — unexpected response from the server.");
+        suggestionsArchiveData = [];
+      } else {
+        suggestionsArchiveData = raw.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID, archived:true}));
+      }
     }
   } catch(e){
     console.error('openSuggestionsArchivedPage failed:', e);
@@ -7195,10 +7216,10 @@ const BUILDERS = {
   "archived-request-detail": ()=>{
     if(!isFullAdmin()) return `<div class="card"><p class="muted">🔒 Archive access is limited to Admin accounts.</p></div>`;
     const r = (requestsArchiveData || [])[archivedRequestDetailIdx];
-    if(!r) return `<div class="card"><p class="muted">Archived request not found — it may have been re-fetched. Go back and click View again.</p><button class="btn ghost auto" onclick="renderView('mgmt-requests')">← Back</button></div>`;
+    if(!r) return `<div class="card"><p class="muted">Archived request not found — it may have been re-fetched. Go back and click View again.</p><button class="btn ghost auto" onclick="renderView('mgmt-requests-archived')">← Back</button></div>`;
     return `
     <div class="no-print" style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-      <button class="btn ghost auto" onclick="renderView('mgmt-requests')">← Back to Manage Requests</button>
+      <button class="btn ghost auto" onclick="renderView('mgmt-requests-archived')">← Back to Archived Requests</button>
       <button class="btn auto" onclick="printWithPageSettings('letter','portrait','0.75in')">🖨️ Print</button>
     </div>
     <div style="background:var(--panel-2); border:1px solid var(--line); padding:10px 14px; border-radius:8px; margin-bottom:16px; font-size:13px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
@@ -7222,10 +7243,10 @@ const BUILDERS = {
   "archived-suggestion-detail": ()=>{
     if(!isFullAdmin()) return `<div class="card"><p class="muted">🔒 Archive access is limited to Admin accounts.</p></div>`;
     const s = (suggestionsArchiveData || [])[archivedSuggestionDetailIdx];
-    if(!s) return `<div class="card"><p class="muted">Archived suggestion not found — it may have been re-fetched. Go back and click View again.</p><button class="btn ghost auto" onclick="renderView('mgmt-suggestions')">← Back</button></div>`;
+    if(!s) return `<div class="card"><p class="muted">Archived suggestion not found — it may have been re-fetched. Go back and click View again.</p><button class="btn ghost auto" onclick="renderView('mgmt-suggestions-archived')">← Back</button></div>`;
     return `
     <div class="no-print" style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-      <button class="btn ghost auto" onclick="renderView('mgmt-suggestions')">← Back to Suggestions Log</button>
+      <button class="btn ghost auto" onclick="renderView('mgmt-suggestions-archived')">← Back to Archived Suggestions</button>
       <button class="btn auto" onclick="printWithPageSettings('letter','portrait','0.75in')">🖨️ Print</button>
     </div>
     <div style="background:var(--panel-2); border:1px solid var(--line); padding:10px 14px; border-radius:8px; margin-bottom:16px; font-size:13px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
@@ -7384,7 +7405,7 @@ const BUILDERS = {
     const isEditingNow = canEditInvestigation && concernInvEditMode;
     return `
     <div class="no-print" style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-      <button class="btn ghost auto" onclick="cancelConcernInvestigation()">← Back to All Reported Concerns</button>
+      <button class="btn ghost auto" onclick="cancelConcernInvestigation()">← Back to ${c.archived ? 'Archived Concerns' : 'All Reported Concerns'}</button>
       <button class="btn auto" onclick="printWithPageSettings('letter','portrait','0.75in')">🖨️ Print Report</button>
     </div>
     ${c.archived ? `<div class="no-print" style="background:var(--panel-2); border:1px solid var(--line); padding:10px 14px; border-radius:8px; margin-bottom:16px; font-size:13px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
@@ -7454,7 +7475,7 @@ const BUILDERS = {
         </table>
         ${(c.investigationLastUpdatedBy || c.investigationLastUpdatedAt) ? `<p class="muted" style="font-size:11.5px;">${c.investigationLastUpdatedBy ? `Last Updated By: ${c.investigationLastUpdatedBy}<br>` : ''}${c.investigationLastUpdatedAt ? `Last Updated: ${fmtDateTime(c.investigationLastUpdatedAt)}<br>` : ''}${c.statusLastChangedAt ? `Status Last Changed: ${fmtDateTime(c.statusLastChangedAt)}` : ''}</p>` : ''}
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-top:12px;">
-          <button class="btn ghost auto" onclick="renderView('mgmt-concerns')">← Back to All Reported Concerns</button>
+          <button class="btn ghost auto" onclick="renderView(${c.archived ? "'mgmt-concerns-archived'" : "'mgmt-concerns'"})">← Back to ${c.archived ? 'Archived Concerns' : 'All Reported Concerns'}</button>
           ${canEditInvestigation ? `<button class="btn edit auto" onclick="enterConcernInvEditMode()">✏️ Edit</button>` : ''}
         </div>
       </div>`}
@@ -8427,12 +8448,17 @@ function cancelConcernInvestigation(){
     document.getElementById('concernInvUnsavedModal').classList.add('active');
     return;
   }
-  renderView('mgmt-concerns');
+  const isArchived = concernsArchiveData && concernsArchiveData.some(c=>c.id===discDetailConcernId);
+  renderView(isArchived ? 'mgmt-concerns-archived' : 'mgmt-concerns');
 }
 async function resolveConcernInvUnsaved(action){
   if(action === 'continue'){ document.getElementById('concernInvUnsavedModal').classList.remove('active'); return; }
   document.getElementById('concernInvUnsavedModal').classList.remove('active');
-  if(action === 'discard'){ renderView('mgmt-concerns'); return; }
+  if(action === 'discard'){
+    const isArchived = concernsArchiveData && concernsArchiveData.some(c=>c.id===discDetailConcernId);
+    renderView(isArchived ? 'mgmt-concerns-archived' : 'mgmt-concerns');
+    return;
+  }
   if(action === 'draft'){ await saveConcernInvestigation('draft', true); }
 }
 // mode: 'draft' saves whatever's entered so far without requiring a
