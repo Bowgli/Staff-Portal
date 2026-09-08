@@ -5200,12 +5200,17 @@ function renderView(id, fromHistory){
   if(!isViewAllowedForRole(id)){
     id = 'mgmt-home'; // not authorized for this role — send them back to Home instead
   }
+  const viewChanged = activeView !== id; // captured BEFORE reassigning below — tells a genuine navigation to a different page apart from an in-page re-render (e.g. typing in a filter box, saving a form), which also calls renderView() with the SAME id and should never yank the scroll position back to the top
   activeView = id;
   renderNav();
   const [title, sub] = TITLES[id];
   document.getElementById('viewTitle').textContent = title;
   document.getElementById('viewSub').textContent = sub;
   document.getElementById('content').innerHTML = BUILDERS[id] ? BUILDERS[id]() : `<div class="empty"><div class="ic">🚧</div>Not built in this demo yet.</div>`;
+  if(viewChanged){
+    const contentEl = document.getElementById('content');
+    if(contentEl) contentEl.scrollTop = 0;
+  }
   closeMobileSidebar();
 
   // Manage Requests can otherwise sit stale for up to the length of
@@ -6598,7 +6603,7 @@ const BUILDERS = {
       ${renderAttendanceQuickAttention(todayCounts, thisMonthRecords)}
       </div>
       <div class="card table-scroll print-doc print-flow">
-        <h3 class="no-print">Current Log <span class="muted" style="font-weight:400; font-size:13px;">— latest 10, search for more</span></h3>
+        <h3 class="no-print">Current Log <span class="muted" style="font-weight:400; font-size:13px;">— latest 6, search for more</span></h3>
         <h3 class="print-only" style="display:none;" id="attendancePrintTitle">Attendance / Log Absence</h3>
         <p class="print-only" style="display:none;" id="attendancePrintSummary"></p>
         <div class="no-print" style="margin-bottom:12px;">
@@ -7158,8 +7163,10 @@ const BUILDERS = {
           <input type="date" value="${reqFilter.dateTo}" onchange="setReqFilter('dateTo', this.value)">
         </div>
       </div>
-      <button class="btn reset auto" style="margin-top:8px;" onclick="resetReqFilter()">↻ Reset Filters</button>
-      ${isFullAdmin() ? `<button class="btn ghost auto no-print" style="margin-top:8px; margin-left:8px;" onclick="openRequestsArchivedPage()">📁 Archived Requests</button>` : ''}
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
+        <button class="btn reset auto" onclick="resetReqFilter()">↻ Reset Filters</button>
+        ${isFullAdmin() ? `<button class="btn ghost auto no-print" onclick="openRequestsArchivedPage()">📁 Archived Requests</button>` : ''}
+      </div>
     </div>
     <div class="card print-doc">
       <div class="no-print" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:4px;">
@@ -8707,7 +8714,7 @@ function sortedAttendanceLog(){
 function renderAttendanceLogRows(){
   let filtered = sortedAttendanceLog();
   const q = attendanceSearchQuery.toLowerCase();
-  if(!q) filtered = filtered.slice(0, 10); // keep the default view short — search shows everything that matches
+  if(!q) filtered = filtered.slice(0, 6); // keep the default view short — search shows everything that matches
   return filtered.map(a=>`<tr><td>${a.name}</td><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td><td class="muted">${a.loggedBy||'—'}</td><td><button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditAttendance('${a.id}')">✏️ Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteAttendanceEntry('${a.id}', this)">🗑️ Delete</button></td></tr>`).join('')
     || `<tr><td colspan="7" class="muted">${attendanceSearchQuery ? 'No entries match that search.' : 'No entries logged yet.'}</td></tr>`;
 }
