@@ -4996,6 +4996,11 @@ async function confirmManagementReview(){
   }
 }
 
+let attendancePrintPrefillValue = null; // "Name — Position", set right before navigating from Employee Profile → View Complete Attendance History, consumed once by the mgmt-attendance render below
+function openFullAttendanceHistory(name, position){
+  attendancePrintPrefillValue = `${name} — ${position}`;
+  renderView('mgmt-attendance');
+}
 function employeePickerHtml(inputId, roster, extraAttrs){
   const dlId = inputId + 'List';
   const options = roster.slice().sort((a,b)=>a.name.localeCompare(b.name))
@@ -6471,7 +6476,10 @@ const BUILDERS = {
         </table>` : `<p class="muted">No records available</p>`}
       ` : ''}
       ${employeeProfileTab==='attendance' ? `
-        <h3><span class="ic">📅</span> Attendance Report</h3>
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:16px;">
+          <h3 style="margin:0;"><span class="ic">📅</span> Attendance Report</h3>
+          <button class="btn ghost auto no-print" onclick="openFullAttendanceHistory('${e.name}', '${e.position}')">📋 View Complete Attendance History</button>
+        </div>
         <div class="grid grid-4" style="margin-bottom:16px;">
           <div class="card stat-card"><div class="num">${absences}</div><div class="label">Absences</div></div>
           <div class="card stat-card"><div class="num">${lates}</div><div class="label">Late</div></div>
@@ -6615,6 +6623,13 @@ const BUILDERS = {
   },
 
   "mgmt-attendance": ()=>{
+    // Consumed once — set by openFullAttendanceHistory() when arriving
+    // here from Employee Profile → View Complete Attendance History,
+    // then immediately cleared so a LATER, unrelated visit to this
+    // page (e.g. via the sidebar) never shows a stale pre-fill from a
+    // previous employee's profile.
+    const prefillValue = attendancePrintPrefillValue;
+    attendancePrintPrefillValue = null;
     const now = new Date();
     const localDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
     const localTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
@@ -6684,7 +6699,7 @@ const BUILDERS = {
       <div class="grid grid-2">
         <div>
           <label>Employee</label>
-          ${employeePickerHtml('attendancePrintEmp', EMPLOYEE_ROSTER)}
+          ${employeePickerHtml('attendancePrintEmp', EMPLOYEE_ROSTER, prefillValue ? `value="${prefillValue}"` : '')}
         </div>
         <div>
           <label>Year</label>
