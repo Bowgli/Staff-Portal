@@ -3937,13 +3937,14 @@ let lastTeamOnDutyPhotos = []; // populated by renderTeamOnDuty() each render �
 // Renders a small circular avatar that starts as initials and swaps
 // to the real photo once it's fetched (or stays as initials if there
 // is no photo, the fetch fails, or the image itself fails to load).
-function photoThumbHtml(name, fileId, size, elId){
+function photoThumbHtml(name, fileId, size, elId, shape){
   const initials = initialsFromName(name);
   const cached = fileId && PHOTO_CACHE[fileId];
   const fontSize = Math.round(size*0.38);
+  const radius = shape === 'square' ? '10px' : '50%'; // square is used for the larger Employee Profile display (1:1, not circular); every existing caller keeps the original circular avatar by simply not passing this param
   return `<span style="position:relative; display:inline-flex; width:${size}px; height:${size}px; flex-shrink:0;">
-    <span id="${elId}_init" style="width:${size}px; height:${size}px; border-radius:50%; background:var(--panel-2); color:var(--text-mute); display:${cached?'none':'flex'}; align-items:center; justify-content:center; font-size:${fontSize}px; font-weight:700;">${initials}</span>
-    <img id="${elId}" src="${cached||''}" alt="" style="width:${size}px; height:${size}px; border-radius:50%; object-fit:cover; position:absolute; top:0; left:0; display:${cached?'block':'none'};" onerror="this.style.display='none'; const i=document.getElementById('${elId}_init'); if(i) i.style.display='flex';">
+    <span id="${elId}_init" style="width:${size}px; height:${size}px; border-radius:${radius}; background:var(--panel-2); color:var(--text-mute); display:${cached?'none':'flex'}; align-items:center; justify-content:center; font-size:${fontSize}px; font-weight:700;">${initials}</span>
+    <img id="${elId}" src="${cached||''}" alt="" style="width:${size}px; height:${size}px; border-radius:${radius}; object-fit:cover; position:absolute; top:0; left:0; display:${cached?'block':'none'};" onerror="this.style.display='none'; const i=document.getElementById('${elId}_init'); if(i) i.style.display='flex';">
   </span>`;
 }
 // Fetches ONE photo (if not already cached) and updates its
@@ -5260,6 +5261,10 @@ function renderView(id, fromHistory){
   if(id === 'mgmt-requests' && viewChanged) refreshRequestsOnNavigate();
   if(id === 'home' && lastTeamOnDutyPhotos.length) loadVisiblePhotos(lastTeamOnDutyPhotos);
   if(id === 'mgmt-accounts') loadVisiblePhotos(EMPLOYEE_ROSTER.filter(e=>e.photoFileId).map(e=>({fileId:e.photoFileId, elId:'photoThumb_mgmt_'+e.name.replace(/[^a-zA-Z0-9]/g,'')})));
+  if(id === 'mgmt-employee-profile'){
+    const emp = EMPLOYEE_ROSTER.find(r=>r.name===viewingEmployeeName);
+    if(emp && emp.photoFileId) loadVisiblePhotos([{fileId: emp.photoFileId, elId: 'empProfilePhotoBig'}]);
+  }
   if(id === 'mgmt-concern-detail') captureConcernInvestigationSnapshot();
 
   if(!fromHistory){
@@ -6429,7 +6434,9 @@ const BUILDERS = {
           </div>
           <p class="muted" style="font-size:11px; margin-top:8px;">Changing the name updates it everywhere this employee is referenced — Attendance, Requests, Evaluations, Disciplinary Records, Recognition, and Nominations. Their history stays fully intact either way.</p>
         ` : `
-          <table>
+          <div style="display:flex; gap:16px; align-items:flex-start;">
+            ${photoThumbHtml(e.name, e.photoFileId, 120, 'empProfilePhotoBig', 'square')}
+            <table style="flex:1;">
             <tr><td class="muted">Full Name</td><td>${e.name}</td></tr>
             <tr><td class="muted">Position</td><td>${e.position}</td></tr>
             <tr><td class="muted">Employment Status</td><td>${employmentStatusPill(e.employmentStatus, e.dateHired)}</td></tr>
@@ -6437,6 +6444,7 @@ const BUILDERS = {
             <tr><td class="muted">Date Hired</td><td>${e.dateHired ? fmtDiscDate(e.dateHired) : '—'}</td></tr>
             ${e.employmentStatus==='Probationary' && computeProbationEndDate(e.dateHired) ? `<tr><td class="muted">Probation End Date</td><td>${fmtDiscDate(computeProbationEndDate(e.dateHired))}</td></tr>` : ''}
           </table>
+          </div>
         `}
       </div>
       <div class="card">
