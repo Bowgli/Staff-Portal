@@ -4163,32 +4163,44 @@ function setRequestsArchiveSearch(v){
   renderView('mgmt-requests-archived');
 }
 async function openConcernsArchivedPage(){
-  if(!isFullAdmin()) return; // Archive is Admin-only — defense in depth even though the button itself is already hidden for other roles
-  if(concernsArchiveData === null){
-    concernsArchiveLoading = true;
-    renderView('mgmt-concerns-archived');
-    const raw = await safeApiGet('concernsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), []);
-    concernsArchiveData = raw.map(c => Object.assign(mapConcernRowBase_(c), {
-      investigationNotes:c.InvestigationNotes, investigatedBy:c.InvestigatedBy, actionTaken:c.ActionTaken,
-      investigationLastUpdatedBy:c.InvestigationLastUpdatedBy, investigationLastUpdatedAt:c.InvestigationLastUpdatedAt,
-      statusLastChangedAt:c.StatusLastChangedAt,
-      investigationCreatedByAccount:c.InvestigationCreatedByAccount, investigationCreatedAt:c.InvestigationCreatedAt,
-      archived: true
-    }));
+  if(!isFullAdmin()){ alert("Archive access is limited to Admin accounts."); return; } // Admin-only — was a silent no-op before, now gives clear feedback instead of the button appearing to do nothing
+  try{
+    if(concernsArchiveData === null){
+      concernsArchiveLoading = true;
+      renderView('mgmt-concerns-archived');
+      const raw = await safeApiGet('concernsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), []);
+      concernsArchiveData = raw.map(c => Object.assign(mapConcernRowBase_(c), {
+        investigationNotes:c.InvestigationNotes, investigatedBy:c.InvestigatedBy, actionTaken:c.ActionTaken,
+        investigationLastUpdatedBy:c.InvestigationLastUpdatedBy, investigationLastUpdatedAt:c.InvestigationLastUpdatedAt,
+        statusLastChangedAt:c.StatusLastChangedAt,
+        investigationCreatedByAccount:c.InvestigationCreatedByAccount, investigationCreatedAt:c.InvestigationCreatedAt,
+        archived: true
+      }));
+    }
+  } catch(e){
+    console.error('openConcernsArchivedPage failed:', e);
+    alert("Couldn't load Archived Concerns — please try again.");
+  } finally {
     concernsArchiveLoading = false;
+    renderView('mgmt-concerns-archived');
   }
-  renderView('mgmt-concerns-archived');
 }
 async function openRequestsArchivedPage(){
-  if(!isFullAdmin()) return;
-  if(requestsArchiveData === null){
-    requestsArchiveLoading = true;
-    renderView('mgmt-requests-archived');
-    const raw = await safeApiGet('requestsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), []);
-    requestsArchiveData = raw.map(r => ({id:r.ID, employeeName:r.EmployeeName, type:r.Type, details:r.Details, date:r.Date, status:r.Status, actionBy:r.ActionBy, archived:true}));
+  if(!isFullAdmin()){ alert("Archive access is limited to Admin accounts."); return; }
+  try{
+    if(requestsArchiveData === null){
+      requestsArchiveLoading = true;
+      renderView('mgmt-requests-archived');
+      const raw = await safeApiGet('requestsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), []);
+      requestsArchiveData = raw.map(r => ({id:r.ID, employeeName:r.EmployeeName, type:r.Type, details:r.Details, date:r.Date, status:r.Status, actionBy:r.ActionBy, archived:true}));
+    }
+  } catch(e){
+    console.error('openRequestsArchivedPage failed:', e);
+    alert("Couldn't load Archived Requests — please try again.");
+  } finally {
     requestsArchiveLoading = false;
+    renderView('mgmt-requests-archived');
   }
-  renderView('mgmt-requests-archived');
 }
 let suggestionsArchiveSearch = ''; // search box on the dedicated Archived Suggestions page
 function setSuggestionsArchiveSearch(v){
@@ -4196,15 +4208,21 @@ function setSuggestionsArchiveSearch(v){
   renderView('mgmt-suggestions-archived');
 }
 async function openSuggestionsArchivedPage(){
-  if(!isFullAdmin()) return;
-  if(suggestionsArchiveData === null){
-    suggestionsArchiveLoading = true;
-    renderView('mgmt-suggestions-archived');
-    const raw = await safeApiGet('suggestionsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), []);
-    suggestionsArchiveData = raw.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID, archived:true}));
+  if(!isFullAdmin()){ alert("Archive access is limited to Admin accounts."); return; }
+  try{
+    if(suggestionsArchiveData === null){
+      suggestionsArchiveLoading = true;
+      renderView('mgmt-suggestions-archived');
+      const raw = await safeApiGet('suggestionsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), []);
+      suggestionsArchiveData = raw.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID, archived:true}));
+    }
+  } catch(e){
+    console.error('openSuggestionsArchivedPage failed:', e);
+    alert("Couldn't load Archived Suggestions — please try again.");
+  } finally {
     suggestionsArchiveLoading = false;
+    renderView('mgmt-suggestions-archived');
   }
-  renderView('mgmt-suggestions-archived');
 }
 let concernInvEditMode = null; // null = not yet decided for this record; true/false once initialized — see mgmt-concern-detail
 const DISC_POSITIONS = ["Shift Manager","Supervisor","Cashier","Membership","Slot Attendant","Slot Technician Supervisor","Assistant Slot Technician Supervisor","Slot Technician","Security"];
