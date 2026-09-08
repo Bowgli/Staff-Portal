@@ -4014,15 +4014,29 @@ function closePhotoPreviewModal(){
 async function handleAssignPhoto(event, employeeName){
   const file = event.target.files[0];
   if(!file) return;
+  const label = event.target.closest('label'); // the visible "Upload Photo"/"Change Photo" control — the actual <input type="file"> is hidden
+  const origHTML = label ? label.innerHTML : null;
   if(file.size > 2*1024*1024){ alert("Photo must be under 2MB."); return; }
   if(!USE_REMOTE()){ alert("Connect the backend first — photo assignment needs the live Sheet connection."); return; }
+
+  if(label) label.innerHTML = `<span class="btn-spinner"></span>Uploading...`;
 
   const reader = new FileReader();
   reader.onload = async ()=>{
     const base64 = reader.result.split(',')[1];
-    const r = await apiPost('uploadPhoto', {employeeName, base64, mimeType: file.type});
-    if(!r.ok){ alert(r.error || "Upload failed."); return; }
-    alert(`Photo assigned to ${employeeName}.`);
+    try{
+      const r = await apiPost('uploadPhoto', {employeeName, base64, mimeType: file.type});
+      if(!r.ok){ alert(r.error || "Upload failed."); return; }
+      alert(`Photo assigned to ${employeeName}.`);
+    } catch(e){
+      alert(e.message || "Upload failed — please try again.");
+    } finally {
+      if(label) label.innerHTML = origHTML; // restore the button whether it succeeded or failed
+    }
+  };
+  reader.onerror = ()=>{
+    alert("Couldn't read that file — please try again.");
+    if(label) label.innerHTML = origHTML;
   };
   reader.readAsDataURL(file);
 }
