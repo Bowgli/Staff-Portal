@@ -4997,8 +4997,10 @@ async function confirmManagementReview(){
 }
 
 let attendancePrintPrefillValue = null; // "Name — Position", set right before navigating from Employee Profile → View Complete Attendance History, consumed once by the mgmt-attendance render below
+let attendancePrintAutoSearch = false; // paired with the prefill above — when true, the render hook triggers the EXISTING Search / View Records function once automatically, right after arriving, instead of making the user click it themselves
 function openFullAttendanceHistory(name, position){
   attendancePrintPrefillValue = `${name} — ${position}`;
+  attendancePrintAutoSearch = true;
   renderView('mgmt-attendance');
 }
 function employeePickerHtml(inputId, roster, extraAttrs){
@@ -5271,6 +5273,10 @@ function renderView(id, fromHistory){
     if(emp && emp.photoFileId) loadVisiblePhotos([{fileId: emp.photoFileId, elId: 'empProfilePhotoBig'}]);
   }
   if(id === 'mgmt-concern-detail') captureConcernInvestigationSnapshot();
+  if(id === 'mgmt-attendance' && attendancePrintAutoSearch){
+    attendancePrintAutoSearch = false; // one-shot — a later, unrelated visit to this page never auto-searches again
+    searchEmployeePrintLog();
+  }
 
   if(!fromHistory){
     // a normal (forward) navigation — remember it and push a browser
