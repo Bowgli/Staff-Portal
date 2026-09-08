@@ -5235,8 +5235,13 @@ function renderView(id, fromHistory){
   // the polling interval — refresh it the moment someone actually
   // looks at it, instead of making them wait for the background
   // check to catch up. Renders instantly from memory first (above),
-  // then quietly re-renders once fresh data lands.
-  if(id === 'mgmt-requests') refreshRequestsOnNavigate();
+  // then quietly re-renders once fresh data lands. Only on a genuine
+  // navigation TO this page (viewChanged) — not on every in-page
+  // re-render this same view gets (e.g. the debounced re-render while
+  // typing in the Employee filter), since that async refresh landing
+  // later mid-typing was silently replacing the whole page and
+  // yanking focus out of the field the user was still typing in.
+  if(id === 'mgmt-requests' && viewChanged) refreshRequestsOnNavigate();
   if(id === 'home' && lastTeamOnDutyPhotos.length) loadVisiblePhotos(lastTeamOnDutyPhotos);
   if(id === 'mgmt-accounts') loadVisiblePhotos(EMPLOYEE_ROSTER.filter(e=>e.photoFileId).map(e=>({fileId:e.photoFileId, elId:'photoThumb_mgmt_'+e.name.replace(/[^a-zA-Z0-9]/g,'')})));
   if(id === 'mgmt-concern-detail') captureConcernInvestigationSnapshot();
@@ -5259,8 +5264,20 @@ async function refreshRequestsOnNavigate(){
   ALL_REQUESTS = requests;
   // re-render the content directly (not via renderView) — going
   // through renderView again would re-trigger this same refresh
-  // hook and never stop
-  if(activeView === 'mgmt-requests') document.getElementById('content').innerHTML = BUILDERS['mgmt-requests']();
+  // hook and never stop. Preserves focus/cursor on the Employee
+  // filter field if the user happened to already be typing there by
+  // the time this async fetch landed — same defensive pattern as
+  // setReqFilter's debounced re-render.
+  if(activeView === 'mgmt-requests'){
+    const active = document.activeElement;
+    const wasEmployeeInput = active && active.matches && active.matches('input[data-filter="reqEmployee"]');
+    const cursorPos = wasEmployeeInput ? active.selectionStart : null;
+    document.getElementById('content').innerHTML = BUILDERS['mgmt-requests']();
+    if(wasEmployeeInput){
+      const input = document.querySelector('#content input[data-filter="reqEmployee"]');
+      if(input){ input.focus(); if(cursorPos != null) input.setSelectionRange(cursorPos, cursorPos); }
+    }
+  }
 }
 
 /* Phase 1 UI/UX enhancement — a friendly, time-based greeting for
