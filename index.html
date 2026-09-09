@@ -3669,7 +3669,11 @@ const NAV = {
       {id:"performance", ic:"📊", label:"My Performance"},
     ]},
     {group:"Company", items:[
-      {id:"policies", ic:"📖", label:"Policies & Procedures"},
+      // "Policies & Procedures" (id:"policies") is temporarily hidden
+      // from this nav per request — the view, its data
+      // (POLICY_DOCUMENTS), and togglePolicyDoc() are all still fully
+      // intact and untouched below; to restore it, just add back:
+      // {id:"policies", ic:"📖", label:"Policies & Procedures"},
       {id:"handbook", ic:"📚", label:"Handbook & Policy Assistant"},
       {id:"announcements", ic:"📢", label:"Announcements"},
       {id:"recognition", ic:"🏆", label:"Employee Recognition"},
@@ -6221,7 +6225,7 @@ const BUILDERS = {
     if(handbookLoadError){
       return `<div class="card">
         <h3><span class="ic">📚</span> Handbook & Policy Assistant</h3>
-        <p class="muted" style="margin-top:10px; margin-bottom:14px;">We're unable to access the Handbook Assistant right now. Please try again later or contact your Supervisor, Manager, or HR.</p>
+        <p class="muted" style="margin-top:10px; margin-bottom:14px;">We're unable to access the Handbook Assistant right now. Please try again later or contact the Group Gaming Manager or Assistant Group Gaming Manager.</p>
         <button class="btn ghost auto" onclick="retryHandbookLoad()">↻ Try Again</button>
       </div>`;
     }
@@ -6231,14 +6235,14 @@ const BUILDERS = {
       if(!s) { handbookFullSectionId = null; }
       else return `
         <div class="card">
-          <button class="btn ghost auto no-print" style="margin-bottom:14px;" onclick="closeFullHandbookSection()">← Back</button>
+          <button class="btn info auto no-print" style="margin-bottom:14px;" onclick="closeFullHandbookSection()">← Back</button>
           <h3><span class="ic">📖</span> Section ${s.number} — ${s.title}</h3>
           ${s.breadcrumb ? `<p class="muted" style="font-size:12px; margin-bottom:14px;">${s.breadcrumb}</p>` : ''}
           <p style="white-space:pre-line; line-height:1.7; font-size:14.5px;">${s.content}</p>
         </div>`;
     }
-    const disclaimer = `<p class="muted" style="font-size:11.5px; margin-top:18px; line-height:1.5;"><strong>Please Note:</strong> This assistant provides information based on the current Employee Handbook and is intended as a reference. It does not replace official instructions from Management or HR. If you are unsure about how a policy applies to your specific situation, please contact your Supervisor, Manager, or HR.</p>`;
-    const contactBtn = `<button class="btn ghost auto" onclick="viewFullHandbookSection('1.3')">👤 Contact Supervisor / Manager / HR</button>`;
+    const disclaimer = `<p class="muted" style="font-size:11.5px; margin-top:18px; line-height:1.5;"><strong>Please Note:</strong> This assistant provides information based on the current Employee Handbook and is intended as a reference. It does not replace official instructions from Management or HR. If you are unsure about how a policy applies to your specific situation, please contact the Group Gaming Manager or Assistant Group Gaming Manager.</p>`;
+    const contactBtn = `<button class="btn ghost auto" onclick="viewFullHandbookSection('1.3')">👤 Contact Group Gaming Manager or Assistant Group Gaming Manager</button>`;
 
     // ----- Results view (after a search or question) -----
     if(handbookResults !== null){
@@ -6248,7 +6252,7 @@ const BUILDERS = {
         <div class="card" style="margin-bottom:16px;">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
             <h3 style="margin:0;"><span class="ic">📚</span> Handbook & Policy Assistant</h3>
-            <button class="btn ghost auto" onclick="clearHandbookSearch()">← New Search</button>
+            <button class="btn info auto" onclick="clearHandbookSearch()">🔍 New Search</button>
           </div>
           <p class="muted" style="font-size:12px; margin-bottom:4px;">Your Question</p>
           <p style="font-weight:600; margin-bottom:16px;">${handbookQuery}</p>
@@ -6257,7 +6261,7 @@ const BUILDERS = {
             <p style="white-space:pre-line; line-height:1.7; font-size:14.5px; margin-bottom:14px;">${top.section.content.length > 500 ? top.section.content.slice(0,500).trim()+'…' : top.section.content}</p>
             <p class="muted" style="font-size:12px; margin-bottom:4px;">📚 Source</p>
             <p style="margin-bottom:10px;">Section ${top.section.number} — ${top.section.title}${top.section.breadcrumb ? `<br><span class="muted" style="font-size:12px;">${top.section.breadcrumb}</span>` : ''}</p>
-            <button class="btn ghost auto" style="margin-bottom:16px;" onclick="viewFullHandbookSection('${top.section.number}')">View Full Section</button>
+            <button class="btn info auto" style="margin-bottom:16px;" onclick="viewFullHandbookSection('${top.section.number}')">📖 View Full Section</button>
             ${handbookResults.length > 1 ? `
               <p class="muted" style="font-size:12px; margin:16px 0 6px;">You might also check</p>
               ${handbookResults.slice(1).map(r=>`<div class="feed-item" style="cursor:pointer; padding:10px 0;" onclick="viewFullHandbookSection('${r.section.number}')"><span style="font-size:13.5px;">📖 Section ${r.section.number} — ${r.section.title}</span></div>`).join('')}
@@ -6267,8 +6271,8 @@ const BUILDERS = {
               ${contactBtn}
             </div>
           ` : `
-            <p style="margin-bottom:14px;">I couldn't find a clear answer to this question in the Employee Handbook.</p>
-            <p class="muted" style="margin-bottom:14px; font-size:13.5px;">Please contact your Supervisor, Manager, or HR for clarification.</p>
+            <p style="margin-bottom:14px;">I couldn't find a clear answer to your question in the Employee Handbook.</p>
+            <p class="muted" style="margin-bottom:14px; font-size:13.5px;">For further clarification, please contact the Group Gaming Manager or Assistant Group Gaming Manager.</p>
             ${contactBtn}
             ${handbookResults.length ? `
               <p class="muted" style="font-size:12px; margin:18px 0 6px;">Closest related sections, if helpful:</p>
