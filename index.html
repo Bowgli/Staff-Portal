@@ -857,6 +857,37 @@ async function confirmAndDelete(el, message, action){
 // what the UI shows, so a direct API call can't bypass it either.
 const CONCERN_ARCHIVABLE_STATUSES = new Set(["Resolved","Closed","No Action Needed","Withdrawn"]);
 const REQUEST_ARCHIVABLE_STATUSES = new Set(["approved","declined"]);
+// Furlough is deliberately NOT included — Furlough doesn't necessarily
+// mean the employee has permanently left the company, per the explicit
+// requirement, so it stays in the normal Active Employees list.
+const EMPLOYEE_ARCHIVABLE_STATUSES = new Set(["Terminated","Resigned"]);
+let archivedEmployeesSearch = ''; // search box on the dedicated Archived Employees page
+function setArchivedEmployeesSearch(v){
+  archivedEmployeesSearch = v;
+  renderView('mgmt-employees-archived');
+}
+function openArchivedEmployeesPage(){
+  if(!isFullAdmin()) return;
+  renderView('mgmt-employees-archived');
+}
+async function archiveEmployeeNow(name, el){
+  await confirmAndDelete(el, "Archive Employee?\n\nThis employee will be moved to the Archived Employees section. Their complete profile and historical records will be preserved and can still be viewed and printed in the future. No records will be deleted.", async ()=>{
+    const r = await apiPost('archiveEmployee', {name, username: CURRENT_USER.username});
+    if(!r.ok){ alert(r.error || "Couldn't archive."); return; }
+    const emp = EMPLOYEE_ROSTER.find(e=>e.name===name);
+    if(emp) emp.archiveStatus = 'Archived';
+    renderView('mgmt-employees');
+  });
+}
+async function restoreEmployeeNow(name, el){
+  await confirmAndDelete(el, "Restore Employee?\n\nThis employee will be returned to the main employee list.", async ()=>{
+    const r = await apiPost('restoreEmployeeArchive', {name, username: CURRENT_USER.username});
+    if(!r.ok){ alert(r.error || "Couldn't restore."); return; }
+    const emp = EMPLOYEE_ROSTER.find(e=>e.name===name);
+    if(emp) emp.archiveStatus = '';
+    renderView('mgmt-employees-archived');
+  });
+}
 async function archiveRecordNow(module, id, el){
   const messages = {
     concern: "Archive Record?\n\nThis concern has been marked as completed/closed.\n\nArchiving will remove it from the active list, but the record will remain safely stored in Archived Records for authorized Admin viewing, searching, and printing.",
@@ -2429,7 +2460,7 @@ async function loadRemoteData(){
     // already established for Employment Status.
     ACCOUNT_ROLE_BY_EMPLOYEE = {};
     accountsStatus.forEach(a => { if(a.employeeName) ACCOUNT_ROLE_BY_EMPLOYEE[a.employeeName] = a.role || ''; });
-    roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, position:r.Position, status:r.Status||"Active", employmentStatus:r.EmploymentStatus||'', probationMilestonesSent:r.ProbationMilestonesSent||'[]', attendance:"—", dateHired:r.DateHired||'', phone:(acctByName[r.Name]&&acctByName[r.Name].phone)||'', email:(acctByName[r.Name]&&acctByName[r.Name].email)||'', photoFileId:(acctByName[r.Name]&&acctByName[r.Name].photoFileId)||''}));
+    roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, position:r.Position, status:r.Status||"Active", employmentStatus:r.EmploymentStatus||'', archiveStatus:r.ArchiveStatus||'', probationMilestonesSent:r.ProbationMilestonesSent||'[]', attendance:"—", dateHired:r.DateHired||'', phone:(acctByName[r.Name]&&acctByName[r.Name].phone)||'', email:(acctByName[r.Name]&&acctByName[r.Name].email)||'', photoFileId:(acctByName[r.Name]&&acctByName[r.Name].photoFileId)||''}));
     SCHEDULE_DAYS = schedule.days || [];
     SCHEDULE_ROWS = schedule.rows || [];
     NEXT_SCHEDULE_DAYS = nextSchedule.days || [];
@@ -3418,7 +3449,7 @@ async function confirmAddEmpModal(){
       const r = await apiPost('addEmployee', {name, position, status, dateHired, employmentStatus});
       if(!r.ok){ err.textContent = r.error || "Couldn't add employee."; err.style.display='block'; btnResetEl(btn); return; }
     }
-    EMPLOYEE_ROSTER.push({name, position, status, employmentStatus, attendance:'—', dateHired});
+    EMPLOYEE_ROSTER.push({name, position, status, employmentStatus, archiveStatus:'', attendance:'—', dateHired});
     await btnSentEl(btn, 'Added');
     closeAddEmpModal();
     renderView('mgmt-employees');
@@ -5244,6 +5275,7 @@ const TITLES = {
   "mgmt-home":["Management Overview","Company-wide snapshot — management team only"],
   "mgmt-account-settings":["Account Settings","Update your own password"],
   "mgmt-employees":["All Employees","Full staff directory"],
+  "mgmt-employees-archived":["Archived Employees","Former employees — complete history preserved"],
   "mgmt-accounts":["Manage Accounts","Employees create their own login — you can only reset or assign one"],
   "mgmt-schedule":["Master Schedule","Every employee, every shift — full sheet"],
   "mgmt-attendance":["Attendance / Log Absence","Log an entry and it reflects on that employee's dashboard automatically"],
@@ -6404,9 +6436,10 @@ const BUILDERS = {
 
   "mgmt-employees": ()=>{
     const q = employeesSearchQuery.toLowerCase();
-    const rows = EMPLOYEE_ROSTER.filter(e => !q || e.name.toLowerCase().includes(q) || e.position.toLowerCase().includes(q));
+    const rows = EMPLOYEE_ROSTER.filter(e => e.archiveStatus !== 'Archived' && (!q || e.name.toLowerCase().includes(q) || e.position.toLowerCase().includes(q)));
     return `
-    <div class="no-print" style="display:flex; justify-content:flex-end; margin-bottom:16px;">
+    <div class="no-print" style="display:flex; justify-content:flex-end; align-items:center; gap:8px; margin-bottom:16px;">
+      ${isFullAdmin() ? `<button class="btn ghost auto" onclick="openArchivedEmployeesPage()">📦 Archived Employees</button>` : ''}
       <button onclick="openAddEmpModal()">+ Add Employee</button>
     </div>
     <div class="card table-scroll">
@@ -6431,8 +6464,39 @@ const BUILDERS = {
           <td class="muted">${e.phone || '—'}</td>
           <td class="muted">${e.email || '—'}</td>
           <td class="muted">${e.dateHired ? fmtDiscDate(e.dateHired) : '—'}</td>
-          <td><button class="btn danger auto" style="padding:4px 10px;" onclick="deleteEmployeeConfirm('${e.name.replace(/'/g,"\\'")}', this)">🗑️ Delete</button></td>
+          <td style="white-space:nowrap;">
+            ${(isFullAdmin() && EMPLOYEE_ARCHIVABLE_STATUSES.has(e.status)) ? `<button class="btn ghost auto" style="padding:4px 10px; margin-right:4px;" onclick="archiveEmployeeNow('${e.name.replace(/'/g,"\\'")}', this)">📦 Archive</button>` : ''}
+            <button class="btn danger auto" style="padding:4px 10px;" onclick="deleteEmployeeConfirm('${e.name.replace(/'/g,"\\'")}', this)">🗑️ Delete</button>
+          </td>
         </tr>`).join('') || `<tr><td colspan="8" class="muted">No matches.</td></tr>`}
+      </table>
+    </div>`;
+  },
+
+  "mgmt-employees-archived": ()=>{
+    if(!isFullAdmin()) return `<div class="card"><p class="muted">🔒 Archive access is limited to Admin accounts.</p></div>`;
+    const q = archivedEmployeesSearch.toLowerCase();
+    const rows = EMPLOYEE_ROSTER.filter(e => e.archiveStatus === 'Archived' && (!q || e.name.toLowerCase().includes(q) || e.position.toLowerCase().includes(q)));
+    return `
+    <div class="no-print" style="margin-bottom:16px;">
+      <button class="btn ghost auto" onclick="renderView('mgmt-employees')">← Back to Staff Directory</button>
+    </div>
+    <div class="card table-scroll">
+      <h3><span class="ic">📦</span> Archived Employees</h3>
+      <p class="muted" style="margin-bottom:12px;">Former employees (Terminated/Resigned) removed from the active Staff Directory — their complete profile, attendance, disciplinary, recognition, and performance history all remain fully accessible and printable.</p>
+      <input type="text" placeholder="🔍 Search by name or position…" value="${archivedEmployeesSearch}" oninput="setArchivedEmployeesSearch(this.value)" style="margin-bottom:12px;">
+      <table>
+        <tr><th>Name</th><th>Position</th><th>Employment Status</th><th>Date Hired</th><th></th></tr>
+        ${rows.map(e=>`<tr>
+          <td>${e.name}</td>
+          <td>${e.position}</td>
+          <td>${employmentStatusPill(e.employmentStatus, e.dateHired)} <span class="muted">(${e.status})</span></td>
+          <td class="muted">${e.dateHired ? fmtDiscDate(e.dateHired) : '—'}</td>
+          <td style="white-space:nowrap;">
+            <button class="btn info auto" style="padding:5px 10px; margin-right:4px;" onclick="openEmployeeProfile('${e.name.replace(/'/g,"\\'")}', 'mgmt-employees-archived', 'Archived Employees')">View Profile</button>
+            <button class="btn ghost auto" style="padding:5px 10px;" onclick="restoreEmployeeNow('${e.name.replace(/'/g,"\\'")}', this)">↩️ Restore</button>
+          </td>
+        </tr>`).join('') || `<tr><td colspan="5" class="muted">No archived employees${archivedEmployeesSearch?' match that search':' yet'}.</td></tr>`}
       </table>
     </div>`;
   },
