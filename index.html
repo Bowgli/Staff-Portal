@@ -3835,6 +3835,40 @@ let handbookResults = null; // array of {section, score} from the last search/qu
 let handbookOpenTopic = null; // which Suggested Topics category is expanded
 let handbookFullSectionId = null; // which section "View Full Section" is showing
 let handbookShowContacts = false; // whether the "Contact Group Gaming Manager..." panel is showing
+// The whole Handbook Assistant (landing/search-results/full-section/
+// contacts) stays on ONE view id ("handbook") — the app's normal
+// history tracking only pushes a new browser-history entry when the
+// view id itself changes, so internal Assistant transitions never
+// registered at all. That's what let the phone's native Back button
+// jump straight past several steps at once (or hit the portal's
+// exit-confirmation early) instead of stepping back through
+// Search → Results → Full Section the same way the Assistant's own
+// Back button does. This stack runs in lockstep with the ones extra
+// "handbook" entries pushHandbookState() adds to the main viewStack
+// below, snapshotting exactly what to restore on each step back.
+let handbookNavStack = [];
+function pushHandbookState(){
+  handbookNavStack.push({
+    results: handbookResults, query: handbookQuery,
+    fullSectionId: handbookFullSectionId, showContacts: handbookShowContacts,
+  });
+  viewStack.push('handbook');
+  safePushState({vh: viewStack.length});
+}
+// Called by the main popstate handler (further down) when the
+// "handbook" entry being popped was one pushHandbookState() added —
+// restores the exact prior Assistant sub-state before the view
+// re-renders, so the phone's native Back button lands on precisely
+// the same screen the portal's own Back button would have.
+function popHandbookState(){
+  if(handbookNavStack.length){
+    const prev = handbookNavStack.pop();
+    handbookResults = prev.results; handbookQuery = prev.query;
+    handbookFullSectionId = prev.fullSectionId; handbookShowContacts = prev.showContacts;
+  } else {
+    handbookResults = null; handbookQuery = ''; handbookFullSectionId = null; handbookShowContacts = false;
+  }
+}
 
 // Lazy-loaded exactly once per session, only when the employee
 // actually opens this feature — never during login or normal
@@ -3950,6 +3984,7 @@ function runHandbookQuery(q){
   handbookQuery = q;
   handbookFullSectionId = null;
   handbookResults = HANDBOOK_INDEX ? searchHandbook_(q) : [];
+  pushHandbookState();
   renderView('handbook');
 }
 function askHandbookSuggested(q){
@@ -3963,10 +3998,12 @@ function toggleHandbookTopic(label){
 function viewFullHandbookSection(number){
   handbookFullSectionId = String(number);
   handbookShowContacts = false;
+  pushHandbookState();
   renderView('handbook');
 }
 function closeFullHandbookSection(){
   handbookFullSectionId = null;
+  pushHandbookState();
   renderView('handbook');
 }
 // Dedicated contact panel — a fixed, curated list rather than pulling
@@ -3975,10 +4012,12 @@ function closeFullHandbookSection(){
 function viewHandbookContacts(){
   handbookFullSectionId = null;
   handbookShowContacts = true;
+  pushHandbookState();
   renderView('handbook');
 }
 function closeHandbookContacts(){
   handbookShowContacts = false;
+  pushHandbookState();
   renderView('handbook');
 }
 function clearHandbookSearch(){
@@ -3986,6 +4025,7 @@ function clearHandbookSearch(){
   handbookResults = null;
   handbookFullSectionId = null;
   handbookShowContacts = false;
+  pushHandbookState();
   renderView('handbook');
 }
 
@@ -6301,7 +6341,7 @@ const BUILDERS = {
         <div class="card" style="margin-bottom:16px;">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
             <h3 style="margin:0;"><span class="ic">📚</span> Handbook & Policy Assistant</h3>
-            <button class="btn info auto" onclick="clearHandbookSearch()">🔍 New Search</button>
+            <button class="btn info auto" onclick="clearHandbookSearch()">🔍 New Search / Back</button>
           </div>
           <p class="muted" style="font-size:12px; margin-bottom:4px;">Your Question</p>
           <p style="font-weight:600; margin-bottom:16px;">${handbookQuery}</p>
@@ -9600,7 +9640,8 @@ window.addEventListener('popstate', function(){
 
   if(viewStack.length > 1){
     // step back to the previous view the user actually visited
-    viewStack.pop();
+    const leaving = viewStack.pop();
+    if(leaving === 'handbook') popHandbookState(); // sync the Assistant's internal sub-state (search results / full section / contacts) to match this step back
     const prev = viewStack[viewStack.length-1];
     renderView(prev, true); // fromHistory=true — don't push a new state for this
     return;
