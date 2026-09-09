@@ -6438,9 +6438,9 @@ const BUILDERS = {
     const q = employeesSearchQuery.toLowerCase();
     const rows = EMPLOYEE_ROSTER.filter(e => e.archiveStatus !== 'Archived' && (!q || e.name.toLowerCase().includes(q) || e.position.toLowerCase().includes(q)));
     return `
-    <div class="no-print" style="display:flex; justify-content:flex-end; align-items:center; gap:8px; margin-bottom:16px;">
+    <div class="no-print" style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
+      <button class="btn auto" onclick="openAddEmpModal()">➕ Add Employee</button>
       ${isFullAdmin() ? `<button class="btn ghost auto" onclick="openArchivedEmployeesPage()">📦 Archived Employees</button>` : ''}
-      <button onclick="openAddEmpModal()">+ Add Employee</button>
     </div>
     <div class="card table-scroll">
       <h3><span class="ic">👥</span> Staff Directory</h3>
