@@ -3848,7 +3848,7 @@ async function ensureHandbookLoaded(){
     const data = await apiGet('handbookIndex');
     if(!data || !Array.isArray(data.sections)) throw new Error('Unexpected response');
     HANDBOOK_INDEX = data.sections.map(s => ({
-      number: s.Number || '', title: s.Title || '', breadcrumb: s.Breadcrumb || '',
+      number: String(s.Number != null ? s.Number : ''), title: s.Title || '', breadcrumb: s.Breadcrumb || '',
       keywords: String(s.Keywords||'').split(',').map(k=>k.trim()).filter(Boolean),
       content: s.Content || '',
     }));
@@ -3959,7 +3959,7 @@ function toggleHandbookTopic(label){
   renderView('handbook');
 }
 function viewFullHandbookSection(number){
-  handbookFullSectionId = number;
+  handbookFullSectionId = String(number);
   renderView('handbook');
 }
 function closeFullHandbookSection(){
@@ -6231,9 +6231,14 @@ const BUILDERS = {
     }
     // ----- "View Full Section" overlay -----
     if(handbookFullSectionId){
-      const s = HANDBOOK_INDEX.find(x=>x.number===handbookFullSectionId);
-      if(!s) { handbookFullSectionId = null; }
-      else return `
+      const s = HANDBOOK_INDEX.find(x=>String(x.number)===String(handbookFullSectionId));
+      if(!s){
+        return `<div class="card">
+          <button class="btn info auto no-print" style="margin-bottom:14px;" onclick="closeFullHandbookSection()">← Back</button>
+          <p class="muted">That section couldn't be found — it may have been renumbered in a recent handbook update. Please try your search again.</p>
+        </div>`;
+      }
+      return `
         <div class="card">
           <button class="btn info auto no-print" style="margin-bottom:14px;" onclick="closeFullHandbookSection()">← Back</button>
           <h3><span class="ic">📖</span> Section ${s.number} — ${s.title}</h3>
