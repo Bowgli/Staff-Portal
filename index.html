@@ -3711,6 +3711,7 @@ const NAV = {
       {id:"mgmt-recognition", ic:"🏆", label:"Recognition Management"},
       {id:"mgmt-nominations", ic:"🌟", label:"Award Nominations"},
       {id:"mgmt-announcements", ic:"📢", label:"Post Announcements"},
+      {id:"handbook", ic:"📚", label:"Handbook & Policy Assistant"},
     ]},
   ]
 };
@@ -3833,6 +3834,7 @@ let handbookQuery = '';
 let handbookResults = null; // array of {section, score} from the last search/question, or null before any search
 let handbookOpenTopic = null; // which Suggested Topics category is expanded
 let handbookFullSectionId = null; // which section "View Full Section" is showing
+let handbookShowContacts = false; // whether the "Contact Group Gaming Manager..." panel is showing
 
 // Lazy-loaded exactly once per session, only when the employee
 // actually opens this feature — never during login or normal
@@ -3960,16 +3962,30 @@ function toggleHandbookTopic(label){
 }
 function viewFullHandbookSection(number){
   handbookFullSectionId = String(number);
+  handbookShowContacts = false;
   renderView('handbook');
 }
 function closeFullHandbookSection(){
   handbookFullSectionId = null;
   renderView('handbook');
 }
+// Dedicated contact panel — a fixed, curated list rather than pulling
+// from a handbook section, so it's never affected by handbook
+// re-indexing/renumbering and always shows exactly these numbers.
+function viewHandbookContacts(){
+  handbookFullSectionId = null;
+  handbookShowContacts = true;
+  renderView('handbook');
+}
+function closeHandbookContacts(){
+  handbookShowContacts = false;
+  renderView('handbook');
+}
 function clearHandbookSearch(){
   handbookQuery = '';
   handbookResults = null;
   handbookFullSectionId = null;
+  handbookShowContacts = false;
   renderView('handbook');
 }
 
@@ -5317,7 +5333,18 @@ function isValidViewForRole(id, role){
 function restoreLastViewOrDefault(){
   let savedView = null;
   try{ savedView = localStorage.getItem(LAST_VIEW_KEY); } catch(e){}
-  if(savedView && isValidViewForRole(savedView, currentRole)) activeView = savedView;
+  // Accept ANY real page (BUILDERS[savedView] exists), not only pages
+  // that happen to be a top-level sidebar menu item — the old
+  // menu-only check was the actual cause of the phone's native Back
+  // button "always going to Home": most detail/sub-pages (a concern
+  // report, an employee profile, a disciplinary case, etc.) are only
+  // ever reached BY CLICKING INTO something, never listed in the
+  // sidebar itself, so restoreLastViewOrDefault() rejected them as
+  // "invalid" and silently fell back to Home whenever a saved view
+  // happened to be one of those pages. renderView() already redirects
+  // to mgmt-home on its own if a role genuinely isn't authorized for
+  // a "mgmt-" view, so no separate role check is needed here.
+  if(savedView && BUILDERS[savedView]) activeView = savedView;
   renderView(activeView);
 }
 
@@ -6229,6 +6256,23 @@ const BUILDERS = {
         <button class="btn ghost auto" onclick="retryHandbookLoad()">↻ Try Again</button>
       </div>`;
     }
+    // ----- Contact panel overlay -----
+    if(handbookShowContacts){
+      const contacts = [
+        {name:'Maximina Gabionza', phone:'+1 (670) 989-6562'},
+        {name:'Stephen Austin', phone:'+1 (670) 989-4278'},
+        {name:'Saipan Vegas Game Room', phone:'(670) 234-2017'},
+        {name:'Club 88 Game Room', phone:'(670) 233-0888'},
+      ];
+      return `
+        <div class="card">
+          <button class="btn auto no-print" style="margin-bottom:14px;" onclick="closeHandbookContacts()">← Back</button>
+          <h3><span class="ic">👤</span> Contact Group Gaming Manager or Assistant Group Gaming Manager</h3>
+          <table style="margin-top:12px;">
+            ${contacts.map(c=>`<tr><td class="muted">${c.name}</td><td>${c.phone}</td></tr>`).join('')}
+          </table>
+        </div>`;
+    }
     // ----- "View Full Section" overlay -----
     if(handbookFullSectionId){
       const s = HANDBOOK_INDEX.find(x=>String(x.number)===String(handbookFullSectionId));
@@ -6247,7 +6291,7 @@ const BUILDERS = {
         </div>`;
     }
     const disclaimer = `<p class="muted" style="font-size:11.5px; margin-top:18px; line-height:1.5;"><strong>Please Note:</strong> This assistant provides information based on the current Employee Handbook and is intended as a reference. It does not replace official instructions from Management or HR. If you are unsure about how a policy applies to your specific situation, please contact the Group Gaming Manager or Assistant Group Gaming Manager.</p>`;
-    const contactBtn = `<button class="btn ghost auto" onclick="viewFullHandbookSection('1.3')">👤 Contact Group Gaming Manager or Assistant Group Gaming Manager</button>`;
+    const contactBtn = `<button class="btn auto" onclick="viewHandbookContacts()">👤 Contact Group Gaming Manager or Assistant Group Gaming Manager</button>`;
 
     // ----- Results view (after a search or question) -----
     if(handbookResults !== null){
