@@ -6411,7 +6411,7 @@ const BUILDERS = {
   /* ===== MANAGEMENT VIEWS ===== */
   "mgmt-home": ()=>`
     <div class="grid grid-5" style="margin-bottom:16px;">
-      <div class="card stat-card clickable" onclick="renderView('mgmt-employees')"><div class="num">${EMPLOYEE_ROSTER.length}</div><div class="label">Active staff</div></div>
+      <div class="card stat-card clickable" onclick="renderView('mgmt-employees')"><div class="num">${EMPLOYEE_ROSTER.filter(e=>e.status==='Active' && e.archiveStatus!=='Archived').length}</div><div class="label">Active staff</div></div>
       <div class="card stat-card clickable" onclick="renderView('mgmt-requests')"><div class="num">${ALL_REQUESTS.filter(r=>r.Status==='pending').length}</div><div class="label">Pending requests</div></div>
       <div class="card stat-card clickable" onclick="renderView('mgmt-concerns')"><div class="num">${MOCK.concernsLog.filter(c=>c.status==='Open').length}</div><div class="label">Open concerns</div></div>
       <div class="card stat-card clickable" onclick="renderView('mgmt-suggestions')"><div class="num">${MOCK.suggestionsLog.filter(s=>s.status==='new').length}</div><div class="label">New suggestions</div></div>
