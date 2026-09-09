@@ -3880,22 +3880,44 @@ async function ensureHandbookLoaded(){
   handbookLoading = true;
   handbookLoadError = false;
   renderView('handbook');
-  try{
-    const data = await apiGet('handbookIndex');
-    if(!data || !Array.isArray(data.sections)) throw new Error('Unexpected response');
-    HANDBOOK_INDEX = data.sections.map(s => ({
-      number: String(s.Number != null ? s.Number : ''), title: s.Title || '', breadcrumb: s.Breadcrumb || '',
-      keywords: String(s.Keywords||'').split(',').map(k=>k.trim()).filter(Boolean),
-      content: s.Content || '',
-    }));
-    HANDBOOK_VERSION = data.version || '';
-  } catch(e){
-    handbookLoadError = true;
-    HANDBOOK_INDEX = [];
-  } finally {
-    handbookLoading = false;
-    renderView('handbook');
+  // One retry on a genuine network/timeout failure — this payload
+  // (~150KB, the full Employee Handbook) is larger than most GET
+  // calls in the app, so it's more exposed to a single slow/dropped
+  // request than most other pages. Every failure is also logged to
+  // the console with as much detail as we have, since the earlier
+  // generic error message gave no way to tell a timeout apart from a
+  // real backend error apart from a malformed response — this fixes
+  // that blind spot going forward.
+  for(let attempt = 0; attempt <= 1; attempt++){
+    try{
+      const data = await apiGet('handbookIndex');
+      if(data && data.error){
+        console.error(`handbookIndex returned an error (attempt ${attempt+1}):`, data.error);
+        throw new Error(data.error);
+      }
+      if(!data || !Array.isArray(data.sections)){
+        console.error(`handbookIndex returned an unexpected shape (attempt ${attempt+1}):`, data);
+        throw new Error('Unexpected response shape');
+      }
+      HANDBOOK_INDEX = data.sections.map(s => ({
+        number: String(s.Number != null ? s.Number : ''), title: s.Title || '', breadcrumb: s.Breadcrumb || '',
+        keywords: String(s.Keywords||'').split(',').map(k=>k.trim()).filter(Boolean),
+        content: s.Content || '',
+      }));
+      HANDBOOK_VERSION = data.version || '';
+      handbookLoading = false;
+      renderView('handbook');
+      return;
+    } catch(e){
+      console.error(`ensureHandbookLoaded attempt ${attempt+1} failed:`, e.message || e);
+      if(attempt === 1){
+        handbookLoadError = true;
+        HANDBOOK_INDEX = [];
+      }
+    }
   }
+  handbookLoading = false;
+  renderView('handbook');
 }
 function retryHandbookLoad(){
   HANDBOOK_INDEX = null;
