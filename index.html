@@ -938,6 +938,14 @@ let discSummaryPeriod = ''; // "YYYY-MM", defaults to current month on first vie
 let discSummaryMode = 'month'; // 'month' or 'year'
 let discSummaryYear = new Date().getFullYear();
 let discDetailCaseId = null; // which case mgmt-disciplinary-detail is showing
+let discDetailSource = null; // {view, label} of the page the user opened this case FROM — read by the Back button below; null defaults to Disciplinary Reports
+let recognitionDetailId = null; // which recognition record recognition-detail is showing
+let recognitionDetailSource = null; // {view, label} of the page the user opened this recognition FROM — null defaults to Recognition Management
+function openRecognitionDetail(id, sourceView, sourceLabel){
+  recognitionDetailId = id;
+  recognitionDetailSource = sourceView ? {view: sourceView, label: sourceLabel || 'Back'} : null;
+  renderView('recognition-detail');
+}
 let viewingEmployeeName = null; // which employee mgmt-employee-profile is showing
 let employeeProfileTab = 'performance'; // 'performance' | 'attendance' | 'disciplinary' | 'recognition'
 let employeeProfileEditMode = false;
@@ -4606,8 +4614,9 @@ let discCaseInfoEditMode = false;
 let discReviewEditMode = false;
 let discLevelEditMode = false;
 let discStatusEditMode = false;
-function openDisciplinaryCase(id){
+function openDisciplinaryCase(id, sourceView, sourceLabel){
   discDetailCaseId = id;
+  discDetailSource = sourceView ? {view: sourceView, label: sourceLabel || 'Back'} : null;
   const d = ALL_DISCIPLINARY_RECORDS.find(x=>x.ID===id) || {};
   discIncidentEditMode = false; // Incident Information is always filled in at creation, so it always starts read-only
   discCaseInfoEditMode = false; // same — always populated at creation
@@ -5254,6 +5263,7 @@ const TITLES = {
   "mgmt-suggestions-archived":["Archived Suggestions","Reviewed suggestions moved out of the active list"],
   "archived-suggestion-detail":["Archived Suggestion","Full details — read-only"],
   "mgmt-recognition":["Recognition Management","Issue awards and recognitions"],
+  "recognition-detail":["Recognition Details","Full award details"],
   "mgmt-nominations":["Award Nominations","Employee-submitted nominations for recognition awards"],
   "mgmt-announcements":["Post Announcements","Compose company-wide updates"],
 };
@@ -6549,12 +6559,20 @@ const BUILDERS = {
         ${myDisc.length ? `
         <table>
           <tr><th>Case #</th><th>Date Reported</th><th>Level</th><th>Status</th><th></th></tr>
-          ${myDisc.map(d=>`<tr><td class="mono">${d.CaseNumber}</td><td>${fmtDateTime(d.DateReported)}</td><td>${d.DisciplinaryLevel||'—'}</td><td>${discStatusPill(d.Status)}</td><td><button class="btn ghost auto" style="padding:4px 10px;" onclick="openDisciplinaryCase('${d.ID}')">View</button></td></tr>`).join('')}
+          ${myDisc.map(d=>`<tr><td class="mono">${d.CaseNumber}</td><td>${fmtDateTime(d.DateReported)}</td><td>${d.DisciplinaryLevel||'—'}</td><td>${discStatusPill(d.Status)}</td><td><button class="btn ghost auto" style="padding:4px 10px;" onclick="openDisciplinaryCase('${d.ID}', 'mgmt-employee-profile', 'Employee Profile')">View</button></td></tr>`).join('')}
         </table>` : `<p class="muted">No records available</p>`}
       ` : ''}
       ${employeeProfileTab==='recognition' ? `
         <h3><span class="ic">🏆</span> Recognition</h3>
-        ${myRecognition.length ? myRecognition.map(r=>`<div class="badge-recog"><div class="medal">${r.medal}</div><div><div class="name">${r.name}</div><div class="desc">${r.desc}</div></div></div>`).join('') : `<p class="muted">No records available</p>`}
+        ${myRecognition.length ? myRecognition.map(r=>{
+          const preview = (r.desc||'').length > 90 ? r.desc.slice(0,90).trim() + '…' : (r.desc||'');
+          return `<div class="feed-item">
+            <div class="title" style="font-size:15px;">${r.medal} ${r.name}</div>
+            <div class="meta" style="margin-top:4px;">Awarded: ${fmtDateTime(r.date)}</div>
+            <p class="muted" style="margin-top:6px; margin-bottom:8px; font-size:13px;">${preview}</p>
+            <button class="btn ghost auto" style="padding:5px 10px;" onclick="openRecognitionDetail('${r.id}', 'mgmt-employee-profile', 'Employee Profile')">👁 View Details</button>
+          </div>`;
+        }).join('') : `<p class="muted">No records available</p>`}
         <h3 style="margin-top:20px;">Award Nominations</h3>
         ${myNominations.length ? `
         <table>
@@ -7027,7 +7045,7 @@ const BUILDERS = {
 
     return `
     <div class="no-print" style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-      <button class="btn ghost auto" onclick="renderView('mgmt-disciplinary')">← Back to Disciplinary Reports</button>
+      <button class="btn ghost auto" onclick="renderView('${discDetailSource ? discDetailSource.view : 'mgmt-disciplinary'}')">← Back to ${discDetailSource ? discDetailSource.label : 'Disciplinary Reports'}</button>
       <button class="btn auto" onclick="printWithPageSettings('letter','portrait','0.75in')">🖨️ Print Case</button>
     </div>
 
@@ -7692,9 +7710,31 @@ const BUILDERS = {
       <table>
         <tr><th>Employee</th><th>Award</th><th>Note</th><th>Date</th><th></th></tr>
         ${MOCK.recognition.map(r=>`<tr><td>${r.employeeName||''}</td><td>${r.name}</td><td class="muted">${r.desc}</td><td>${fmtDateTime(r.date)}</td>
-          <td><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteRecognitionEntry('${r.id}', this)">🗑️ Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">No awards issued yet.</td></tr>`}
+          <td style="white-space:nowrap;"><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="openRecognitionDetail('${r.id}', 'mgmt-recognition', 'Recognition')">👁 View Details</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteRecognitionEntry('${r.id}', this)">🗑️ Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">No awards issued yet.</td></tr>`}
       </table>
     </div>`,
+
+  "recognition-detail": ()=>{
+    const r = MOCK.recognition.find(x=>x.id===recognitionDetailId);
+    if(!r) return `<div class="empty"><div class="ic">🏆</div>Recognition not found.</div>`;
+    const roster = EMPLOYEE_ROSTER.find(e=>e.name===r.employeeName);
+    return `
+    <div class="no-print" style="margin-bottom:16px;">
+      <button class="btn ghost auto" onclick="renderView('${recognitionDetailSource ? recognitionDetailSource.view : 'mgmt-recognition'}')">← Back to ${recognitionDetailSource ? recognitionDetailSource.label : 'Recognition'}</button>
+    </div>
+    <div class="card" style="max-width:560px;">
+      <h3><span class="ic">🏆</span> Recognition Details</h3>
+      <table>
+        <tr><td class="muted">Award / Recognition Title</td><td>${r.medal} ${r.name}</td></tr>
+        <tr><td class="muted">Employee Name</td><td>${r.employeeName||'—'}</td></tr>
+        ${roster ? `<tr><td class="muted">Position</td><td>${roster.position}</td></tr>` : ''}
+        <tr><td class="muted">Date Awarded</td><td>${fmtDateTime(r.date)}</td></tr>
+        <tr><td class="muted">Recognized By</td><td>Management</td></tr>
+      </table>
+      <p style="font-weight:600; margin-top:16px; margin-bottom:6px; font-size:13px;">Complete Reason / Description</p>
+      <p style="white-space:pre-line; font-size:14.5px; line-height:1.6;">${r.desc||'—'}</p>
+    </div>`;
+  },
 
   "mgmt-nominations": ()=>{
     const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
