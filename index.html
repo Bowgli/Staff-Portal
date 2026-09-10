@@ -1041,6 +1041,10 @@ function setEmployeesSearch(val){
   const input = document.querySelector('#content input[placeholder^="🔍"]');
   if(input){ input.focus(); if(cursorPos != null) input.setSelectionRange(cursorPos, cursorPos); }
 }
+function clearEmployeesSearch(){
+  employeesSearchQuery = '';
+  renderView('mgmt-employees');
+}
 // Shared debounce helper — the text filter inputs below used to
 // call renderView() (which rebuilds the ENTIRE page's HTML) on every
 // single keystroke via oninput. That's fine for a handful of rows,
@@ -1095,6 +1099,10 @@ function setAccountsSearch(val){
   renderView('mgmt-accounts');
   const input = document.querySelector('#content input[placeholder^="🔍"]');
   if(input){ input.focus(); if(cursorPos != null) input.setSelectionRange(cursorPos, cursorPos); }
+}
+function clearAccountsSearch(){
+  accountsSearchQuery = '';
+  renderView('mgmt-accounts');
 }
 
 /* --- Schedule sheet, shaped exactly like the pasted Google Sheet:
@@ -6909,7 +6917,10 @@ const BUILDERS = {
     <div class="card table-scroll">
       <h3><span class="ic">👥</span> Staff Directory</h3>
       <p class="muted" style="margin-bottom:12px;">Click a name to open their full Employee Profile — employment info, contact details, performance, attendance, disciplinary, and recognition records all in one place.</p>
-      <input type="text" placeholder="🔍 Search by name or position…" value="${employeesSearchQuery}" oninput="setEmployeesSearch(this.value)" style="margin-bottom:12px;">
+      <div style="display:flex; gap:8px; margin-bottom:12px;">
+        <input type="text" placeholder="🔍 Search by name or position…" value="${employeesSearchQuery}" oninput="setEmployeesSearch(this.value)" style="flex:1; margin-bottom:0;">
+        <button class="btn reset auto" onclick="clearEmployeesSearch()">↻ Clear / Reset</button>
+      </div>
       <table>
         <tr><th>Name</th><th>Position</th><th>Employment Status</th><th>Employee Status</th><th>Contact Number</th><th>Email</th><th>Date Hired</th><th></th></tr>
         ${rows.map(e=>`<tr>
@@ -7123,7 +7134,10 @@ const BUILDERS = {
     <div class="banner note"><b>Note:</b> only management can create or reset an employee's login — there's no self-registration. Photos are also assigned by management, not uploaded by employees themselves.</div>
     <div class="card table-scroll">
       <h3><span class="ic">🔑</span> Account Status by Employee</h3>
-      <input type="text" placeholder="🔍 Search by name, position, or username…" value="${accountsSearchQuery}" oninput="setAccountsSearch(this.value)" style="margin-bottom:12px;">
+      <div style="display:flex; gap:8px; margin-bottom:12px;">
+        <input type="text" placeholder="🔍 Search by name, position, or username…" value="${accountsSearchQuery}" oninput="setAccountsSearch(this.value)" style="flex:1; margin-bottom:0;">
+        <button class="btn reset auto" onclick="clearAccountsSearch()">↻ Clear / Reset</button>
+      </div>
       <table>
         <tr><th>Employee</th><th>Position</th><th>Username</th><th>Account Status</th><th></th><th>Photo</th></tr>
         ${rows.map(e=>{
