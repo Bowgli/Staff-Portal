@@ -856,7 +856,7 @@ async function confirmAndDelete(el, message, action){
 // on the server, which enforces this same rule again regardless of
 // what the UI shows, so a direct API call can't bypass it either.
 const CONCERN_ARCHIVABLE_STATUSES = new Set(["Resolved","Closed","No Action Needed","Withdrawn"]);
-const REQUEST_ARCHIVABLE_STATUSES = new Set(["approved","declined"]);
+const REQUEST_ARCHIVABLE_STATUSES = new Set(["approved","declined","acknowledged"]);
 // Furlough is deliberately NOT included — Furlough doesn't necessarily
 // mean the employee has permanently left the company, per the explicit
 // requirement, so it stays in the normal Active Employees list.
@@ -6590,6 +6590,10 @@ const BUILDERS = {
           </div>
           <div id="swapPreview" class="banner note" style="margin-top:4px; margin-bottom:14px; display:none;"></div>
         </div>
+        <div id="absenceDateField" style="display:none;">
+          <label>Date of Absence</label>
+          <input type="date" id="reqAbsenceDate">
+        </div>
         <label>Details</label>
         <textarea id="reqDetails" placeholder="Describe your request..."></textarea>
         <button class="btn" id="reqSubmitBtn" onclick="submitMyRequest()">Submit Request</button>
@@ -8337,6 +8341,8 @@ function toggleSwapFields(){
   document.getElementById('swapFields').style.display = isSwap ? 'block' : 'none';
   if(isSwap) updateSwapPreview();
 
+  document.getElementById('absenceDateField').style.display = (type === 'Absence / Call-Out Notice') ? 'block' : 'none';
+
   const placeholders = {
     'Absence / Call-Out Notice': 'Reason for Absence / Shift Schedule',
     'Late / Tardiness Notice': 'Describe Your Notice / Minutes Late / Shift Schedule',
@@ -8431,10 +8437,16 @@ async function submitMyRequestInner(){
     if(!SwapWithName){ err.textContent="Type a name and pick a real match from the suggestions."; err.style.display='block'; return; }
   }
 
+  let AbsenceDate = '';
+  if(Type === 'Absence / Call-Out Notice'){
+    AbsenceDate = document.getElementById('reqAbsenceDate').value;
+    if(!AbsenceDate){ err.textContent="Please select the date you'll be absent."; err.style.display='block'; return; }
+  }
+
   if(editingRequestId){
     btnLoading('reqSubmitBtn', 'Updating...');
     if(USE_REMOTE()){
-      const r = await apiPostMinDelay('editRequest', {id:editingRequestId, Type, Details, SwapDay, TheirDay, SwapWithName});
+      const r = await apiPostMinDelay('editRequest', {id:editingRequestId, Type, Details, SwapDay, TheirDay, SwapWithName, AbsenceDate});
       if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('reqSubmitBtn','Update Request'); return; }
       await refreshMyRequests();
     } else {
@@ -8451,7 +8463,7 @@ async function submitMyRequestInner(){
 
   btnLoading('reqSubmitBtn');
   if(USE_REMOTE()){
-    const r = await apiPostMinDelay('submitRequest', {EmployeeName: CURRENT_EMPLOYEE.name, Type, Details, SwapDay, TheirDay, SwapWithName});
+    const r = await apiPostMinDelay('submitRequest', {EmployeeName: CURRENT_EMPLOYEE.name, Type, Details, SwapDay, TheirDay, SwapWithName, AbsenceDate});
     if(!r.ok){ err.textContent = r.error || "Couldn't submit."; err.style.display='block'; btnReset('reqSubmitBtn','Submit Request'); return; }
     await refreshMyRequests();
   } else {
@@ -8477,6 +8489,9 @@ function startEditRequest(id){
     document.getElementById('theirDayField').style.display = diff ? 'block' : 'none';
     if(diff) document.getElementById('reqTheirDay').value = r.theirDay;
     updateSwapPreview();
+  }
+  if(r.type === 'Absence / Call-Out Notice' && r.absenceDate){
+    document.getElementById('reqAbsenceDate').value = r.absenceDate;
   }
   editingRequestId = id;
   document.getElementById('reqSubmitBtn').textContent = 'Update Request';
