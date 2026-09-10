@@ -1560,13 +1560,21 @@ function employmentStatusPill(employmentStatus, dateHired){
   return employmentStatus;
 }
 
+// Only Shift Manager and Supervisor get their schedule Position
+// locked to their All-Employees Position — these are the two roles
+// where the schedule swap fix (which recombines venue/time from one
+// person with the OTHER person's own position) actually matters.
+// Slot Tech, Security, Attendant, Cashier, and Membership are
+// deliberately NOT locked here: they were previously included, but
+// that "fixed position" mechanism could occasionally leave the
+// wrong value selected in a disabled dropdown (a Slot Technician's
+// schedule position was seen showing "Shift Manager" instead of
+// "Slot Tech" after an edit) — removing them from this map means
+// their Position field goes back to being a normal, freely-editable
+// dropdown, with no fixed-position logic involved at all.
 const ROSTER_POSITION_TO_SCHEDULE_POSITION = {
   "Shift Manager": "Shift Manager",
   "Supervisor": "Supervisor",
-  "Technical Supervisor": "Slot Tech",
-  "Assistant Technical Supervisor": "Slot Tech",
-  "Slot Technician": "Slot Tech",
-  "Security": "Security",
 };
 function getUniqueSchedulePositions(){
   const set = new Set(EXTRA_POSITION_OPTIONS);
@@ -1798,6 +1806,12 @@ async function saveWeekSchedule(){
   const err = document.getElementById('weekErr');
   err.style.display = 'none';
 
+  // Recomputed independently rather than trusting the (possibly
+  // disabled) dropdowns' selected values — see saveCellEdit() for why.
+  const roster = EMPLOYEE_ROSTER.find(e=>e.name.trim().toLowerCase() === name.trim().toLowerCase());
+  const rosterPositionKey = roster ? Object.keys(ROSTER_POSITION_TO_SCHEDULE_POSITION).find(k => k.toLowerCase() === roster.position.trim().toLowerCase()) : null;
+  const fixedPosition = rosterPositionKey ? ROSTER_POSITION_TO_SCHEDULE_POSITION[rosterPositionKey] : null;
+
   const cells = [];
   for(let i=0; i<days.length; i++){
     const status = document.getElementById(`weekDay${i}Status`).value;
@@ -1805,7 +1819,7 @@ async function saveWeekSchedule(){
     if(status === 'LEAVE'){ cells.push('LEAVE'); continue; }
     const venue = document.getElementById(`weekDay${i}Venue`).value;
     const time = document.getElementById(`weekDay${i}Time`).value;
-    const position = document.getElementById(`weekDay${i}Position`).value;
+    const position = fixedPosition || document.getElementById(`weekDay${i}Position`).value;
     if(!time || !position){ err.textContent = `Pick a time and position for ${fmtDayLabel(days[i])}.`; err.style.display = 'block'; return; }
     cells.push(`${venue} ${time} ${position}`);
   }
@@ -1843,7 +1857,15 @@ async function saveCellEdit(){
   else {
     const venue = document.getElementById('cellVenue').value;
     const time = document.getElementById('cellTime').value;
-    const position = document.getElementById('cellPosition').value;
+    // Recomputed independently rather than trusting the (possibly
+    // disabled) dropdown's selected value — guarantees a Shift
+    // Manager/Supervisor's saved Position always matches their real
+    // All-Employees Position exactly, even if the dropdown's own
+    // option-matching ever mis-selects something else.
+    const roster = EMPLOYEE_ROSTER.find(e=>e.name.trim().toLowerCase() === cellModalTarget.name.trim().toLowerCase());
+    const rosterPositionKey = roster ? Object.keys(ROSTER_POSITION_TO_SCHEDULE_POSITION).find(k => k.toLowerCase() === roster.position.trim().toLowerCase()) : null;
+    const fixedPosition = rosterPositionKey ? ROSTER_POSITION_TO_SCHEDULE_POSITION[rosterPositionKey] : null;
+    const position = fixedPosition || document.getElementById('cellPosition').value;
     if(!time || !position){ err.textContent = "Pick a time and position."; err.style.display = 'block'; return; }
     value = `${venue} ${time} ${position}`;
   }
