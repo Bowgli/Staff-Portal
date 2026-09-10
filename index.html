@@ -2505,11 +2505,11 @@ async function loadRemoteData(){
     // into sequential ones). Each group's own fallback shape mirrors
     // exactly what its fields were defaulting to before.
     const emptyScheduleGroup = {roster:[], schedule:{days:[],rows:[]}, nextSchedule:{days:[],rows:[],published:false}, accountsStatus:[]};
-    const emptyGeneralGroup = {attendance:[], announcements:[], formsLibrary:[], nominations:[]};
-    const emptyMgmtBulkA = {recognition:[], requests:[], concerns:[]};
+    const emptyGeneralGroup = {announcements:[], formsLibrary:[], nominations:[]};
+    const emptyMgmtBulkA = {attendance:[], recognition:[], requests:[], concerns:[]};
     const emptyMgmtBulkB = {suggestions:[], evaluations:[], disciplinaryRecords:[]};
     const emptyMyPersonalGroup = {myConcerns:[], mySuggestions:[], myGivenEvaluations:[], myDisciplinaryRecords:[]};
-    const emptyMyEmployeeScopedGroup = {myEvaluationsReceived:[], myRequestsScoped:[], myRecognition:[]};
+    const emptyMyEmployeeScopedGroup = {myEvaluationsReceived:[], myRequestsScoped:[], myRecognition:[], myAttendance:[]};
     const [scheduleGroup, generalGroup, myPersonalGroup, mgmtBulkA, mgmtBulkB, myEmpScopedGroup] = await Promise.all([
       fastOrFallback('scheduleGroup', emptyScheduleGroup),
       fastOrFallback('generalGroup', emptyGeneralGroup),
@@ -2519,7 +2519,8 @@ async function loadRemoteData(){
       !isMgmtCapable ? fastOrFallback('myEmployeeScopedGroup', emptyMyEmployeeScopedGroup, 'name=' + encodeURIComponent(myName)) : Promise.resolve(emptyMyEmployeeScopedGroup)
     ]);
     const roster = scheduleGroup.roster, schedule = scheduleGroup.schedule, nextSchedule = scheduleGroup.nextSchedule, accountsStatus = scheduleGroup.accountsStatus;
-    const attendance = generalGroup.attendance, announcements = generalGroup.announcements, formsLibrary = generalGroup.formsLibrary, nominations = generalGroup.nominations;
+    const announcements = generalGroup.announcements, formsLibrary = generalGroup.formsLibrary, nominations = generalGroup.nominations;
+    const attendance = isMgmtCapable ? mgmtBulkA.attendance : myEmpScopedGroup.myAttendance;
     const myConcernsRaw = myPersonalGroup.myConcerns, mySuggestionsRaw = myPersonalGroup.mySuggestions, myGivenEvaluationsRaw = myPersonalGroup.myGivenEvaluations, myDisciplinaryRaw = myPersonalGroup.myDisciplinaryRecords;
     const recognition = mgmtBulkA.recognition, requests = mgmtBulkA.requests, concerns = mgmtBulkA.concerns;
     const suggestions = mgmtBulkB.suggestions, evaluations = mgmtBulkB.evaluations, disciplinaryRecords = mgmtBulkB.disciplinaryRecords;
