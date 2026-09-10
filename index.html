@@ -1875,17 +1875,28 @@ async function saveCellEdit(){
   btn.disabled = true;
   btn.innerHTML = `<span class="btn-spinner"></span>Saving...`;
 
-  if(USE_REMOTE()){
-    const r = await apiPostMinDelay('updateScheduleCell', {name: cellModalTarget.name, dayIndex: cellModalTarget.dayIndex, value, sheetName: cellModalTarget.sheetName});
-    if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display = 'block'; btn.disabled=false; btn.textContent='Save'; return; }
-    await refreshScheduleOnly();
-  } else {
-    const rows = cellModalTarget.sheetName === 'NextSchedule' ? NEXT_SCHEDULE_ROWS : SCHEDULE_ROWS;
-    const row = rows.find(x=>x.name===cellModalTarget.name);
-    if(row) row.cells[cellModalTarget.dayIndex] = value;
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPostMinDelay('updateScheduleCell', {name: cellModalTarget.name, dayIndex: cellModalTarget.dayIndex, value, sheetName: cellModalTarget.sheetName});
+      if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display = 'block'; btn.disabled=false; btn.textContent='Save'; return; }
+      await refreshScheduleOnly();
+    } else {
+      const rows = cellModalTarget.sheetName === 'NextSchedule' ? NEXT_SCHEDULE_ROWS : SCHEDULE_ROWS;
+      const row = rows.find(x=>x.name===cellModalTarget.name);
+      if(row) row.cells[cellModalTarget.dayIndex] = value;
+    }
+    closeCellModal();
+    renderView('mgmt-schedule');
+  } catch(e){
+    // Without this, a timeout/network failure here (fetchWithTimeout
+    // throws rather than returning {ok:false}) left the button stuck
+    // on "Saving..." forever with no visible error — the request had
+    // actually failed, but nothing ever told the button to recover.
+    err.textContent = e.message || "Couldn't save — please try again.";
+    err.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Save';
   }
-  closeCellModal();
-  renderView('mgmt-schedule');
 }
 
 function renderMyScheduleGrid(row, days){
