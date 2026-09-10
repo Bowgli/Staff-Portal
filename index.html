@@ -4542,7 +4542,7 @@ async function openConcernsArchivedPage(){
           statusLastChangedAt:c.StatusLastChangedAt,
           investigationCreatedByAccount:c.InvestigationCreatedByAccount, investigationCreatedAt:c.InvestigationCreatedAt,
           archived: true
-        }));
+        })).sort((a,b)=> new Date(b.date) - new Date(a.date)); // newest Date of Record first
       }
     }
   } catch(e){
@@ -4565,7 +4565,8 @@ async function openRequestsArchivedPage(){
         alert((raw && raw.error) || "Couldn't load Archived Requests — unexpected response from the server.");
         requestsArchiveData = [];
       } else {
-        requestsArchiveData = raw.map(r => ({id:r.ID, employeeName:r.EmployeeName, type:r.Type, details:r.Details, date:r.Date, status:r.Status, actionBy:r.ActionBy, archived:true}));
+        requestsArchiveData = raw.map(r => ({id:r.ID, employeeName:r.EmployeeName, type:r.Type, details:r.Details, date:r.Date, status:r.Status, actionBy:r.ActionBy, archived:true}))
+          .sort((a,b)=> new Date(b.date) - new Date(a.date)); // newest Date of Record first
       }
     }
   } catch(e){
@@ -4593,7 +4594,8 @@ async function openSuggestionsArchivedPage(){
         alert((raw && raw.error) || "Couldn't load Archived Suggestions — unexpected response from the server.");
         suggestionsArchiveData = [];
       } else {
-        suggestionsArchiveData = raw.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID, archived:true}));
+        suggestionsArchiveData = raw.map(s => ({from:s.From, idea:s.Idea, date:s.Date, status:s.Status||'reviewed', id:s.ID, archived:true}))
+          .sort((a,b)=> new Date(b.date) - new Date(a.date)); // newest Date of Record first
       }
     }
   } catch(e){
