@@ -1560,21 +1560,22 @@ function employmentStatusPill(employmentStatus, dateHired){
   return employmentStatus;
 }
 
-// Only Shift Manager and Supervisor get their schedule Position
-// locked to their All-Employees Position — these are the two roles
-// where the schedule swap fix (which recombines venue/time from one
-// person with the OTHER person's own position) actually matters.
-// Slot Tech, Security, Attendant, Cashier, and Membership are
-// deliberately NOT locked here: they were previously included, but
-// that "fixed position" mechanism could occasionally leave the
-// wrong value selected in a disabled dropdown (a Slot Technician's
-// schedule position was seen showing "Shift Manager" instead of
-// "Slot Tech" after an edit) — removing them from this map means
-// their Position field goes back to being a normal, freely-editable
-// dropdown, with no fixed-position logic involved at all.
+// Shift Manager, Supervisor, and the Slot Tech/Security roles get
+// their schedule Position locked to their All-Employees Position.
+// The earlier bug (a Slot Technician's schedule position sometimes
+// showing "Shift Manager" instead of "Slot Tech") was in how the
+// disabled dropdown displayed/selected its value, NOT in this map —
+// saveCellEdit() and saveWeekSchedule() now recompute this fixed
+// position fresh from the Roster at save time instead of trusting
+// the dropdown's displayed value, so the saved Position is always
+// correct regardless of what the (disabled) dropdown happens to show.
 const ROSTER_POSITION_TO_SCHEDULE_POSITION = {
   "Shift Manager": "Shift Manager",
   "Supervisor": "Supervisor",
+  "Technical Supervisor": "Slot Tech",
+  "Assistant Technical Supervisor": "Slot Tech",
+  "Slot Technician": "Slot Tech",
+  "Security": "Security",
 };
 function getUniqueSchedulePositions(){
   const set = new Set(EXTRA_POSITION_OPTIONS);
