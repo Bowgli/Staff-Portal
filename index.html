@@ -1587,16 +1587,20 @@ function getUniqueSchedulePositions(){
 }
 
 async function updateScheduleDept(name, department, sheetName){
-  if(USE_REMOTE()){
-    const r = await apiPost('updateScheduleDepartment', {name, department, sheetName});
-    if(!r.ok){ alert(r.error || "Couldn't update."); return; }
-    await refreshScheduleOnly();
-  } else {
-    const rows = sheetName === 'NextSchedule' ? NEXT_SCHEDULE_ROWS : SCHEDULE_ROWS;
-    const row = rows.find(x=>x.name===name);
-    if(row) row.department = department;
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPost('updateScheduleDepartment', {name, department, sheetName});
+      if(!r.ok){ alert(r.error || "Couldn't update."); return; }
+      await refreshScheduleOnly();
+    } else {
+      const rows = sheetName === 'NextSchedule' ? NEXT_SCHEDULE_ROWS : SCHEDULE_ROWS;
+      const row = rows.find(x=>x.name===name);
+      if(row) row.department = department;
+    }
+    renderView('mgmt-schedule');
+  } catch(e){
+    alert(e.message || "Couldn't update — please try again.");
   }
-  renderView('mgmt-schedule');
 }
 
 async function updateNextWeekDates(){
@@ -1609,12 +1613,19 @@ async function updateNextWeekDates(){
   btn.disabled = true;
   btn.innerHTML = `<span class="btn-spinner"></span>Saving...`;
 
-  if(USE_REMOTE()){
-    const r = await apiPostMinDelay('updateNextScheduleDates', {startDate});
-    if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display = 'block'; btn.disabled=false; btn.textContent='Set Dates'; return; }
-    await refreshScheduleOnly();
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPostMinDelay('updateNextScheduleDates', {startDate});
+      if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display = 'block'; btn.disabled=false; btn.textContent='Set Dates'; return; }
+      await refreshScheduleOnly();
+    }
+    renderView('mgmt-schedule');
+  } catch(e){
+    err.textContent = e.message || "Couldn't update — please try again.";
+    err.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Set Dates';
   }
-  renderView('mgmt-schedule');
 }
 
 async function promoteNextWeek(){
@@ -5120,12 +5131,18 @@ async function handleDiscFileUpload(event){
     const base64 = reader.result.split(',')[1];
     const listEl = document.getElementById('discAttachmentList');
     listEl.innerHTML = `<p class="muted" style="font-size:13px;"><span class="btn-spinner"></span>Uploading ${file.name}…</p>` + renderDiscAttachmentList();
-    const r = await apiPost('uploadDisciplinaryFile', {base64, mimeType: file.type, fileName: file.name});
-    if(!r.ok){ alert(r.error || "Upload failed."); listEl.innerHTML = renderDiscAttachmentList(); return; }
-    discCaseAttachments.push({fileId: r.fileId, fileName: r.fileName});
-    listEl.innerHTML = renderDiscAttachmentList();
-    event.target.value = '';
+    try{
+      const r = await apiPost('uploadDisciplinaryFile', {base64, mimeType: file.type, fileName: file.name});
+      if(!r.ok){ alert(r.error || "Upload failed."); listEl.innerHTML = renderDiscAttachmentList(); return; }
+      discCaseAttachments.push({fileId: r.fileId, fileName: r.fileName});
+      listEl.innerHTML = renderDiscAttachmentList();
+      event.target.value = '';
+    } catch(e){
+      alert(e.message || "Upload failed — please try again.");
+      listEl.innerHTML = renderDiscAttachmentList();
+    }
   };
+  reader.onerror = ()=>{ alert("Couldn't read that file — please try again."); };
   reader.readAsDataURL(file);
 }
 
@@ -5148,12 +5165,18 @@ async function handleDiscIncidentEditFileUpload(event){
     const base64 = reader.result.split(',')[1];
     const listEl = document.getElementById('discIncidentEditAttachmentList');
     listEl.innerHTML = `<p class="muted" style="font-size:13px;"><span class="btn-spinner"></span>Uploading ${file.name}…</p>` + renderDiscIncidentEditAttachmentList();
-    const r = await apiPost('uploadDisciplinaryFile', {base64, mimeType: file.type, fileName: file.name});
-    if(!r.ok){ alert(r.error || "Upload failed."); listEl.innerHTML = renderDiscIncidentEditAttachmentList(); return; }
-    discIncidentEditAttachments.push({fileId: r.fileId, fileName: r.fileName});
-    listEl.innerHTML = renderDiscIncidentEditAttachmentList();
-    event.target.value = '';
+    try{
+      const r = await apiPost('uploadDisciplinaryFile', {base64, mimeType: file.type, fileName: file.name});
+      if(!r.ok){ alert(r.error || "Upload failed."); listEl.innerHTML = renderDiscIncidentEditAttachmentList(); return; }
+      discIncidentEditAttachments.push({fileId: r.fileId, fileName: r.fileName});
+      listEl.innerHTML = renderDiscIncidentEditAttachmentList();
+      event.target.value = '';
+    } catch(e){
+      alert(e.message || "Upload failed — please try again.");
+      listEl.innerHTML = renderDiscIncidentEditAttachmentList();
+    }
   };
+  reader.onerror = ()=>{ alert("Couldn't read that file — please try again."); };
   reader.readAsDataURL(file);
 }
 
@@ -8344,14 +8367,18 @@ async function startTelegramLink(){
     statusEl.innerHTML = `<div class="banner note" style="margin-bottom:0;">Connect the backend first (see deployment guide) — this button will generate a real code once <span class="mono">SHEET_API_URL</span> is set.</div>`;
     return;
   }
-  const r = await apiPost('startTelegramLink', {employeeName: CURRENT_EMPLOYEE.name});
-  if(!r.ok){ statusEl.innerHTML = `<div class="banner" style="margin-bottom:0;">Couldn't generate a code. Try again.</div>`; return; }
-  const botLink = r.botUsername ? `https://t.me/${r.botUsername}` : "your company's Telegram bot";
-  statusEl.innerHTML = `<div class="banner note" style="margin-bottom:0;">
-    1. Open <a href="${botLink}" target="_blank" style="color:var(--blue);">${botLink}</a> in Telegram<br>
-    2. Send: <span class="mono">/link ${r.code}</span><br>
-    3. You'll get a confirmation message once linked.
-  </div>`;
+  try{
+    const r = await apiPost('startTelegramLink', {employeeName: CURRENT_EMPLOYEE.name});
+    if(!r.ok){ statusEl.innerHTML = `<div class="banner" style="margin-bottom:0;">Couldn't generate a code. Try again.</div>`; return; }
+    const botLink = r.botUsername ? `https://t.me/${r.botUsername}` : "your company's Telegram bot";
+    statusEl.innerHTML = `<div class="banner note" style="margin-bottom:0;">
+      1. Open <a href="${botLink}" target="_blank" style="color:var(--blue);">${botLink}</a> in Telegram<br>
+      2. Send: <span class="mono">/link ${r.code}</span><br>
+      3. You'll get a confirmation message once linked.
+    </div>`;
+  } catch(e){
+    statusEl.innerHTML = `<div class="banner" style="margin-bottom:0;">${e.message || "Couldn't generate a code. Try again."}</div>`;
+  }
 }
 
 let editingRequestId = null;
@@ -8481,34 +8508,46 @@ async function submitMyRequestInner(){
 
   if(editingRequestId){
     btnLoading('reqSubmitBtn', 'Updating...');
-    if(USE_REMOTE()){
-      const r = await apiPostMinDelay('editRequest', {id:editingRequestId, Type, Details, SwapDay, TheirDay, SwapWithName, AbsenceDate});
-      if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('reqSubmitBtn','Update Request'); return; }
-      await refreshMyRequests();
-    } else {
-      const req = MOCK.requests.find(x=>x.id===editingRequestId);
-      if(req){ req.type = Type; req.details = Details; req.swapDay = SwapDay; req.theirDay = TheirDay; req.swapWithName = SwapWithName; }
+    try{
+      if(USE_REMOTE()){
+        const r = await apiPostMinDelay('editRequest', {id:editingRequestId, Type, Details, SwapDay, TheirDay, SwapWithName, AbsenceDate});
+        if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('reqSubmitBtn','Update Request'); return; }
+        await refreshMyRequests();
+      } else {
+        const req = MOCK.requests.find(x=>x.id===editingRequestId);
+        if(req){ req.type = Type; req.details = Details; req.swapDay = SwapDay; req.theirDay = TheirDay; req.swapWithName = SwapWithName; }
+      }
+      editingRequestId = null;
+      await btnSent('reqSubmitBtn');
+      document.getElementById('reqDetails').value='';
+      renderView('requests');
+      document.getElementById('reqOk').style.display='block';
+    } catch(e){
+      err.textContent = e.message || "Couldn't update — please try again.";
+      err.style.display='block';
+      btnReset('reqSubmitBtn','Update Request');
     }
-    editingRequestId = null;
-    await btnSent('reqSubmitBtn');
-    document.getElementById('reqDetails').value='';
-    renderView('requests');
-    document.getElementById('reqOk').style.display='block';
     return;
   }
 
   btnLoading('reqSubmitBtn');
-  if(USE_REMOTE()){
-    const r = await apiPostMinDelay('submitRequest', {EmployeeName: CURRENT_EMPLOYEE.name, Type, Details, SwapDay, TheirDay, SwapWithName, AbsenceDate});
-    if(!r.ok){ err.textContent = r.error || "Couldn't submit."; err.style.display='block'; btnReset('reqSubmitBtn','Submit Request'); return; }
-    await refreshMyRequests();
-  } else {
-    MOCK.requests.unshift({type:Type, date:"Just now", status:"pending", swapDay:SwapDay, theirDay:TheirDay, swapWithName:SwapWithName});
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPostMinDelay('submitRequest', {EmployeeName: CURRENT_EMPLOYEE.name, Type, Details, SwapDay, TheirDay, SwapWithName, AbsenceDate});
+      if(!r.ok){ err.textContent = r.error || "Couldn't submit."; err.style.display='block'; btnReset('reqSubmitBtn','Submit Request'); return; }
+      await refreshMyRequests();
+    } else {
+      MOCK.requests.unshift({type:Type, date:"Just now", status:"pending", swapDay:SwapDay, theirDay:TheirDay, swapWithName:SwapWithName});
+    }
+    await btnSent('reqSubmitBtn');
+    document.getElementById('reqDetails').value='';
+    ok.style.display='block';
+    renderView('requests');
+  } catch(e){
+    err.textContent = e.message || "Couldn't submit — please try again.";
+    err.style.display='block';
+    btnReset('reqSubmitBtn','Submit Request');
   }
-  await btnSent('reqSubmitBtn');
-  document.getElementById('reqDetails').value='';
-  ok.style.display='block';
-  renderView('requests');
 }
 
 function startEditRequest(id){
@@ -8807,34 +8846,46 @@ async function submitMySuggestion(){
 
   if(editingSuggestionId){
     btnLoading('suggSubmitBtn', 'Updating...');
-    if(USE_REMOTE()){
-      const r = await apiPostMinDelay('editSuggestion', {id:editingSuggestionId, Idea});
-      if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('suggSubmitBtn','Update Suggestion'); return; }
-      await refreshMySuggestions();
-    } else {
-      const s = MY_SUGGESTIONS.find(x=>x.id===editingSuggestionId);
-      if(s) s.idea = Idea;
+    try{
+      if(USE_REMOTE()){
+        const r = await apiPostMinDelay('editSuggestion', {id:editingSuggestionId, Idea});
+        if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('suggSubmitBtn','Update Suggestion'); return; }
+        await refreshMySuggestions();
+      } else {
+        const s = MY_SUGGESTIONS.find(x=>x.id===editingSuggestionId);
+        if(s) s.idea = Idea;
+      }
+      editingSuggestionId = null;
+      await btnSent('suggSubmitBtn');
+      document.getElementById('suggIdea').value='';
+      document.getElementById('anonSugg').checked = true;
+      renderView('suggestion');
+      document.getElementById('suggOk').style.display='block';
+    } catch(e){
+      err.textContent = e.message || "Couldn't update — please try again.";
+      err.style.display='block';
+      btnReset('suggSubmitBtn','Update Suggestion');
     }
-    editingSuggestionId = null;
-    await btnSent('suggSubmitBtn');
-    document.getElementById('suggIdea').value='';
-    document.getElementById('anonSugg').checked = true;
-    renderView('suggestion');
-    document.getElementById('suggOk').style.display='block';
     return;
   }
 
   const From = anon ? "Anonymous" : CURRENT_EMPLOYEE.fullName;
   btnLoading('suggSubmitBtn');
-  if(USE_REMOTE()){
-    const r = await apiPostMinDelay('submitSuggestion', {From, Idea, Anonymous: anon, SubmittedBy: CURRENT_EMPLOYEE.fullName});
-    if(!r.ok){ err.textContent = r.error || "Couldn't submit."; err.style.display='block'; btnReset('suggSubmitBtn','Submit Suggestion'); return; }
-    await refreshMySuggestions();
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPostMinDelay('submitSuggestion', {From, Idea, Anonymous: anon, SubmittedBy: CURRENT_EMPLOYEE.fullName});
+      if(!r.ok){ err.textContent = r.error || "Couldn't submit."; err.style.display='block'; btnReset('suggSubmitBtn','Submit Suggestion'); return; }
+      await refreshMySuggestions();
+    }
+    await btnSent('suggSubmitBtn');
+    document.getElementById('suggIdea').value='';
+    renderView('suggestion');
+    document.getElementById('suggOk').style.display='block';
+  } catch(e){
+    err.textContent = e.message || "Couldn't submit — please try again.";
+    err.style.display='block';
+    btnReset('suggSubmitBtn','Submit Suggestion');
   }
-  await btnSent('suggSubmitBtn');
-  document.getElementById('suggIdea').value='';
-  renderView('suggestion');
-  document.getElementById('suggOk').style.display='block';
 }
 
 function startEditSuggestion(id){
@@ -8914,27 +8965,39 @@ async function submitEvaluationNow(){
   if(editingEvaluationId){
     body.id = editingEvaluationId;
     btnLoading('evalSubmitBtn', 'Updating...');
-    if(USE_REMOTE()){
-      const r = await apiPostMinDelay('editEvaluation', body);
-      if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('evalSubmitBtn','Update Evaluation'); return; }
-      await loadRemoteData();
+    try{
+      if(USE_REMOTE()){
+        const r = await apiPostMinDelay('editEvaluation', body);
+        if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('evalSubmitBtn','Update Evaluation'); return; }
+        await loadRemoteData();
+      }
+      editingEvaluationId = null;
+      await btnSent('evalSubmitBtn');
+      renderView('evaluate');
+      document.getElementById('evalOk').style.display='block';
+    } catch(e){
+      err.textContent = e.message || "Couldn't update — please try again.";
+      err.style.display='block';
+      btnReset('evalSubmitBtn','Update Evaluation');
     }
-    editingEvaluationId = null;
-    await btnSent('evalSubmitBtn');
-    renderView('evaluate');
-    document.getElementById('evalOk').style.display='block';
     return;
   }
 
   btnLoading('evalSubmitBtn');
-  if(USE_REMOTE()){
-    const r = await apiPostMinDelay('submitEvaluation', body);
-    if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnReset('evalSubmitBtn','Submit Evaluation'); return; }
-    await loadRemoteData();
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPostMinDelay('submitEvaluation', body);
+      if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnReset('evalSubmitBtn','Submit Evaluation'); return; }
+      await loadRemoteData();
+    }
+    await btnSent('evalSubmitBtn');
+    renderView('evaluate');
+    document.getElementById('evalOk').style.display='block';
+  } catch(e){
+    err.textContent = e.message || "Couldn't save — please try again.";
+    err.style.display='block';
+    btnReset('evalSubmitBtn','Submit Evaluation');
   }
-  await btnSent('evalSubmitBtn');
-  renderView('evaluate');
-  document.getElementById('evalOk').style.display='block';
 }
 
 function startEditEvaluation(id){
@@ -9071,15 +9134,22 @@ async function issueRecognitionNow(){
   btn.disabled = true;
   btn.innerHTML = `<span class="btn-spinner"></span>Sending...`;
 
-  if(USE_REMOTE()){
-    const r = await apiPostMinDelay('issueRecognition', {EmployeeName, AwardTitle, Note});
-    if(!r.ok){ err.textContent = r.error || "Couldn't issue award."; err.style.display='block'; btn.disabled=false; btn.innerHTML='Issue Award'; return; }
+  try{
+    if(USE_REMOTE()){
+      const r = await apiPostMinDelay('issueRecognition', {EmployeeName, AwardTitle, Note});
+      if(!r.ok){ err.textContent = r.error || "Couldn't issue award."; err.style.display='block'; btn.disabled=false; btn.innerHTML='Issue Award'; return; }
+    }
+    MOCK.recognition.unshift({medal:"🏆", name:AwardTitle, desc:Note, employeeName:EmployeeName, date:"Just now"});
+    btn.innerHTML = `✓ Sent`;
+    await new Promise(r=>setTimeout(r, 600));
+    renderView('mgmt-recognition');
+    document.getElementById('recogOk').style.display='block';
+  } catch(e){
+    err.textContent = e.message || "Couldn't issue award — please try again.";
+    err.style.display='block';
+    btn.disabled = false;
+    btn.innerHTML = 'Issue Award';
   }
-  MOCK.recognition.unshift({medal:"🏆", name:AwardTitle, desc:Note, employeeName:EmployeeName, date:"Just now"});
-  btn.innerHTML = `✓ Sent`;
-  await new Promise(r=>setTimeout(r, 600));
-  renderView('mgmt-recognition');
-  document.getElementById('recogOk').style.display='block';
 }
 
 async function deleteRecognitionEntry(id, el){
@@ -9304,32 +9374,39 @@ async function postAnnouncement(){
   btn.disabled = true;
   btn.innerHTML = `<span class="btn-spinner"></span>${isEditing ? 'Saving...' : 'Sending...'}`;
 
-  if(isEditing){
-    // editAnnouncement only updates the row in place — it does NOT
-    // re-broadcast to Telegram or touch notification/unread state,
-    // per the "don't send duplicate notifications on edit" requirement.
-    if(USE_REMOTE()){
-      const r = await apiPostMinDelay('editAnnouncement', {id: editingAnnouncementId, Title, Body, TargetType, TargetValue});
-      if(!r.ok){ err.textContent = r.error || "Couldn't save changes."; err.style.display='block'; btn.disabled=false; btn.innerHTML='💾 Save Changes'; return; }
+  try{
+    if(isEditing){
+      // editAnnouncement only updates the row in place — it does NOT
+      // re-broadcast to Telegram or touch notification/unread state,
+      // per the "don't send duplicate notifications on edit" requirement.
+      if(USE_REMOTE()){
+        const r = await apiPostMinDelay('editAnnouncement', {id: editingAnnouncementId, Title, Body, TargetType, TargetValue});
+        if(!r.ok){ err.textContent = r.error || "Couldn't save changes."; err.style.display='block'; btn.disabled=false; btn.innerHTML='💾 Save Changes'; return; }
+      }
+      const a = ALL_ANNOUNCEMENTS.find(x=>x.ID===editingAnnouncementId);
+      if(a){ a.Title = Title; a.Body = Body; a.TargetType = TargetType; a.TargetValue = TargetValue; }
+      editingAnnouncementId = null;
+      btn.innerHTML = `✓ Saved`;
+      await new Promise(r=>setTimeout(r, 600));
+      renderView('mgmt-announcements');
+      return;
     }
-    const a = ALL_ANNOUNCEMENTS.find(x=>x.ID===editingAnnouncementId);
-    if(a){ a.Title = Title; a.Body = Body; a.TargetType = TargetType; a.TargetValue = TargetValue; }
-    editingAnnouncementId = null;
-    btn.innerHTML = `✓ Saved`;
+
+    if(USE_REMOTE()){
+      const r = await apiPostMinDelay('postAnnouncement', {Title, Body, PostedBy: CURRENT_USER.displayName, TargetType, TargetValue});
+      if(!r.ok){ err.textContent = r.error || "Couldn't post."; err.style.display='block'; btn.disabled=false; btn.innerHTML='Post'; return; }
+    }
+    ALL_ANNOUNCEMENTS.unshift({Title, Body, Date:"Just now", TargetType, TargetValue});
+    btn.innerHTML = `✓ Sent`;
     await new Promise(r=>setTimeout(r, 600));
     renderView('mgmt-announcements');
-    return;
+    document.getElementById('annOk').style.display='block';
+  } catch(e){
+    err.textContent = e.message || "Couldn't post — please try again.";
+    err.style.display='block';
+    btn.disabled = false;
+    btn.innerHTML = isEditing ? '💾 Save Changes' : 'Post';
   }
-
-  if(USE_REMOTE()){
-    const r = await apiPostMinDelay('postAnnouncement', {Title, Body, PostedBy: CURRENT_USER.displayName, TargetType, TargetValue});
-    if(!r.ok){ err.textContent = r.error || "Couldn't post."; err.style.display='block'; btn.disabled=false; btn.innerHTML='Post'; return; }
-  }
-  ALL_ANNOUNCEMENTS.unshift({Title, Body, Date:"Just now", TargetType, TargetValue});
-  btn.innerHTML = `✓ Sent`;
-  await new Promise(r=>setTimeout(r, 600));
-  renderView('mgmt-announcements');
-  document.getElementById('annOk').style.display='block';
 }
 
 // "View" — read-only lookup in a modal, same modal-overlay pattern
