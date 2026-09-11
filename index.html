@@ -6695,10 +6695,9 @@ const BUILDERS = {
         <table>
           <tr><th>Type</th><th>Date</th><th>Status</th><th></th></tr>
           ${MOCK.requests.map(r=>{
-            const isNotice = r.type==='Absence / Call-Out Notice' || r.type==='Late / Tardiness Notice';
             return `<tr><td>${r.type}${r.type==='Schedule Swap' && r.swapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.swapDay)}${r.theirDay && r.theirDay!==r.swapDay ? ' ↔ '+fmtDayLabel(r.theirDay) : ''} ↔ ${r.swapWithName}</span>` : ''}</td><td>${fmtDateTime(r.date)}</td><td>${statusPill(r.status)}</td>
             <td>${(()=>{
-              const canEdit = r.status==='pending' || (r.status==='needs-clarification' && isNotice);
+              const canEdit = r.status==='pending' || r.status==='needs-clarification';
               const canDelete = r.status==='pending';
               return `${canEdit ? `<button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditRequest('${r.id}')">✏️ Edit</button>` : ''}${canDelete ? `<button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyRequest('${r.id}', this)">🗑️ Delete</button>` : ''}`;
             })()}</td></tr>`;
@@ -6829,7 +6828,7 @@ const BUILDERS = {
         <table>
           <tr><th>Ref No.</th><th>Category</th><th>Subject</th><th>Venue</th><th>Date Submitted</th><th>Status</th><th></th></tr>
           ${MY_CONCERNS.map(c=>{
-            const canEdit = c.status==='Submitted' || !c.status; // legacy "Open" rows won't match, which is fine — they predate the edit window rule anyway
+            const canEdit = c.status==='Submitted' || c.status==='Pending Information' || !c.status; // legacy "Open" rows won't match, which is fine — they predate the edit window rule anyway. "Pending Information" (management asking for more detail) also stays editable, so the employee can actually respond with the clarification being asked for.
             return `<tr>
               <td class="mono">${c.refNo||'—'}</td>
               <td>${c.topic}</td>
