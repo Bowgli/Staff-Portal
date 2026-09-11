@@ -6686,6 +6686,7 @@ const BUILDERS = {
         <label>Details</label>
         <textarea id="reqDetails" placeholder="Describe your request..."></textarea>
         <button class="btn" id="reqSubmitBtn" onclick="submitMyRequest()">Submit Request</button>
+        ${editingRequestId ? `<button class="btn ghost auto" style="margin-top:8px;" onclick="cancelEditRequest()">Cancel</button>` : ''}
         <p class="login-err" id="reqErr"></p>
         <p class="login-ok" id="reqOk">Saved.</p>
       </div>
@@ -8592,6 +8593,10 @@ async function submitMyRequestInner(){
   }
 }
 
+function cancelEditRequest(){
+  editingRequestId = null;
+  renderView('requests'); // rebuilds the form fresh — its default markup has no pre-filled values, so this alone clears everything Edit had populated
+}
 function startEditRequest(id){
   const r = MOCK.requests.find(x=>x.id===id);
   if(!r) return;
