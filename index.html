@@ -3923,6 +3923,40 @@ let handbookOpenTopic = null; // which Suggested Topics category is expanded
 let handbookFullSectionId = null; // which section "View Full Section" is showing
 let handbookShowContacts = false; // whether the "Contact Group Gaming Manager..." panel is showing
 let handbookPersonalBalanceFlag = false; // true when the last query asked for the employee's OWN specific remaining balance — routes to the "check Leave Balance / contact HR" response instead of a normal search result
+// Full section content (html/qa/examples), fetched ONE section at a
+// time, only when actually needed for display — keyed by section
+// number. Once a section is fetched here it never needs fetching
+// again this session. Kept separate from HANDBOOK_INDEX (which only
+// ever holds the lightweight number/title/breadcrumb/keywords used
+// for search) precisely so the very first Assistant load stays small
+// and fast.
+let HANDBOOK_SECTION_CACHE = {};
+let handbookSectionLoading = {}; // {[number]: true} while a fetch for that section is in flight — prevents duplicate concurrent fetches for the same section
+// Fetches and caches one section's full content if not already
+// cached. Safe to call repeatedly — a cache hit resolves immediately
+// with no network call, and a fetch already in flight for the same
+// section is awaited rather than duplicated.
+async function ensureHandbookSectionLoaded(number){
+  number = String(number);
+  if(HANDBOOK_SECTION_CACHE[number]) return HANDBOOK_SECTION_CACHE[number];
+  if(handbookSectionLoading[number]) return null; // already being fetched elsewhere; that call's renderView() will pick it up
+  handbookSectionLoading[number] = true;
+  try{
+    const data = await apiGet('handbookSection&number=' + encodeURIComponent(number));
+    if(data && !data.error){
+      let qa = []; let examples = [];
+      try{ qa = JSON.parse(data.qa || '[]'); } catch(e){ qa = []; }
+      try{ examples = JSON.parse(data.examples || '[]'); } catch(e){ examples = []; }
+      HANDBOOK_SECTION_CACHE[number] = { html: data.html || '', qa, examples };
+    }
+  } catch(e){
+    console.error('ensureHandbookSectionLoaded failed for section', number, ':', e.message || e);
+  } finally {
+    delete handbookSectionLoading[number];
+  }
+  renderView('handbook');
+  return HANDBOOK_SECTION_CACHE[number] || null;
+}
 // The whole Handbook Assistant (landing/search-results/full-section/
 // contacts) stays on ONE view id ("handbook") — the app's normal
 // history tracking only pushes a new browser-history entry when the
@@ -3989,14 +4023,19 @@ async function ensureHandbookLoaded(){
         console.error(`handbookIndex returned an unexpected shape (attempt ${attempt+1}):`, data);
         throw new Error('Unexpected response shape');
       }
+      // Lightweight — number/title/breadcrumb/keywords/hasApproval
+      // only. Full content (html/qa/examples) is fetched per-section
+      // on demand — see ensureHandbookSectionLoaded() — because
+      // downloading the full text of all 192 sections before the
+      // employee has even asked anything was the actual cause of the
+      // Assistant's slow/timeout-prone first load.
       HANDBOOK_INDEX = data.sections.map(s => {
-        let qa = []; let examples = [];
+        let qa = [];
         try{ qa = JSON.parse(s.QA || '[]'); } catch(e){ qa = []; }
-        try{ examples = JSON.parse(s.Examples || '[]'); } catch(e){ examples = []; }
         return {
           number: String(s.Number != null ? s.Number : ''), title: s.Title || '', breadcrumb: s.Breadcrumb || '',
           keywords: String(s.Keywords||'').split(',').map(k=>k.trim()).filter(Boolean),
-          html: s.HTML || '', qa, examples, hasApproval: !!s.Approval,
+          hasApproval: !!s.Approval, qa,
         };
       });
       HANDBOOK_VERSION = data.version || '';
@@ -4064,13 +4103,11 @@ function handbookExpandTokens_(tokens){
 function handbookScoreSection_(section, tokens){
   let score = 0, distinct = 0;
   const titleLower = section.title.toLowerCase();
-  const contentLower = handbookStripHtml_(section.html).toLowerCase();
   const kwSet = new Set(section.keywords);
   tokens.forEach(t=>{
     let hit = 0;
     if(titleLower.indexOf(t) > -1) hit += 5;
     if(kwSet.has(t)) hit += 3;
-    if(contentLower.indexOf(t) > -1) hit += 1;
     if(hit) distinct++;
     score += hit;
   });
@@ -6558,18 +6595,22 @@ const BUILDERS = {
           <p class="muted">That section couldn't be found — it may have been renumbered in a recent handbook update. Please try your search again.</p>
         </div>`;
       }
+      const cached = HANDBOOK_SECTION_CACHE[s.number];
+      if(!cached) ensureHandbookSectionLoaded(s.number); // fire-and-forget — re-renders itself once loaded
       return `
         <div class="card">
           <button class="btn info auto no-print" style="margin-bottom:14px;" onclick="closeFullHandbookSection()">← Back</button>
           <h3><span class="ic">📖</span> Section ${s.number} — ${s.title}</h3>
           ${s.breadcrumb ? `<p class="muted" style="font-size:12px; margin-bottom:14px;">${s.breadcrumb}</p>` : ''}
-          <div class="hb-content">${s.html}</div>
+          ${cached ? `<div class="hb-content">${cached.html}</div>` : `<p class="muted"><span class="btn-spinner"></span> Loading section…</p>`}
         </div>`;
     }
     // ----- Results view (after a search or question) -----
     if(handbookResults !== null){
       const top = handbookResults[0];
       const isConfident = top && top.confident;
+      const topCached = isConfident ? HANDBOOK_SECTION_CACHE[top.section.number] : null;
+      if(isConfident && !topCached) ensureHandbookSectionLoaded(top.section.number); // fire-and-forget — re-renders itself once loaded
       return `
         <div class="card" style="margin-bottom:16px;">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
@@ -6578,12 +6619,12 @@ const BUILDERS = {
           </div>
           <p class="muted" style="font-size:12px; margin-bottom:4px;">Your Question</p>
           <p style="font-weight:600; margin-bottom:16px;">${handbookQuery}</p>
-          ${isConfident ? `
+          ${isConfident ? (topCached ? `
             <p class="muted hb-answer-label" style="margin-bottom:4px;">Direct Answer</p>
-            ${top.bestQA ? `<p style="line-height:1.7; font-size:14.5px; margin-bottom:14px;">${top.bestQA.a}</p>` : `<div class="hb-content" style="margin-bottom:14px;">${top.section.html.split('</p>').slice(0,2).join('</p>')+'</p>'}</div>`}
+            ${top.bestQA ? `<p style="line-height:1.7; font-size:14.5px; margin-bottom:14px;">${top.bestQA.a}</p>` : `<div class="hb-content" style="margin-bottom:14px;">${topCached.html.split('</p>').slice(0,2).join('</p>')+'</p>'}</div>`}
 
             <p class="muted hb-answer-label" style="margin-bottom:4px;">What the Handbook Says</p>
-            <div class="hb-content" style="margin-bottom:14px;">${top.section.html}</div>
+            <div class="hb-content" style="margin-bottom:14px;">${topCached.html}</div>
 
             ${top.section.hasApproval ? `<div class="hb-approval-note"><strong>Approval:</strong> This is subject to management approval / discretion and operational needs. The Assistant cannot make this decision for you — please confirm with your Supervisor, Manager, or HR.</div>` : ''}
 
@@ -6598,7 +6639,7 @@ const BUILDERS = {
               <p class="muted" style="font-size:12.5px; margin-bottom:8px;">Need more help with your specific situation?</p>
               ${contactBtn}
             </div>
-          ` : (handbookResults.length ? `
+          ` : `<p class="muted"><span class="btn-spinner"></span> Loading answer…</p>`) : (handbookResults.length ? `
             <p style="margin-bottom:10px;">Your question may relate to the following handbook topics. I found related sections, but I cannot confirm a complete answer from the available information.</p>
             <p class="muted" style="margin-bottom:14px; font-size:13.5px;">For a complete answer, please contact the Group Gaming Manager or Assistant Group Gaming Manager.</p>
             <p class="muted" style="font-size:12px; margin:14px 0 6px;">Related sections:</p>
