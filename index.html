@@ -4044,7 +4044,7 @@ const HANDBOOK_SYNONYMS_ = {
   'dress code': ['appearance','uniform'], 'uniform': ['appearance'],
 };
 function handbookTokenize_(q){
-  const STOP_TOKENS = new Set(['can','the','what','how','are','you','your','not','for','when','who','why']);
+  const STOP_TOKENS = new Set(['can','the','what','how','are','you','your','not','for','when','who','why','should']);
   return ((String(q||'').toLowerCase().match(/[a-z']{3,}/g)) || []).filter(t=>!STOP_TOKENS.has(t));
 }
 function handbookExpandTokens_(tokens){
@@ -4145,6 +4145,33 @@ function askHandbookSuggested(q){
   document.getElementById('handbookQueryInput') && (document.getElementById('handbookQueryInput').value = q);
   runHandbookQuery(q);
 }
+// Curated topic question — bypasses handbookScoreSection_/searchHandbook_
+// entirely. These section numbers were verified by hand against the
+// actual handbook, so they are shown as confident answers directly,
+// with no keyword-matching/confidence-threshold step that a short,
+// common-phrasing question (e.g. "How often is payroll?") could
+// otherwise fail even though the handbook clearly covers it.
+// Called from a Frequently Asked Employee Topics question — looks up
+// the curated {q, sections} entry by index (avoids having to inline
+// an array literal into an onclick attribute) and routes it through
+// the curated, confidence-bypassing path above.
+function askHandbookTopicQuestion(topicIndex, questionIndex){
+  const item = HANDBOOK_TOPICS_[topicIndex] && HANDBOOK_TOPICS_[topicIndex].questions[questionIndex];
+  if(!item) return;
+  askHandbookCuratedQuestion(item.q, item.sections);
+}
+function askHandbookCuratedQuestion(q, sectionNumbers){
+  handbookQuery = q;
+  handbookFullSectionId = null;
+  handbookPersonalBalanceFlag = false;
+  const matched = sectionNumbers
+    .map(num => HANDBOOK_INDEX.find(s => String(s.number) === String(num)))
+    .filter(Boolean)
+    .map(section => ({section, score:99, distinct:99, bestQA:null, confident:true}));
+  handbookResults = matched.length ? matched : null;
+  pushHandbookState();
+  renderView('handbook');
+}
 function toggleHandbookTopic(label){
   handbookOpenTopic = (handbookOpenTopic === label) ? null : label;
   renderView('handbook');
@@ -4184,40 +4211,63 @@ function clearHandbookSearch(){
   renderView('handbook');
 }
 
+// Curated, hand-verified — every question here maps directly to a
+// specific handbook section (or a short, ordered list of them) that
+// a person actually checked contains the answer. Selecting one of
+// these NEVER goes through the general keyword search/confidence
+// scoring at all — see openHandbookTopicQuestion() below — so these
+// can never fall through to "I couldn't find a clear answer" the way
+// a generic search sometimes will for a short, common-phrasing
+// question. The generic search is still there for anything NOT in
+// this curated list (the "Ask a question" box above).
 const HANDBOOK_TOPICS_ = [
-  {icon:'📅', label:'Attendance & Scheduling', questions:[
-    'What happens if I am late?',
-    'What should I do if I cannot come to work?',
-    'What is the attendance policy?',
+  {icon:'📅', label:'Attendance & Scheduling', description:'Reporting absences, lateness, schedule changes, and swaps.', questions:[
+    {q:'What should I do if I will be late?', sections:['8.1.7']},
+    {q:'What should I do if I cannot report to work?', sections:['8.1.6']},
+    {q:'What is a No Call-No Show?', sections:['8.1.11']},
+    {q:'How are schedule changes handled?', sections:['8.1.2']},
+    {q:'Can I swap schedules with another employee?', sections:['8.1.3']},
+    {q:'What documentation may be required for an absence?', sections:['8.1.13']},
   ]},
-  {icon:'🏖️', label:'Leave & Time Off', questions:[
-    'How do I request vacation leave?',
-    'How much notice should I give for leave?',
-    'What is emergency leave?',
-    'What is bereavement leave?',
+  {icon:'🏖️', label:'Leave & Time Off', description:'Vacation, sick leave, probation, and leave request timing.', questions:[
+    {q:'How many vacation days are provided?', sections:['9.3']},
+    {q:'When can a new employee use paid vacation?', sections:['9.3.2']},
+    {q:'Can I request unpaid leave during probation?', sections:['9.3.1']},
+    {q:'What happens if I take unpaid leave during probation?', sections:['9.3.1']},
+    {q:'Does vacation leave increase after promotion?', sections:['9.3.3']},
+    {q:'What happens to unused vacation at the end of the year?', sections:['9.3.4']},
+    {q:'How much sick leave is provided?', sections:['9.4']},
+    {q:'How far in advance should I request leave?', sections:['9.2']},
   ]},
-  {icon:'📱', label:'Workplace Rules', questions:[
-    'Can I use my phone while working?',
-    'Can employees have visitors?',
-    'Can employees play on gaming machines?',
+  {icon:'📱', label:'Workplace Rules', description:'Personal devices, visitors, and machine use during work.', questions:[
+    {q:'Can I use my phone while working?', sections:['6.6']},
+    {q:'Can employees have visitors?', sections:['6.8']},
+    {q:'Can employees play on gaming machines?', sections:['6.3']},
   ]},
-  {icon:'👔', label:'Employee Conduct', questions:[
-    "What is the company's harassment policy?",
-    'What is professional communication?',
-    'What are the customer service standards?',
+  {icon:'👔', label:'Employee Conduct', description:'Harassment policy, professional communication, and customer service.', questions:[
+    {q:"What is the company's harassment policy?", sections:['2.2']},
+    {q:'What is professional communication?', sections:['7.1']},
+    {q:'What are the customer service standards?', sections:['7.3']},
   ]},
-  {icon:'💰', label:'Pay & Benefits', questions:[
-    'How often is payroll?',
-    'What should I do if I forget to clock in?',
-    'What is the overtime procedure?',
+  {icon:'💰', label:'Pay & Benefits', description:'Payroll schedule, timekeeping, overtime, and checkstubs.', questions:[
+    {q:'How often is payroll?', sections:['10.1']},
+    {q:'How are wages paid?', sections:['10.1']},
+    {q:'What should I do if I forget to clock in or out?', sections:['10.1']},
+    {q:'What is the overtime procedure?', sections:['10.6']},
+    {q:'What is required before working overtime?', sections:['10.6']},
+    {q:'Where can I find my checkstub information?', sections:['10.4','10.4.1']},
+    {q:'What are payroll deductions?', sections:['10.2']},
+    {q:'How can I verify my working hours?', sections:['10.4.1','10.1']},
   ]},
-  {icon:'🛡️', label:'Safety & Security', questions:[
-    'What should I do during a power outage?',
-    'What should I do during an emergency?',
+  {icon:'🛡️', label:'Safety & Security', description:'Emergency response for typhoons, earthquakes, and other hazards.', questions:[
+    {q:'What should I do during a power outage?', sections:['13.10','13.11']},
+    {q:'What should I do during an emergency?', sections:['13.10','13.11']},
   ]},
-  {icon:'📚', label:'Training', questions:[
-    'What training is required?',
-    'What happens after probation?',
+  {icon:'📚', label:'Training', description:'Orientation, probation, and ongoing skills training.', questions:[
+    {q:'What training is required for employees?', sections:['14.1','14.2']},
+    {q:'What training is required during probation?', sections:['3.5']},
+    {q:'Are emergency drills and training required?', sections:['13.5']},
+    {q:'What ongoing skills training is provided?', sections:['14.2']},
   ]},
 ];
 
@@ -6548,15 +6598,19 @@ const BUILDERS = {
               <p class="muted" style="font-size:12.5px; margin-bottom:8px;">Need more help with your specific situation?</p>
               ${contactBtn}
             </div>
+          ` : (handbookResults.length ? `
+            <p style="margin-bottom:10px;">Your question may relate to the following handbook topics. I found related sections, but I cannot confirm a complete answer from the available information.</p>
+            <p class="muted" style="margin-bottom:14px; font-size:13.5px;">For a complete answer, please contact the Group Gaming Manager or Assistant Group Gaming Manager.</p>
+            <p class="muted" style="font-size:12px; margin:14px 0 6px;">Related sections:</p>
+            ${handbookResults.map(r=>`<div class="feed-item" style="cursor:pointer; padding:10px 0;" onclick="viewFullHandbookSection('${r.section.number}')"><span style="font-size:13.5px;">📖 Section ${r.section.number} — ${r.section.title}</span></div>`).join('')}
+            <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
+              ${contactBtn}
+            </div>
           ` : `
             <p style="margin-bottom:14px;">I couldn't find a clear answer to your question in the Employee Handbook.</p>
             <p class="muted" style="margin-bottom:14px; font-size:13.5px;">For further clarification, please contact the Group Gaming Manager or Assistant Group Gaming Manager.</p>
             ${contactBtn}
-            ${handbookResults.length ? `
-              <p class="muted" style="font-size:12px; margin:18px 0 6px;">Closest related sections, if helpful:</p>
-              ${handbookResults.map(r=>`<div class="feed-item" style="cursor:pointer; padding:10px 0;" onclick="viewFullHandbookSection('${r.section.number}')"><span style="font-size:13.5px;">📖 Section ${r.section.number} — ${r.section.title}</span></div>`).join('')}
-            ` : ''}
-          `}
+          `)}
           ${disclaimer}
         </div>`;
     }
@@ -6573,15 +6627,19 @@ const BUILDERS = {
       ${disclaimer}
     </div>
     <div class="card">
-      <h3 style="margin-bottom:12px;">Popular Topics</h3>
-      ${HANDBOOK_TOPICS_.map(t=>{
+      <h3 style="margin-bottom:4px;">Frequently Asked Employee Topics</h3>
+      <p class="muted" style="font-size:12.5px; margin-bottom:12px;">Select a topic to view common questions and answers based on the Employee Handbook.</p>
+      ${HANDBOOK_TOPICS_.map((t,ti)=>{
         const isOpen = handbookOpenTopic === t.label;
         return `<div class="feed-item">
           <div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="toggleHandbookTopic('${t.label.replace(/'/g,"\\'")}')">
             <span style="font-size:14.5px; font-weight:600;">${t.icon} ${t.label}</span>
-            <span class="muted">${isOpen?'Hide ↑':'View →'}</span>
+            <span class="muted" style="font-size:12px;">${isOpen?'Hide ↑':`${t.questions.length} question${t.questions.length===1?'':'s'} →`}</span>
           </div>
-          ${isOpen ? `<div style="margin-top:10px;">${t.questions.map(q=>`<div class="btn ghost auto" style="display:block; text-align:left; margin-top:6px; cursor:pointer;" onclick="askHandbookSuggested('${q.replace(/'/g,"\\'")}')">${q}</div>`).join('')}</div>` : ''}
+          ${isOpen ? `
+            <p class="muted" style="font-size:12.5px; margin-top:6px; margin-bottom:10px;">${t.description||''}</p>
+            <div>${t.questions.map((item,qi)=>`<div class="btn ghost auto" style="display:block; text-align:left; margin-top:6px; cursor:pointer;" onclick="askHandbookTopicQuestion(${ti}, ${qi})">${item.q}</div>`).join('')}</div>
+          ` : ''}
         </div>`;
       }).join('')}
     </div>`;
