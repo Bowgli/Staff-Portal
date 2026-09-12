@@ -361,6 +361,18 @@
     th.print-only, td.print-only{ display:table-cell !important; }
   }
   .print-only{ display:none; }
+  /* ===== HANDBOOK & POLICY ASSISTANT — structured content ===== */
+  .hb-content p{margin-bottom:10px; line-height:1.65; font-size:14.5px;}
+  .hb-content ul{margin:6px 0 12px 20px; line-height:1.6; font-size:14.5px;}
+  .hb-content ul li{margin-bottom:4px;}
+  .hb-subhead{font-weight:700; margin-top:14px; margin-bottom:8px; font-size:14.5px; color:var(--gold);}
+  .hb-card{background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:10px;}
+  .hb-card-title{font-weight:700; margin-bottom:6px; font-size:14px;}
+  .hb-card ul{margin:0 0 0 18px; font-size:13.5px; line-height:1.6;}
+  .hb-qa{background:var(--panel-2); border-left:3px solid var(--blue); border-radius:6px; padding:10px 12px; margin-bottom:8px; font-size:13.5px; line-height:1.6;}
+  .hb-example{background:var(--teal-soft); border-left:3px solid var(--teal); border-radius:6px; padding:10px 12px; margin-bottom:8px; font-size:13.5px; line-height:1.6;}
+  .hb-approval-note{background:var(--orange-soft); border-left:3px solid var(--orange); border-radius:6px; padding:10px 12px; margin:12px 0; font-size:13.5px; line-height:1.6;}
+  .hb-answer-label{font-size:12px; text-transform:uppercase; letter-spacing:0.4px; font-weight:600;}
 </style>
 </head>
 <body>
@@ -3910,6 +3922,7 @@ let handbookResults = null; // array of {section, score} from the last search/qu
 let handbookOpenTopic = null; // which Suggested Topics category is expanded
 let handbookFullSectionId = null; // which section "View Full Section" is showing
 let handbookShowContacts = false; // whether the "Contact Group Gaming Manager..." panel is showing
+let handbookPersonalBalanceFlag = false; // true when the last query asked for the employee's OWN specific remaining balance — routes to the "check Leave Balance / contact HR" response instead of a normal search result
 // The whole Handbook Assistant (landing/search-results/full-section/
 // contacts) stays on ONE view id ("handbook") — the app's normal
 // history tracking only pushes a new browser-history entry when the
@@ -3926,6 +3939,7 @@ function pushHandbookState(){
   handbookNavStack.push({
     results: handbookResults, query: handbookQuery,
     fullSectionId: handbookFullSectionId, showContacts: handbookShowContacts,
+    personalBalanceFlag: handbookPersonalBalanceFlag,
   });
   viewStack.push('handbook');
   safePushState({vh: viewStack.length});
@@ -3940,8 +3954,9 @@ function popHandbookState(){
     const prev = handbookNavStack.pop();
     handbookResults = prev.results; handbookQuery = prev.query;
     handbookFullSectionId = prev.fullSectionId; handbookShowContacts = prev.showContacts;
+    handbookPersonalBalanceFlag = prev.personalBalanceFlag;
   } else {
-    handbookResults = null; handbookQuery = ''; handbookFullSectionId = null; handbookShowContacts = false;
+    handbookResults = null; handbookQuery = ''; handbookFullSectionId = null; handbookShowContacts = false; handbookPersonalBalanceFlag = false;
   }
 }
 
@@ -3974,11 +3989,16 @@ async function ensureHandbookLoaded(){
         console.error(`handbookIndex returned an unexpected shape (attempt ${attempt+1}):`, data);
         throw new Error('Unexpected response shape');
       }
-      HANDBOOK_INDEX = data.sections.map(s => ({
-        number: String(s.Number != null ? s.Number : ''), title: s.Title || '', breadcrumb: s.Breadcrumb || '',
-        keywords: String(s.Keywords||'').split(',').map(k=>k.trim()).filter(Boolean),
-        content: s.Content || '',
-      }));
+      HANDBOOK_INDEX = data.sections.map(s => {
+        let qa = []; let examples = [];
+        try{ qa = JSON.parse(s.QA || '[]'); } catch(e){ qa = []; }
+        try{ examples = JSON.parse(s.Examples || '[]'); } catch(e){ examples = []; }
+        return {
+          number: String(s.Number != null ? s.Number : ''), title: s.Title || '', breadcrumb: s.Breadcrumb || '',
+          keywords: String(s.Keywords||'').split(',').map(k=>k.trim()).filter(Boolean),
+          html: s.HTML || '', qa, examples, hasApproval: !!s.Approval,
+        };
+      });
       HANDBOOK_VERSION = data.version || '';
       handbookLoading = false;
       renderView('handbook');
@@ -4044,7 +4064,7 @@ function handbookExpandTokens_(tokens){
 function handbookScoreSection_(section, tokens){
   let score = 0, distinct = 0;
   const titleLower = section.title.toLowerCase();
-  const contentLower = section.content.toLowerCase();
+  const contentLower = handbookStripHtml_(section.html).toLowerCase();
   const kwSet = new Set(section.keywords);
   tokens.forEach(t=>{
     let hit = 0;
@@ -4055,6 +4075,24 @@ function handbookScoreSection_(section, tokens){
     score += hit;
   });
   return {score, distinct};
+}
+function handbookStripHtml_(html){
+  return String(html||'').replace(/<[^>]+>/g, ' ');
+}
+// Checks a section's own embedded Q&A pairs (e.g. the built-in
+// "Vacation Leave Questions & Answers" list) against the query — a
+// direct hit here becomes the "Direct Answer" shown to the employee,
+// since these are handbook-written answers to handbook-anticipated
+// questions, never anything phrased fresh.
+function handbookBestQAMatch_(section, tokens){
+  let best = null, bestScore = 0;
+  (section.qa||[]).forEach(qa=>{
+    const qLower = qa.q.toLowerCase();
+    let score = 0, distinct = 0;
+    tokens.forEach(t=>{ if(qLower.indexOf(t) > -1){ score++; distinct++; } });
+    if(distinct >= 2 && score > bestScore){ bestScore = score; best = qa; }
+  });
+  return best;
 }
 const HANDBOOK_CONFIDENCE_THRESHOLD_ = 6;
 const HANDBOOK_MIN_DISTINCT_ = 2;
@@ -4071,16 +4109,35 @@ function searchHandbook_(query){
   if(!tokens.length) return [];
   return HANDBOOK_INDEX.map(s => {
     const r = handbookScoreSection_(s, tokens);
-    return {section:s, score:r.score, distinct:r.distinct, confident: r.score >= HANDBOOK_CONFIDENCE_THRESHOLD_ && r.distinct >= HANDBOOK_MIN_DISTINCT_};
+    const bestQA = handbookBestQAMatch_(s, tokens);
+    return {section:s, score:r.score, distinct:r.distinct, bestQA, confident: r.score >= HANDBOOK_CONFIDENCE_THRESHOLD_ && r.distinct >= HANDBOOK_MIN_DISTINCT_};
   })
     .filter(x=>x.score > 0)
     .sort((a,b)=> (b.confident - a.confident) || (b.score - a.score))
     .slice(0, 5);
 }
+// Some questions can never be safely answered from the handbook alone
+// — an employee asking for THEIR OWN specific remaining balance needs
+// their actual record, not a policy explanation. Detected up front so
+// runHandbookQuery() can route straight to the required "check your
+// Leave Balance / contact Management-HR" response instead of ever
+// trying to search for a number that isn't in the handbook.
+const HANDBOOK_LEAVE_TOPIC_RE_ = /\b(vacation|leave|sick|pto|holiday)\b/i;
+const HANDBOOK_PERSONAL_BALANCE_MARKERS_ = [
+  /\bpersonally\b/i, /\bmy own\b/i, /\bmy balance\b/i, /\bmy remaining\b/i,
+  /\bdo i have\b/i, /\bi have left\b/i, /\bhave i left\b/i, /\bhave left\b/i,
+  /\bremaining balance\b/i, /\bmy .*balance\b/i, /\bhow many .* do i have\b/i,
+  /\bi personally\b/i,
+];
+function isHandbookPersonalBalanceQuestion_(query){
+  if(!HANDBOOK_LEAVE_TOPIC_RE_.test(query)) return false;
+  return HANDBOOK_PERSONAL_BALANCE_MARKERS_.some(re => re.test(query));
+}
 function runHandbookQuery(q){
   handbookQuery = q;
   handbookFullSectionId = null;
-  handbookResults = HANDBOOK_INDEX ? searchHandbook_(q) : [];
+  handbookPersonalBalanceFlag = HANDBOOK_INDEX ? isHandbookPersonalBalanceQuestion_(q) : false;
+  handbookResults = (HANDBOOK_INDEX && !handbookPersonalBalanceFlag) ? searchHandbook_(q) : [];
   pushHandbookState();
   renderView('handbook');
 }
@@ -4122,6 +4179,7 @@ function clearHandbookSearch(){
   handbookResults = null;
   handbookFullSectionId = null;
   handbookShowContacts = false;
+  handbookPersonalBalanceFlag = false;
   pushHandbookState();
   renderView('handbook');
 }
@@ -6408,6 +6466,9 @@ const BUILDERS = {
       </div>`;
     }
     // ----- Contact panel overlay -----
+    const disclaimerText = ()=>`<p class="muted" style="font-size:11.5px; margin-top:18px; line-height:1.5;"><strong>Please Note:</strong> This assistant provides information based on the current Employee Handbook and is intended as a reference. It does not replace official instructions from Management or HR. If you are unsure about how a policy applies to your specific situation, please contact the Group Gaming Manager or Assistant Group Gaming Manager.</p>`;
+    const disclaimer = disclaimerText();
+    const contactBtn = `<button class="btn auto" onclick="viewHandbookContacts()">👤 Contact Group Gaming Manager or Assistant Group Gaming Manager</button>`;
     if(handbookShowContacts){
       const contacts = [
         {name:'Maximina Gabionza', phone:'+1 (670) 989-6562'},
@@ -6424,6 +6485,20 @@ const BUILDERS = {
           </table>
         </div>`;
     }
+    // ----- Personal leave-balance question — never guessed -----
+    if(handbookPersonalBalanceFlag){
+      return `
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+            <h3 style="margin:0;"><span class="ic">📚</span> Handbook & Policy Assistant</h3>
+            <button class="btn info auto" onclick="clearHandbookSearch()">🔍 New Search / Back</button>
+          </div>
+          <p class="muted" style="font-size:12px; margin-bottom:4px;">Your Question</p>
+          <p style="font-weight:600; margin-bottom:16px;">${handbookQuery}</p>
+          <p style="line-height:1.7; font-size:14.5px;">I can explain your leave entitlement under the Employee Handbook, but I cannot determine your current remaining balance from the handbook alone. Please check your Leave Balance in the Staff Portal or contact Management/HR.</p>
+          ${disclaimerText()}
+        </div>`;
+    }
     // ----- "View Full Section" overlay -----
     if(handbookFullSectionId){
       const s = HANDBOOK_INDEX.find(x=>String(x.number)===String(handbookFullSectionId));
@@ -6438,12 +6513,9 @@ const BUILDERS = {
           <button class="btn info auto no-print" style="margin-bottom:14px;" onclick="closeFullHandbookSection()">← Back</button>
           <h3><span class="ic">📖</span> Section ${s.number} — ${s.title}</h3>
           ${s.breadcrumb ? `<p class="muted" style="font-size:12px; margin-bottom:14px;">${s.breadcrumb}</p>` : ''}
-          <p style="white-space:pre-line; line-height:1.7; font-size:14.5px;">${s.content}</p>
+          <div class="hb-content">${s.html}</div>
         </div>`;
     }
-    const disclaimer = `<p class="muted" style="font-size:11.5px; margin-top:18px; line-height:1.5;"><strong>Please Note:</strong> This assistant provides information based on the current Employee Handbook and is intended as a reference. It does not replace official instructions from Management or HR. If you are unsure about how a policy applies to your specific situation, please contact the Group Gaming Manager or Assistant Group Gaming Manager.</p>`;
-    const contactBtn = `<button class="btn auto" onclick="viewHandbookContacts()">👤 Contact Group Gaming Manager or Assistant Group Gaming Manager</button>`;
-
     // ----- Results view (after a search or question) -----
     if(handbookResults !== null){
       const top = handbookResults[0];
@@ -6457,9 +6529,15 @@ const BUILDERS = {
           <p class="muted" style="font-size:12px; margin-bottom:4px;">Your Question</p>
           <p style="font-weight:600; margin-bottom:16px;">${handbookQuery}</p>
           ${isConfident ? `
-            <p class="muted" style="font-size:12px; margin-bottom:4px;">📖 Handbook Answer</p>
-            <p style="white-space:pre-line; line-height:1.7; font-size:14.5px; margin-bottom:14px;">${top.section.content.length > 500 ? top.section.content.slice(0,500).trim()+'…' : top.section.content}</p>
-            <p class="muted" style="font-size:12px; margin-bottom:4px;">📚 Source</p>
+            <p class="muted hb-answer-label" style="margin-bottom:4px;">Direct Answer</p>
+            ${top.bestQA ? `<p style="line-height:1.7; font-size:14.5px; margin-bottom:14px;">${top.bestQA.a}</p>` : `<div class="hb-content" style="margin-bottom:14px;">${top.section.html.split('</p>').slice(0,2).join('</p>')+'</p>'}</div>`}
+
+            <p class="muted hb-answer-label" style="margin-bottom:4px;">What the Handbook Says</p>
+            <div class="hb-content" style="margin-bottom:14px;">${top.section.html}</div>
+
+            ${top.section.hasApproval ? `<div class="hb-approval-note"><strong>Approval:</strong> This is subject to management approval / discretion and operational needs. The Assistant cannot make this decision for you — please confirm with your Supervisor, Manager, or HR.</div>` : ''}
+
+            <p class="muted" style="font-size:12px; margin-bottom:4px; margin-top:14px;">📚 Handbook Reference</p>
             <p style="margin-bottom:10px;">Section ${top.section.number} — ${top.section.title}${top.section.breadcrumb ? `<br><span class="muted" style="font-size:12px;">${top.section.breadcrumb}</span>` : ''}</p>
             <button class="btn info auto" style="margin-bottom:16px;" onclick="viewFullHandbookSection('${top.section.number}')">📖 View Full Section</button>
             ${handbookResults.length > 1 ? `
