@@ -9598,7 +9598,21 @@ async function postAnnouncement(){
     if(!pendingAnnouncementClientId) pendingAnnouncementClientId = (crypto.randomUUID ? crypto.randomUUID() : ('cid-' + Date.now() + '-' + Math.random().toString(36).slice(2)));
     let newId = null;
     if(USE_REMOTE()){
-      const r = await apiPostMinDelay('postAnnouncement', {Title, Body, PostedBy: CURRENT_USER.displayName, TargetType, TargetValue, clientId: pendingAnnouncementClientId});
+      // One automatic retry specifically here — an occasional
+      // "unexpected response" (something outside the app rewriting
+      // the reply instead of Cloudflare/Apps Script's real JSON) was
+      // seen going away on a second attempt, while the FIRST attempt
+      // had actually already saved the announcement. Since this post
+      // carries the same ClientId as before, retrying is safe either
+      // way: doPostAnnouncement_ recognizes it and returns the
+      // existing row instead of creating a duplicate.
+      let r;
+      try{
+        r = await apiPostMinDelay('postAnnouncement', {Title, Body, PostedBy: CURRENT_USER.displayName, TargetType, TargetValue, clientId: pendingAnnouncementClientId});
+      } catch(firstErr){
+        console.warn('postAnnouncement: first attempt failed, retrying once:', firstErr.message || firstErr);
+        r = await apiPostMinDelay('postAnnouncement', {Title, Body, PostedBy: CURRENT_USER.displayName, TargetType, TargetValue, clientId: pendingAnnouncementClientId});
+      }
       if(!r.ok){ err.textContent = r.error || "Couldn't post."; err.style.display='block'; btn.disabled=false; btn.innerHTML='Post'; return; }
       newId = r.id;
       pendingAnnouncementClientId = null; // succeeded — a future post gets a fresh id
