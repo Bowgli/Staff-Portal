@@ -1040,6 +1040,18 @@ let viewingEmployeeName = null; // which employee mgmt-employee-profile is showi
 let employeeProfileTab = 'performance'; // 'performance' | 'attendance' | 'disciplinary' | 'recognition'
 let employeeProfileEditMode = false;
 let attendanceStatsMode = 'month'; // 'month' or 'year' — for Most Absences/Late/Undertime on the Attendance page
+// The "20 Most X" rankings used to be computed from ATTENDANCE_LOG
+// (the live sheet) alone — but records older than ~90 days move to
+// AttendanceArchive, so an employee whose absences/lates/etc. mostly
+// happened earlier in the selected year could be badly undercounted
+// here even though the Individual Employee Print Log (which merges
+// live + archived) showed the correct, complete total. This cache
+// holds fetched archive rows per year so each year is only fetched
+// once per session; loading state tracks in-flight fetches so
+// switching between month/year period selections for the SAME year
+// doesn't trigger duplicate fetches.
+let ATTENDANCE_ARCHIVE_RANKING_CACHE = {}; // {[year]: mapped rows}
+let attendanceArchiveRankingLoading = {}; // {[year]: true} while a fetch for that year is in flight
 let attendanceStatsPeriod = ''; // "YYYY-MM", defaults to current month on first view
 let attendanceStatsYear = new Date().getFullYear();
 let discCaseAttachments = []; // [{fileId, fileName}] staged during the New Case form, before save
@@ -6393,8 +6405,48 @@ function topStatusChart(log, icon, status, title, limit, barColor, linkTo){
 // month/year" — was previously inlined only inside topAttendanceCharts().
 // Quick Attention (below) reuses this exact same filter/state instead
 // of introducing a second, possibly-conflicting period calculation.
+// Fetches and caches one year's archived Attendance rows (mapped to
+// the exact same shape ATTENDANCE_LOG entries use), if not already
+// cached — so the rankings below can include them alongside the live
+// log. Safe to call repeatedly: a cache hit or an already-in-flight
+// fetch for the same year does nothing further.
+async function ensureAttendanceArchiveForRankings(year){
+  year = String(year);
+  if(ATTENDANCE_ARCHIVE_RANKING_CACHE[year] || attendanceArchiveRankingLoading[year]) return;
+  attendanceArchiveRankingLoading[year] = true;
+  try{
+    const rows = await safeApiGet('attendanceArchiveByYear&year=' + encodeURIComponent(year), []);
+    ATTENDANCE_ARCHIVE_RANKING_CACHE[year] = rows.map(a => ({name:a.EmployeeName, date:a.Day, time:a.Time, status:a.Status, remarks:a.Remarks, id:a.ID, loggedBy:a.LoggedBy}));
+  } catch(e){
+    console.warn('ensureAttendanceArchiveForRankings failed for year', year, ':', e.message || e);
+  } finally {
+    delete attendanceArchiveRankingLoading[year];
+  }
+  if(activeView === 'mgmt-attendance') renderView('mgmt-attendance');
+}
+// Combines the live log with cached archived rows for whichever year
+// is relevant to the current period selection — records older than
+// ~90 days move out of ATTENDANCE_LOG into AttendanceArchive, so the
+// live log alone under-counts anyone whose absences/lates/etc. for
+// the selected period happened earlier than that. Kicks off the
+// archive fetch for that year if it isn't cached yet; the merge
+// simply has nothing extra to add until that fetch lands, then
+// re-renders automatically once it does.
 function filteredAttendanceForStatsPeriod(){
-  return ATTENDANCE_LOG.filter(a=>{
+  const relevantYear = attendanceStatsMode === 'year' ? attendanceStatsYear : Number(String(attendanceStatsPeriod).split('-')[0]);
+  ensureAttendanceArchiveForRankings(relevantYear);
+  const archiveRows = ATTENDANCE_ARCHIVE_RANKING_CACHE[String(relevantYear)] || [];
+  // De-duplicated by id — same safety employeeYearAttendanceWithArchive()
+  // already applies, in case a record got archived between this page's
+  // last load and now, briefly existing in both places at once.
+  const seenIds = new Set();
+  const combined = ATTENDANCE_LOG.concat(archiveRows).filter(a=>{
+    if(a.id == null) return true; // no id to de-dupe by — keep as-is, same as the Print Log's own fallback behavior
+    if(seenIds.has(a.id)) return false;
+    seenIds.add(a.id);
+    return true;
+  });
+  return combined.filter(a=>{
     if(!a.date) return false;
     const dt = new Date(a.date);
     if(isNaN(dt)) return false;
@@ -6408,6 +6460,8 @@ function topAttendanceCharts(){
   if(!attendanceStatsPeriod) attendanceStatsPeriod = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
 
   const filteredLog = filteredAttendanceForStatsPeriod();
+  const relevantYear = attendanceStatsMode === 'year' ? attendanceStatsYear : Number(String(attendanceStatsPeriod).split('-')[0]);
+  const archiveStillLoading = !!attendanceArchiveRankingLoading[String(relevantYear)];
 
   const years = Array.from(new Set(ATTENDANCE_LOG.map(a=>{ const dt = new Date(a.date); return isNaN(dt) ? null : dt.getFullYear(); }).filter(Boolean))).sort((a,b)=>b-a);
   if(!years.includes(attendanceStatsYear)) years.unshift(attendanceStatsYear);
@@ -6423,6 +6477,7 @@ function topAttendanceCharts(){
           ? `<select onchange="setAttendanceStatsYear(this.value)" style="width:auto;">${years.map(y=>`<option ${attendanceStatsYear===y?'selected':''}>${y}</option>`).join('')}</select>`
           : `<input type="month" value="${attendanceStatsPeriod}" onchange="setAttendanceStatsPeriod(this.value)" style="max-width:180px;">`
         }
+        ${archiveStillLoading ? `<span class="muted" style="font-size:12px;"><span class="btn-spinner"></span> Including archived records…</span>` : ''}
       </div>
     </div>
     <div class="grid grid-4" style="margin-bottom:16px;">
