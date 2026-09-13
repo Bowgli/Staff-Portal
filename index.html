@@ -8552,8 +8552,9 @@ const BUILDERS = {
       </div>
       <div id="annTargetEmployeeWrap" style="display:none;">
         <label>Employees</label>
+        <input type="text" id="annEmpSearch" placeholder="🔍 Search employee name..." oninput="filterAnnouncementEmployeeList(this.value)" style="margin-bottom:8px;">
         <div class="check-list">
-          ${EMPLOYEE_ROSTER.map(e=>`<div class="cl-row"><input type="checkbox" class="ann-emp-check" id="annEmp_${e.name.replace(/\s+/g,'')}" value="${e.name}"><label for="annEmp_${e.name.replace(/\s+/g,'')}">${e.name} <span class="muted">(${e.position})</span></label></div>`).join('')}
+          ${EMPLOYEE_ROSTER.map(e=>`<div class="cl-row" data-name="${e.name.toLowerCase()}"><input type="checkbox" class="ann-emp-check" id="annEmp_${e.name.replace(/\s+/g,'')}" value="${e.name}"><label for="annEmp_${e.name.replace(/\s+/g,'')}">${e.name} <span class="muted">(${e.position})</span></label></div>`).join('')}
         </div>
       </div>
       <button class="btn" id="annPostBtn" onclick="postAnnouncement()">Post</button>
@@ -9551,6 +9552,16 @@ function toggleAnnTarget(){
   document.getElementById('annTargetEmployeeWrap').style.display = type==='Individual' ? 'block' : 'none';
 }
 
+// Purely a client-side show/hide over the existing checkboxes — never
+// re-renders the page, so any boxes already checked stay checked
+// while the employee is still typing/searching. Multi-select is
+// untouched; this only changes which rows are visible at once.
+function filterAnnouncementEmployeeList(query){
+  const q = query.trim().toLowerCase();
+  document.querySelectorAll('#annTargetEmployeeWrap .cl-row').forEach(row=>{
+    row.style.display = (!q || row.dataset.name.includes(q)) ? '' : 'none';
+  });
+}
 async function postAnnouncement(){
   const Title = document.getElementById('annTitle').value.trim();
   const Body = document.getElementById('annBody').value.trim();
@@ -9665,6 +9676,8 @@ function startEditAnnouncement(id){
   document.getElementById('annBody').value = a.Body || '';
   document.getElementById('annTargetType').value = a.TargetType || 'All';
   toggleAnnTarget();
+  const empSearch = document.getElementById('annEmpSearch');
+  if(empSearch){ empSearch.value = ''; filterAnnouncementEmployeeList(''); } // clear any leftover search so every checked box is visible
   if(a.TargetType==='Position'){
     const picked = (a.TargetValue||'').split(',').map(s=>s.trim()).filter(Boolean);
     document.querySelectorAll('.ann-pos-check').forEach(c=>{ c.checked = picked.includes(c.value); });
