@@ -825,6 +825,34 @@ async function apiPostMinDelay(action, payload, minMs){
   ]);
   return result;
 }
+// Automatic retries for actions that are safe to resubmit — either
+// because they overwrite an existing record by ID/key (a schedule
+// cell, a case, a status field: resubmitting the identical payload
+// just re-applies the same final state, so a duplicate can never
+// result), or because the caller already attaches its own
+// idempotency key so the server recognizes and skips a repeat. Use
+// this in place of apiPost/apiPostMinDelay for any save/update where
+// that's true — never for an action that appends a brand-new record
+// with no such protection, where a retried duplicate could create a
+// second, separate row.
+async function apiPostRetrying(action, payload, maxAttempts){
+  maxAttempts = maxAttempts || 3;
+  let lastErr;
+  for(let attempt = 0; attempt < maxAttempts; attempt++){
+    try{ return await apiPost(action, payload); }
+    catch(e){ lastErr = e; console.warn(`${action}: attempt ${attempt+1} failed:`, e.message || e); }
+  }
+  throw lastErr;
+}
+async function apiPostMinDelayRetrying(action, payload, minMs, maxAttempts){
+  maxAttempts = maxAttempts || 3;
+  let lastErr;
+  for(let attempt = 0; attempt < maxAttempts; attempt++){
+    try{ return await apiPostMinDelay(action, payload, minMs); }
+    catch(e){ lastErr = e; console.warn(`${action}: attempt ${attempt+1} failed:`, e.message || e); }
+  }
+  throw lastErr;
+}
 
 /* Reusable loading/sent feedback for any submit/save/update button.
    btnLoading swaps the button to a spinner + "Sending..." (disabled)
@@ -899,7 +927,7 @@ function openArchivedEmployeesPage(){
 }
 async function archiveEmployeeNow(name, el){
   await confirmAndDelete(el, "Archive Employee?\n\nThis employee will be moved to the Archived Employees section. Their complete profile and historical records will be preserved and can still be viewed and printed in the future. No records will be deleted.", async ()=>{
-    const r = await apiPost('archiveEmployee', {name, username: CURRENT_USER.username});
+    const r = await apiPostRetrying('archiveEmployee', {name, username: CURRENT_USER.username});
     if(!r.ok){ alert(r.error || "Couldn't archive."); return; }
     const emp = EMPLOYEE_ROSTER.find(e=>e.name===name);
     if(emp) emp.archiveStatus = 'Archived';
@@ -908,7 +936,7 @@ async function archiveEmployeeNow(name, el){
 }
 async function restoreEmployeeNow(name, el){
   await confirmAndDelete(el, "Restore Employee?\n\nThis employee will be returned to the main employee list.", async ()=>{
-    const r = await apiPost('restoreEmployeeArchive', {name, username: CURRENT_USER.username});
+    const r = await apiPostRetrying('restoreEmployeeArchive', {name, username: CURRENT_USER.username});
     if(!r.ok){ alert(r.error || "Couldn't restore."); return; }
     const emp = EMPLOYEE_ROSTER.find(e=>e.name===name);
     if(emp) emp.archiveStatus = '';
@@ -922,7 +950,7 @@ async function archiveRecordNow(module, id, el){
     suggestion: "Archive Record?\n\nThis suggestion has been marked as reviewed.\n\nArchiving will remove it from the active list, but the record will remain safely stored in Archived Records for authorized Admin viewing, searching, and printing.",
   };
   await confirmAndDelete(el, messages[module] || "Archive this record?", async ()=>{
-    const r = await apiPost('archiveRecord', {module, id, username: CURRENT_USER.username});
+    const r = await apiPostRetrying('archiveRecord', {module, id, username: CURRENT_USER.username});
     if(!r.ok){ alert(r.error || "Couldn't archive."); return; }
     // Invalidate any cached archive list so the next "View Archived"
     // click re-fetches fresh data including this newly-archived item.
@@ -933,7 +961,7 @@ async function archiveRecordNow(module, id, el){
 }
 async function restoreRecordNow(module, id, el){
   await confirmAndDelete(el, "Restore this record back to the active list?", async ()=>{
-    const r = await apiPost('restoreRecord', {module, id, username: CURRENT_USER.username});
+    const r = await apiPostRetrying('restoreRecord', {module, id, username: CURRENT_USER.username});
     if(!r.ok){ alert(r.error || "Couldn't restore."); return; }
     if(module === 'concern'){ concernsArchiveData = null; concernsArchiveShown = false; }
     if(module === 'request'){ requestsArchiveData = null; requestsArchiveShown = false; }
@@ -1631,7 +1659,7 @@ function getUniqueSchedulePositions(){
 async function updateScheduleDept(name, department, sheetName){
   try{
     if(USE_REMOTE()){
-      const r = await apiPost('updateScheduleDepartment', {name, department, sheetName});
+      const r = await apiPostRetrying('updateScheduleDepartment', {name, department, sheetName});
       if(!r.ok){ alert(r.error || "Couldn't update."); return; }
       await refreshScheduleOnly();
     } else {
@@ -1657,7 +1685,7 @@ async function updateNextWeekDates(){
 
   try{
     if(USE_REMOTE()){
-      const r = await apiPostMinDelay('updateNextScheduleDates', {startDate});
+      const r = await apiPostMinDelayRetrying('updateNextScheduleDates', {startDate});
       if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display = 'block'; btn.disabled=false; btn.textContent='Set Dates'; return; }
       await refreshScheduleOnly();
     }
@@ -1882,7 +1910,7 @@ async function saveWeekSchedule(){
   btnLoadingEl(btn, 'Saving...');
   try{
     if(USE_REMOTE()){
-      const r = await apiPost('updateScheduleWeek', {name, sheetName, cells});
+      const r = await apiPostRetrying('updateScheduleWeek', {name, sheetName, cells});
       if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display = 'block'; btnResetEl(btn); return; }
       await refreshScheduleOnly();
     } else {
@@ -1930,7 +1958,7 @@ async function saveCellEdit(){
 
   try{
     if(USE_REMOTE()){
-      const r = await apiPostMinDelay('updateScheduleCell', {name: cellModalTarget.name, dayIndex: cellModalTarget.dayIndex, value, sheetName: cellModalTarget.sheetName});
+      const r = await apiPostMinDelayRetrying('updateScheduleCell', {name: cellModalTarget.name, dayIndex: cellModalTarget.dayIndex, value, sheetName: cellModalTarget.sheetName});
       if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display = 'block'; btn.disabled=false; btn.textContent='Save'; return; }
       await refreshScheduleOnly();
     } else {
@@ -3663,7 +3691,7 @@ async function updateEmployeeStatus(name, status, el){
   el.disabled = true;
   try{
     if(USE_REMOTE()){
-      const r = await apiPost('updateEmployee', {name, status});
+      const r = await apiPostRetrying('updateEmployee', {name, status});
       if(!r.ok){
         if(emp) emp.status = previousStatus;
         alert(r.error || "Couldn't update status.");
@@ -3876,7 +3904,7 @@ async function savePersonalDetails(){
   btnLoading('personalDetailsSaveBtn');
   try{
     if(USE_REMOTE()){
-      const r = await apiPostMinDelay('updatePersonalDetails', {employeeName: CURRENT_EMPLOYEE.name, phone, email});
+      const r = await apiPostMinDelayRetrying('updatePersonalDetails', {employeeName: CURRENT_EMPLOYEE.name, phone, email});
       if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnReset('personalDetailsSaveBtn','Save Personal Details'); return; }
     }
     CURRENT_EMPLOYEE.phone = phone;
@@ -5102,7 +5130,7 @@ async function saveEmployeeProfile(){
   btnLoadingEl(btn, 'Saving...');
   try{
     if(USE_REMOTE()){
-      const r = await apiPost('updateEmployee', {name: oldName, newName, position, status, dateHired, employmentStatus});
+      const r = await apiPostRetrying('updateEmployee', {name: oldName, newName, position, status, dateHired, employmentStatus});
       if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnResetEl(btn); return; }
     }
     const roster = EMPLOYEE_ROSTER.find(e=>e.name===oldName);
@@ -5212,7 +5240,7 @@ async function saveDiscCaseInfo(){
   const btn = document.getElementById('discSaveCaseInfoBtn');
   btnLoadingEl(btn, 'Saving...');
   try{
-    const r = await apiPost('updateDisciplinaryCase', fields);
+    const r = await apiPostRetrying('updateDisciplinaryCase', fields);
     if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnResetEl(btn); return; }
     await refreshDisciplinaryOnly();
     await btnSentEl(btn, 'Saved');
@@ -5259,7 +5287,7 @@ async function saveDiscIncidentEdit(){
   const btn = document.getElementById('discSaveIncidentBtn');
   btnLoadingEl(btn, 'Saving...');
   try{
-    const r = await apiPost('updateDisciplinaryCase', fields);
+    const r = await apiPostRetrying('updateDisciplinaryCase', fields);
     if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnResetEl(btn); return; }
     await refreshDisciplinaryOnly();
     await btnSentEl(btn, 'Saved');
@@ -5499,7 +5527,7 @@ async function saveDiscReview(el){
     stage: 'review',
   };
   try{
-    const r = await apiPost('updateDisciplinaryCase', fields);
+    const r = await apiPostRetrying('updateDisciplinaryCase', fields);
     if(!r.ok){ alert(r.error || "Couldn't save the review — please try again."); btnResetEl(el); return; }
     await refreshDisciplinaryOnly();
     await btnSentEl(el, 'Saved');
@@ -5522,7 +5550,7 @@ async function saveDiscLevel(el){
     ManagementDecisionAction: document.getElementById('discDecisionAction').value.trim(),
   };
   try{
-    const r = await apiPost('updateDisciplinaryCase', fields);
+    const r = await apiPostRetrying('updateDisciplinaryCase', fields);
     if(!r.ok){ alert(r.error || "Couldn't save the level — please try again."); btnResetEl(el); return; }
     await refreshDisciplinaryOnly();
     await btnSentEl(el, 'Saved');
@@ -5540,7 +5568,7 @@ async function saveDiscStatus(el){
   const stageMap = {"Closed":"closed", "No Action":"noaction"};
   const fields = { id: discDetailCaseId, Status: status, stage: stageMap[status] || '' };
   try{
-    const r = await apiPost('updateDisciplinaryCase', fields);
+    const r = await apiPostRetrying('updateDisciplinaryCase', fields);
     if(!r.ok){ alert(r.error || "Couldn't update the status — please try again."); btnResetEl(el); return; }
     await refreshDisciplinaryOnly();
     await btnSentEl(el, 'Updated');
@@ -5567,7 +5595,7 @@ async function confirmManagementReview(){
     stage: 'reviewconfirmed',
   };
   try{
-    const r = await apiPost('updateDisciplinaryCase', fields);
+    const r = await apiPostRetrying('updateDisciplinaryCase', fields);
     if(!r.ok){ alert(r.error || "Couldn't confirm the review — please try again."); btnResetEl(btn); return; }
     await refreshDisciplinaryOnly();
     await btnSentEl(btn, 'Confirmed');
@@ -8716,7 +8744,7 @@ async function submitMyRequestInner(){
     btnLoading('reqSubmitBtn', 'Updating...');
     try{
       if(USE_REMOTE()){
-        const r = await apiPostMinDelay('editRequest', {id:editingRequestId, Type, Details, SwapDay, TheirDay, SwapWithName, AbsenceDate});
+        const r = await apiPostMinDelayRetrying('editRequest', {id:editingRequestId, Type, Details, SwapDay, TheirDay, SwapWithName, AbsenceDate});
         if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('reqSubmitBtn','Update Request'); return; }
         await refreshMyRequests();
       } else {
@@ -9058,7 +9086,7 @@ async function submitMySuggestion(){
     btnLoading('suggSubmitBtn', 'Updating...');
     try{
       if(USE_REMOTE()){
-        const r = await apiPostMinDelay('editSuggestion', {id:editingSuggestionId, Idea});
+        const r = await apiPostMinDelayRetrying('editSuggestion', {id:editingSuggestionId, Idea});
         if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('suggSubmitBtn','Update Suggestion'); return; }
         await refreshMySuggestions();
       } else {
@@ -9177,7 +9205,7 @@ async function submitEvaluationNow(){
     btnLoading('evalSubmitBtn', 'Updating...');
     try{
       if(USE_REMOTE()){
-        const r = await apiPostMinDelay('editEvaluation', body);
+        const r = await apiPostMinDelayRetrying('editEvaluation', body);
         if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('evalSubmitBtn','Update Evaluation'); return; }
         await loadRemoteData();
       }
@@ -9472,7 +9500,7 @@ async function saveConcernInvestigation(mode, navigateAway){
   btnLoadingEl(btn, mode === 'draft' ? 'Saving Draft...' : 'Saving...');
   try{
     if(USE_REMOTE()){
-      const r = await apiPost('updateConcernInvestigation', fields);
+      const r = await apiPostRetrying('updateConcernInvestigation', fields);
       if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnResetEl(btn); return; }
       if(mgmtAlertBaseline && wasFresh && status !== 'Submitted' && status !== 'Open') mgmtAlertBaseline.concerns = Math.max(0, mgmtAlertBaseline.concerns - 1);
     }
@@ -9992,7 +10020,7 @@ async function submitAttendanceLog(){
   try{
     if(isEditing){
       if(USE_REMOTE()){
-        const r = await apiPostMinDelay('editAttendance', {id: editingAttendanceId, employeeName:name, day:date, time, status, remarks, loggedBy});
+        const r = await apiPostMinDelayRetrying('editAttendance', {id: editingAttendanceId, employeeName:name, day:date, time, status, remarks, loggedBy});
         if(!r.ok){
           err.textContent = r.error || "Couldn't update the entry — please try again.";
           err.style.display = 'block';
@@ -10008,7 +10036,7 @@ async function submitAttendanceLog(){
     } else {
       let newId;
       if(USE_REMOTE()){
-        const r = await apiPostMinDelay('logAttendance', {employeeName:name, day:date, time, status, remarks, loggedBy});
+        const r = await apiPostMinDelayRetrying('logAttendance', {employeeName:name, day:date, time, status, remarks, loggedBy});
         if(!r.ok){
           err.textContent = r.error || "Couldn't save the entry — please try again.";
           err.style.display = 'block';
