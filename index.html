@@ -9615,11 +9615,17 @@ async function postAnnouncement(){
       return;
     }
 
+    let newId = null;
     if(USE_REMOTE()){
       const r = await apiPostMinDelay('postAnnouncement', {Title, Body, PostedBy: CURRENT_USER.displayName, TargetType, TargetValue});
       if(!r.ok){ err.textContent = r.error || "Couldn't post."; err.style.display='block'; btn.disabled=false; btn.innerHTML='Post'; return; }
+      newId = r.id;
     }
-    ALL_ANNOUNCEMENTS.unshift({Title, Body, Date:"Just now", TargetType, TargetValue});
+    // Without an ID here, View/Edit/Delete on this just-posted
+    // announcement would silently do nothing — ALL_ANNOUNCEMENTS.find
+    // (x=>x.ID===id) never matches an entry with no ID at all, and
+    // each of those handlers returns early with no visible error.
+    ALL_ANNOUNCEMENTS.unshift({Title, Body, Date:"Just now", TargetType, TargetValue, PostedBy: CURRENT_USER.displayName, ID: newId});
     btn.innerHTML = `✓ Sent`;
     await new Promise(r=>setTimeout(r, 600));
     renderView('mgmt-announcements');
