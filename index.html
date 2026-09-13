@@ -1664,7 +1664,10 @@ async function updateScheduleDept(name, department, sheetName){
     if(USE_REMOTE()){
       const r = await apiPostRetrying('updateScheduleDepartment', {name, department, sheetName});
       if(!r.ok){ alert(r.error || "Couldn't update."); return; }
-      await refreshScheduleOnly();
+      const rows = sheetName === 'NextSchedule' ? NEXT_SCHEDULE_ROWS : SCHEDULE_ROWS;
+      const row = rows.find(x=>x.name===name);
+      if(row) row.department = department;
+      refreshScheduleOnly().then(()=>{ if(activeView === 'mgmt-schedule') renderView('mgmt-schedule'); }).catch(e=>console.warn('background schedule refresh failed (already-correct local data is unaffected):', e.message || e));
     } else {
       const rows = sheetName === 'NextSchedule' ? NEXT_SCHEDULE_ROWS : SCHEDULE_ROWS;
       const row = rows.find(x=>x.name===name);
@@ -5300,6 +5303,32 @@ function toggleDiscEmpDecisionField(){
   const isLevel5 = document.getElementById('discLevelSelect').value === DISC_LEVELS[4];
   document.getElementById('discEmploymentDecisionField').style.display = isLevel5 ? 'block' : 'none';
 }
+// Applies the SAME fields just sent to updateDisciplinaryCase onto the
+// matching local record (in both the full list and, if present, the
+// employee's own scoped list) — the record already reflects the save
+// immediately, without waiting on a full refresh first. Every
+// saveDiscXxx() function below sends exactly the changed fields plus
+// {id}, so this one shared helper covers all of them.
+function applyDisciplinaryFieldsLocally_(fields){
+  [ALL_DISCIPLINARY_RECORDS, MY_DISCIPLINARY_RECORDS].forEach(list=>{
+    if(!list) return;
+    const rec = list.find(d => d.ID === fields.id);
+    if(rec) Object.assign(rec, fields);
+  });
+}
+// Fires refreshDisciplinaryOnly() in the background (not awaited) and
+// re-renders the current page once it lands, but only if the person
+// is still on a disciplinary view — a slow/failed background refresh
+// never blocks the save from completing, and never shows up as an
+// error, since applyDisciplinaryFieldsLocally_() already made the
+// screen correct.
+function backgroundRefreshDisciplinary_(){
+  refreshDisciplinaryOnly().then(()=>{
+    if(activeView === 'mgmt-disciplinary' || activeView === 'mgmt-disciplinary-detail') renderView(activeView);
+  }).catch(e=>{
+    console.warn('background disciplinary refresh failed (already-correct local data is unaffected):', e.message || e);
+  });
+}
 async function saveDiscCaseInfo(){
   const err = document.getElementById('discEditCaseInfoErr');
   err.style.display = 'none';
@@ -5319,7 +5348,8 @@ async function saveDiscCaseInfo(){
   try{
     const r = await apiPostRetrying('updateDisciplinaryCase', fields);
     if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnResetEl(btn); return; }
-    await refreshDisciplinaryOnly();
+    applyDisciplinaryFieldsLocally_(fields);
+    backgroundRefreshDisciplinary_();
     await btnSentEl(btn, 'Saved');
     discCaseInfoEditMode = false;
     renderView('mgmt-disciplinary-detail');
@@ -5366,7 +5396,8 @@ async function saveDiscIncidentEdit(){
   try{
     const r = await apiPostRetrying('updateDisciplinaryCase', fields);
     if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnResetEl(btn); return; }
-    await refreshDisciplinaryOnly();
+    applyDisciplinaryFieldsLocally_(fields);
+    backgroundRefreshDisciplinary_();
     await btnSentEl(btn, 'Saved');
     discIncidentEditMode = false;
     discIncidentEditAttachments = [];
@@ -5517,7 +5548,13 @@ async function saveDisciplinaryCase(status){
   try{
     const r = await apiPost('saveDisciplinaryCase', payload);
     if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnReset(btnId, status==='Draft'?'Save Draft':'Submit Report'); return; }
-    await refreshDisciplinaryOnly();
+    // A brand-new case, unlike the edits above — built from what we
+    // already sent plus what the server assigned (ID/CaseNumber), so
+    // it appears in the list immediately without waiting on a refresh.
+    ALL_DISCIPLINARY_RECORDS.unshift(Object.assign({}, payload, {
+      ID: r.id, CaseNumber: r.caseNumber, DateReported: new Date().toISOString().slice(0,19),
+    }));
+    backgroundRefreshDisciplinary_();
     discNewCaseEmployee = '';
     discCaseAttachments = [];
     renderView('mgmt-disciplinary');
@@ -5606,7 +5643,8 @@ async function saveDiscReview(el){
   try{
     const r = await apiPostRetrying('updateDisciplinaryCase', fields);
     if(!r.ok){ alert(r.error || "Couldn't save the review — please try again."); btnResetEl(el); return; }
-    await refreshDisciplinaryOnly();
+    applyDisciplinaryFieldsLocally_(fields);
+    backgroundRefreshDisciplinary_();
     await btnSentEl(el, 'Saved');
     discReviewEditMode = false;
     renderView('mgmt-disciplinary-detail');
@@ -5629,7 +5667,8 @@ async function saveDiscLevel(el){
   try{
     const r = await apiPostRetrying('updateDisciplinaryCase', fields);
     if(!r.ok){ alert(r.error || "Couldn't save the level — please try again."); btnResetEl(el); return; }
-    await refreshDisciplinaryOnly();
+    applyDisciplinaryFieldsLocally_(fields);
+    backgroundRefreshDisciplinary_();
     await btnSentEl(el, 'Saved');
     discLevelEditMode = false;
     renderView('mgmt-disciplinary-detail');
@@ -5647,7 +5686,8 @@ async function saveDiscStatus(el){
   try{
     const r = await apiPostRetrying('updateDisciplinaryCase', fields);
     if(!r.ok){ alert(r.error || "Couldn't update the status — please try again."); btnResetEl(el); return; }
-    await refreshDisciplinaryOnly();
+    applyDisciplinaryFieldsLocally_(fields);
+    backgroundRefreshDisciplinary_();
     await btnSentEl(el, 'Updated');
     discStatusEditMode = false;
     renderView('mgmt-disciplinary-detail');
@@ -5674,7 +5714,8 @@ async function confirmManagementReview(){
   try{
     const r = await apiPostRetrying('updateDisciplinaryCase', fields);
     if(!r.ok){ alert(r.error || "Couldn't confirm the review — please try again."); btnResetEl(btn); return; }
-    await refreshDisciplinaryOnly();
+    applyDisciplinaryFieldsLocally_(fields);
+    backgroundRefreshDisciplinary_();
     await btnSentEl(btn, 'Confirmed');
     renderView('mgmt-disciplinary-detail');
   } catch(e){
@@ -8827,7 +8868,13 @@ async function submitMyRequestInner(){
       if(USE_REMOTE()){
         const r = await apiPostMinDelayRetrying('editRequest', {id:editingRequestId, Type, Details, SwapDay, TheirDay, SwapWithName, AbsenceDate});
         if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('reqSubmitBtn','Update Request'); return; }
-        await refreshMyRequests();
+        // Applied directly to MOCK.requests (what the History table
+        // actually reads from) rather than waiting on a full refresh
+        // first — mirrors exactly what refreshMyRequests() would set,
+        // just for this one record.
+        const reqLocal = MOCK.requests.find(x=>x.id===editingRequestId);
+        if(reqLocal) Object.assign(reqLocal, {type:Type, details:Details, swapDay:SwapDay, theirDay:TheirDay, swapWithName:SwapWithName});
+        refreshMyRequests().then(()=>{ if(activeView === 'requests') renderView('requests'); }).catch(e=>console.warn('background requests refresh failed (already-correct local data is unaffected):', e.message || e));
       } else {
         const req = MOCK.requests.find(x=>x.id===editingRequestId);
         if(req){ req.type = Type; req.details = Details; req.swapDay = SwapDay; req.theirDay = TheirDay; req.swapWithName = SwapWithName; }
@@ -8855,7 +8902,11 @@ async function submitMyRequestInner(){
       const r = await apiPostMinDelayRetrying('submitRequest', {EmployeeName: CURRENT_EMPLOYEE.name, Type, Details, SwapDay, TheirDay, SwapWithName, AbsenceDate, clientId: pendingRequestClientId});
       if(!r.ok){ err.textContent = r.error || "Couldn't submit."; err.style.display='block'; btnReset('reqSubmitBtn','Submit Request'); return; }
       pendingRequestClientId = null; // succeeded — a future submission gets a fresh id
-      await refreshMyRequests();
+      // Added directly to MOCK.requests (what the History table
+      // actually reads from) rather than waiting on a full refresh
+      // first — mirrors the same shape refreshMyRequests() builds.
+      MOCK.requests.unshift({type:Type, date:"Just now", status:"pending", id:r.id, details:Details, swapDay:SwapDay, theirDay:TheirDay, swapWithName:SwapWithName});
+      refreshMyRequests().then(()=>{ if(activeView === 'requests') renderView('requests'); }).catch(e=>console.warn('background requests refresh failed (already-correct local data is unaffected):', e.message || e));
     } else {
       MOCK.requests.unshift({type:Type, date:"Just now", status:"pending", swapDay:SwapDay, theirDay:TheirDay, swapWithName:SwapWithName});
     }
@@ -8902,7 +8953,10 @@ async function deleteMyRequest(id, el){
     if(USE_REMOTE()){
       const r = await apiPost('deleteRequest', {id});
       if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
-      await refreshMyRequests();
+      // Removed directly from MOCK.requests (what the History table
+      // actually reads from) rather than waiting on a full refresh.
+      MOCK.requests = MOCK.requests.filter(x=>x.id!==id);
+      refreshMyRequests().then(()=>{ if(activeView === 'requests') renderView('requests'); }).catch(e=>console.warn('background requests refresh failed (already-correct local data is unaffected):', e.message || e));
     } else {
       MOCK.requests = MOCK.requests.filter(x=>x.id!==id);
     }
@@ -8998,7 +9052,13 @@ async function submitMyConcern(){
       if(USE_REMOTE()){
         const r = await apiPostMinDelayRetrying('editConcern', Object.assign({id:editingConcernId, From}, body));
         if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('concernSubmitBtn','Update Concern'); return; }
-        await refreshMyConcerns();
+        // Applied directly to MY_CONCERNS (what the concern history
+        // list actually reads from) rather than waiting on a full
+        // refresh first — same field mapping as the demo-mode branch
+        // just below.
+        const cLocal = MY_CONCERNS.find(x=>x.id===editingConcernId);
+        if(cLocal){ cLocal.venue = Venue; cLocal.topic = Topic; cLocal.details = Details; cLocal.from = From; }
+        refreshMyConcerns().then(()=>{ if(activeView === 'concern') renderView('concern'); }).catch(e=>console.warn('background concerns refresh failed (already-correct local data is unaffected):', e.message || e));
       } else {
         const c = MY_CONCERNS.find(x=>x.id===editingConcernId);
         if(c){ c.venue = Venue; c.topic = Topic; c.details = Details; c.from = From; }
@@ -9020,7 +9080,11 @@ async function submitMyConcern(){
       const r = await apiPostMinDelayRetrying('submitConcern', Object.assign({From, SubmittedBy: CURRENT_EMPLOYEE.fullName, clientId: pendingConcernClientId}, body));
       if(!r.ok){ err.textContent = r.error || "Couldn't submit."; err.style.display='block'; btnReset('concernSubmitBtn','Submit Concern'); return; }
       pendingConcernClientId = null; // succeeded — a future submission gets a fresh id
-      await refreshMyConcerns();
+      // Added directly to MY_CONCERNS (what the concern history list
+      // actually reads from) rather than waiting on a full refresh —
+      // reuses the exact same server->local field mapping refreshMyConcerns() does.
+      MY_CONCERNS.unshift(mapConcernRowBase_(Object.assign({}, body, {From, Date:"Just now", Status:"Submitted", ID:r.id, RefNo:r.refNo})));
+      refreshMyConcerns().then(()=>{ if(activeView === 'concern') renderView('concern'); }).catch(e=>console.warn('background concerns refresh failed (already-correct local data is unaffected):', e.message || e));
     }
     await btnSent('concernSubmitBtn');
     ok.style.display='block';
@@ -9155,7 +9219,12 @@ async function withdrawMyConcern(id, el){
     if(USE_REMOTE()){
       const r = await apiPost('withdrawConcern', {id});
       if(!r.ok){ alert(r.error || "Couldn't withdraw."); return; }
-      await refreshMyConcerns();
+      // Applied directly to MY_CONCERNS rather than waiting on a full
+      // refresh first — the withdrawal only ever changes this one
+      // record's status.
+      const withdrawnLocal = MY_CONCERNS.find(x=>x.id===id);
+      if(withdrawnLocal) withdrawnLocal.status = 'Withdrawn';
+      refreshMyConcerns().then(()=>{ if(activeView === 'concern') renderView('concern'); }).catch(e=>console.warn('background concerns refresh failed (already-correct local data is unaffected):', e.message || e));
       // Update her OWN baseline immediately — otherwise the next poll
       // comparison sees "status changed" and mistakes her own action
       // for a management update, self-notifying her about her own
@@ -9186,7 +9255,11 @@ async function submitMySuggestion(){
       if(USE_REMOTE()){
         const r = await apiPostMinDelayRetrying('editSuggestion', {id:editingSuggestionId, Idea});
         if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('suggSubmitBtn','Update Suggestion'); return; }
-        await refreshMySuggestions();
+        // Applied directly to MY_SUGGESTIONS rather than waiting on a
+        // full refresh first — same field as the demo-mode branch just below.
+        const sLocal = MY_SUGGESTIONS.find(x=>x.id===editingSuggestionId);
+        if(sLocal) sLocal.idea = Idea;
+        refreshMySuggestions().then(()=>{ if(activeView === 'suggestion') renderView('suggestion'); }).catch(e=>console.warn('background suggestions refresh failed (already-correct local data is unaffected):', e.message || e));
       } else {
         const s = MY_SUGGESTIONS.find(x=>x.id===editingSuggestionId);
         if(s) s.idea = Idea;
@@ -9216,7 +9289,9 @@ async function submitMySuggestion(){
       const r = await apiPostMinDelayRetrying('submitSuggestion', {From, Idea, Anonymous: anon, SubmittedBy: CURRENT_EMPLOYEE.fullName, clientId: pendingSuggestionClientId});
       if(!r.ok){ err.textContent = r.error || "Couldn't submit."; err.style.display='block'; btnReset('suggSubmitBtn','Submit Suggestion'); return; }
       pendingSuggestionClientId = null; // succeeded — a future submission gets a fresh id
-      await refreshMySuggestions();
+      // Added directly to MY_SUGGESTIONS rather than waiting on a full refresh.
+      MY_SUGGESTIONS.unshift({from:From, idea:Idea, date:"Just now", status:'new', id:r.id});
+      refreshMySuggestions().then(()=>{ if(activeView === 'suggestion') renderView('suggestion'); }).catch(e=>console.warn('background suggestions refresh failed (already-correct local data is unaffected):', e.message || e));
     }
     await btnSent('suggSubmitBtn');
     document.getElementById('suggIdea').value='';
@@ -9243,7 +9318,8 @@ async function deleteMySuggestion(id, el){
     if(USE_REMOTE()){
       const r = await apiPost('deleteSuggestion', {id});
       if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
-      await refreshMySuggestions();
+      MY_SUGGESTIONS = MY_SUGGESTIONS.filter(x=>x.id!==id);
+      refreshMySuggestions().then(()=>{ if(activeView === 'suggestion') renderView('suggestion'); }).catch(e=>console.warn('background suggestions refresh failed (already-correct local data is unaffected):', e.message || e));
     } else {
       MY_SUGGESTIONS = MY_SUGGESTIONS.filter(x=>x.id!==id);
     }
@@ -9425,7 +9501,10 @@ async function submitNomination(){
         const r = await apiPostMinDelayRetrying('submitNomination', {NomineeName: nomineeName, AwardCategory: category, Month: month, Year: year, Reason: reason, SupportingDetails: details, NominatorName: CURRENT_EMPLOYEE.fullName, clientId: pendingNominationClientId});
         if(!r.ok){ err.textContent = r.error || "Couldn't submit — please try again."; err.style.display='block'; btnReset('nominateSubmitBtn','Submit Nomination'); return; }
         pendingNominationClientId = null; // succeeded — a future submission gets a fresh id
-        await refreshNominationsOnly();
+        // Added directly to MY_NOMINATIONS (raw rows, same shape the
+        // server sends) rather than waiting on a full refresh first.
+        MY_NOMINATIONS.unshift({NomineeName: nomineeName, AwardCategory: category, Month: month, Year: year, Reason: reason, SupportingDetails: details, NominatorName: CURRENT_EMPLOYEE.fullName, DateSubmitted:"Just now", ID: r.id});
+        refreshNominationsOnly().then(()=>{ if(activeView === 'nominate') renderView('nominate'); }).catch(e=>console.warn('background nominations refresh failed (already-correct local data is unaffected):', e.message || e));
       }
       await btnSent('nominateSubmitBtn');
     }
@@ -9703,7 +9782,11 @@ async function setRequestStatus(id, status){
       }
 
       if(req && req.Type === 'Schedule Swap'){
-        await refreshScheduleOnly(); // only a Schedule Swap actually touches the Schedule tab — refresh just that, not everything
+        // Not awaited — the page about to render (mgmt-requests)
+        // doesn't show schedule data at all, so there's nothing to
+        // gain by waiting here; this just keeps the Schedule tab
+        // itself in sync for whenever it's next opened.
+        refreshScheduleOnly().catch(e=>console.warn('background schedule refresh after swap approval failed:', e.message || e));
       }
       renderView('mgmt-requests');
     } catch(e){
