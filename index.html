@@ -1915,19 +1915,23 @@ async function saveWeekSchedule(){
     if(USE_REMOTE()){
       const r = await apiPostRetrying('updateScheduleWeek', {name, sheetName, cells});
       if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display = 'block'; btnResetEl(btn); return; }
-      // The save above already succeeded — a refresh failing here
-      // must NEVER be shown as "the save failed", since it didn't.
-      // Applying the same edit locally as a fallback keeps what's on
-      // screen correct either way; the next normal refresh reconciles
-      // it with the server's copy regardless.
-      try{
-        await refreshScheduleOnly();
-      } catch(refreshErr){
-        console.warn('saveWeekSchedule: post-save refresh failed, applying the edit locally instead:', refreshErr.message || refreshErr);
-        const rows = sheetName === 'NextSchedule' ? NEXT_SCHEDULE_ROWS : SCHEDULE_ROWS;
-        const row = rows.find(r=>r.name===name);
-        if(row) row.cells = cells;
-      }
+      // The save above already succeeded — apply it locally right
+      // away instead of waiting on a full schedule refresh first.
+      // That refresh is only for picking up OTHER people's changes;
+      // waiting on it here just to see our OWN save (which we already
+      // know succeeded) meant sitting through its own retries/timeouts
+      // — sometimes a minute or more — before the modal would even
+      // close. It still runs, just in the background: if it succeeds
+      // it quietly reconciles with the server's copy, and if it
+      // doesn't, this local update is already correct either way.
+      const rows = sheetName === 'NextSchedule' ? NEXT_SCHEDULE_ROWS : SCHEDULE_ROWS;
+      const row = rows.find(r=>r.name===name);
+      if(row) row.cells = cells;
+      refreshScheduleOnly().then(()=>{
+        if(activeView === 'mgmt-schedule') renderView('mgmt-schedule'); // picks up anyone ELSE's concurrent changes too, once the background refresh actually lands
+      }).catch(refreshErr=>{
+        console.warn('saveWeekSchedule: background post-save refresh failed (already-correct local data is unaffected):', refreshErr.message || refreshErr);
+      });
     } else {
       const rows = sheetName === 'NextSchedule' ? NEXT_SCHEDULE_ROWS : SCHEDULE_ROWS;
       const row = rows.find(r=>r.name===name);
@@ -1975,20 +1979,23 @@ async function saveCellEdit(){
     if(USE_REMOTE()){
       const r = await apiPostMinDelayRetrying('updateScheduleCell', {name: cellModalTarget.name, dayIndex: cellModalTarget.dayIndex, value, sheetName: cellModalTarget.sheetName});
       if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display = 'block'; btn.disabled=false; btn.textContent='Save'; return; }
-      // The save above already succeeded — a refresh failing here
-      // (e.g. an external tool intercepting just this one follow-up
-      // request) must NEVER be shown as "the save failed", since it
-      // didn't. Applying the same edit locally as a fallback keeps
-      // what's on screen correct either way; the next normal refresh
-      // reconciles it with the server's copy regardless.
-      try{
-        await refreshScheduleOnly();
-      } catch(refreshErr){
-        console.warn('saveCellEdit: post-save refresh failed, applying the edit locally instead:', refreshErr.message || refreshErr);
-        const rows = cellModalTarget.sheetName === 'NextSchedule' ? NEXT_SCHEDULE_ROWS : SCHEDULE_ROWS;
-        const row = rows.find(x=>x.name===cellModalTarget.name);
-        if(row) row.cells[cellModalTarget.dayIndex] = value;
-      }
+      // The save above already succeeded — apply it locally right
+      // away instead of waiting on a full schedule refresh first.
+      // That refresh is only for picking up OTHER people's changes;
+      // waiting on it here just to see our OWN save (which we already
+      // know succeeded) meant sitting through its own retries/timeouts
+      // — sometimes a minute or more — before the modal would even
+      // close. It still runs, just in the background: if it succeeds
+      // it quietly reconciles with the server's copy, and if it
+      // doesn't, this local update is already correct either way.
+      const rows = cellModalTarget.sheetName === 'NextSchedule' ? NEXT_SCHEDULE_ROWS : SCHEDULE_ROWS;
+      const row = rows.find(x=>x.name===cellModalTarget.name);
+      if(row) row.cells[cellModalTarget.dayIndex] = value;
+      refreshScheduleOnly().then(()=>{
+        if(activeView === 'mgmt-schedule') renderView('mgmt-schedule'); // picks up anyone ELSE's concurrent changes too, once the background refresh actually lands
+      }).catch(refreshErr=>{
+        console.warn('saveCellEdit: background post-save refresh failed (already-correct local data is unaffected):', refreshErr.message || refreshErr);
+      });
     } else {
       const rows = cellModalTarget.sheetName === 'NextSchedule' ? NEXT_SCHEDULE_ROWS : SCHEDULE_ROWS;
       const row = rows.find(x=>x.name===cellModalTarget.name);
