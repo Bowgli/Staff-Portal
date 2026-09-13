@@ -3942,19 +3942,26 @@ async function ensureHandbookSectionLoaded(number){
   if(HANDBOOK_SECTION_CACHE[number]) return HANDBOOK_SECTION_CACHE[number];
   if(handbookSectionLoading[number]) return null; // already being fetched elsewhere; that call's renderView() will pick it up
   handbookSectionLoading[number] = true;
-  try{
-    const data = await apiGet('handbookSection&number=' + encodeURIComponent(number));
-    if(data && !data.error){
+  // Same multi-attempt safety net as ensureHandbookLoaded() above —
+  // this is a GET with no side effects, so retrying is always safe,
+  // and without it a single bad response here left the section stuck
+  // showing "Loading section…" forever with no way to recover short
+  // of leaving and reopening it.
+  const MAX_ATTEMPTS = 4;
+  for(let attempt = 0; attempt < MAX_ATTEMPTS; attempt++){
+    try{
+      const data = await apiGet('handbookSection&number=' + encodeURIComponent(number));
+      if(data && data.error) throw new Error(data.error);
       let qa = []; let examples = [];
       try{ qa = JSON.parse(data.qa || '[]'); } catch(e){ qa = []; }
       try{ examples = JSON.parse(data.examples || '[]'); } catch(e){ examples = []; }
       HANDBOOK_SECTION_CACHE[number] = { html: data.html || '', qa, examples };
+      break;
+    } catch(e){
+      console.error(`ensureHandbookSectionLoaded attempt ${attempt+1} failed for section`, number, ':', e.message || e);
     }
-  } catch(e){
-    console.error('ensureHandbookSectionLoaded failed for section', number, ':', e.message || e);
-  } finally {
-    delete handbookSectionLoading[number];
   }
+  delete handbookSectionLoading[number];
   renderView('handbook');
   return HANDBOOK_SECTION_CACHE[number] || null;
 }
@@ -4005,15 +4012,19 @@ async function ensureHandbookLoaded(){
   handbookLoading = true;
   handbookLoadError = false;
   renderView('handbook');
-  // One retry on a genuine network/timeout failure — this payload
-  // (~150KB, the full Employee Handbook) is larger than most GET
-  // calls in the app, so it's more exposed to a single slow/dropped
-  // request than most other pages. Every failure is also logged to
-  // the console with as much detail as we have, since the earlier
-  // generic error message gave no way to tell a timeout apart from a
-  // real backend error apart from a malformed response — this fixes
-  // that blind spot going forward.
-  for(let attempt = 0; attempt <= 1; attempt++){
+  // Multiple retries on a network/timeout/unexpected-response failure
+  // — a GET like this has no side effects, so retrying several times
+  // is always safe (unlike a POST, where retrying risks creating a
+  // duplicate). This was bumped up from a single retry after seeing
+  // an external network tool intercept the response two times in a
+  // row on some networks; a few more attempts meaningfully improves
+  // the odds of getting a clean response through on one of them.
+  // Every failure is also logged to the console with as much detail
+  // as we have, since the earlier generic error message gave no way
+  // to tell a timeout apart from a real backend error apart from a
+  // malformed response — this fixes that blind spot going forward.
+  const MAX_ATTEMPTS = 4;
+  for(let attempt = 0; attempt < MAX_ATTEMPTS; attempt++){
     try{
       const data = await apiGet('handbookIndex');
       if(data && data.error){
@@ -4045,7 +4056,7 @@ async function ensureHandbookLoaded(){
       return;
     } catch(e){
       console.error(`ensureHandbookLoaded attempt ${attempt+1} failed:`, e.message || e);
-      if(attempt === 1){
+      if(attempt === MAX_ATTEMPTS - 1){
         handbookLoadError = true;
         HANDBOOK_INDEX = [];
       }
