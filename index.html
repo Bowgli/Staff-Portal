@@ -1015,6 +1015,7 @@ let ALL_FORMS = []; // Forms Library entries
 let ALL_NOMINATIONS = []; // Award Nominations — full list, for management
 let MY_NOMINATIONS = []; // Award Nominations this employee submitted, so they can edit their own
 let editingNominationId = null;
+let pendingNominationClientId = null; // stable id kept across a retry of the SAME not-yet-confirmed nomination submission
 let expandedAnnouncement = null; // ID of the announcement currently expanded (click-to-view), employee-facing
 let expandedRecognition = null; // ID of the recognition currently expanded (click-to-view) — mirrors expandedAnnouncement above
 let editingAnnouncementId = null; // ID of the announcement being edited, management "Post Announcements"
@@ -8616,7 +8617,9 @@ const BUILDERS = {
 };
 
 let editingRequestId = null;
+let pendingRequestClientId = null; // stable id kept across a retry of the SAME not-yet-confirmed request submission
 let editingConcernId = null;
+let pendingConcernClientId = null; // stable id kept across a retry of the SAME not-yet-confirmed concern submission
 
 function toggleConcernCategoryFields(){
   const type = concernCategoryType(document.getElementById('concernTopic').value);
@@ -8765,10 +8768,15 @@ async function submitMyRequestInner(){
   }
 
   btnLoading('reqSubmitBtn');
+  // Kept the SAME id across a retry — the backend recognizes a
+  // resubmission via ClientId and returns the existing request
+  // instead of creating a duplicate.
+  if(!pendingRequestClientId) pendingRequestClientId = (crypto.randomUUID ? crypto.randomUUID() : ('cid-' + Date.now() + '-' + Math.random().toString(36).slice(2)));
   try{
     if(USE_REMOTE()){
-      const r = await apiPostMinDelay('submitRequest', {EmployeeName: CURRENT_EMPLOYEE.name, Type, Details, SwapDay, TheirDay, SwapWithName, AbsenceDate});
+      const r = await apiPostMinDelayRetrying('submitRequest', {EmployeeName: CURRENT_EMPLOYEE.name, Type, Details, SwapDay, TheirDay, SwapWithName, AbsenceDate, clientId: pendingRequestClientId});
       if(!r.ok){ err.textContent = r.error || "Couldn't submit."; err.style.display='block'; btnReset('reqSubmitBtn','Submit Request'); return; }
+      pendingRequestClientId = null; // succeeded — a future submission gets a fresh id
       await refreshMyRequests();
     } else {
       MOCK.requests.unshift({type:Type, date:"Just now", status:"pending", swapDay:SwapDay, theirDay:TheirDay, swapWithName:SwapWithName});
@@ -8905,34 +8913,45 @@ async function submitMyConcern(){
     WitnessName, AdditionalComments, Priority
   };
 
-  if(editingConcernId){
-    btnLoading('concernSubmitBtn', 'Updating...');
-    const From = anon ? "Anonymous" : CURRENT_EMPLOYEE.fullName;
-    if(USE_REMOTE()){
-      const r = await apiPostMinDelay('editConcern', Object.assign({id:editingConcernId, From}, body));
-      if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('concernSubmitBtn','Update Concern'); return; }
-      await refreshMyConcerns();
-    } else {
-      const c = MY_CONCERNS.find(x=>x.id===editingConcernId);
-      if(c){ c.venue = Venue; c.topic = Topic; c.details = Details; c.from = From; }
+  try{
+    if(editingConcernId){
+      btnLoading('concernSubmitBtn', 'Updating...');
+      const From = anon ? "Anonymous" : CURRENT_EMPLOYEE.fullName;
+      if(USE_REMOTE()){
+        const r = await apiPostMinDelayRetrying('editConcern', Object.assign({id:editingConcernId, From}, body));
+        if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('concernSubmitBtn','Update Concern'); return; }
+        await refreshMyConcerns();
+      } else {
+        const c = MY_CONCERNS.find(x=>x.id===editingConcernId);
+        if(c){ c.venue = Venue; c.topic = Topic; c.details = Details; c.from = From; }
+      }
+      editingConcernId = null;
+      await btnSent('concernSubmitBtn');
+      renderView('concern');
+      document.getElementById('concernOk').style.display='block';
+      return;
     }
-    editingConcernId = null;
-    await btnSent('concernSubmitBtn');
-    renderView('concern');
-    document.getElementById('concernOk').style.display='block';
-    return;
-  }
 
-  btnLoading('concernSubmitBtn');
-  const From = anon ? "Anonymous" : CURRENT_EMPLOYEE.fullName;
-  if(USE_REMOTE()){
-    const r = await apiPostMinDelay('submitConcern', Object.assign({From, SubmittedBy: CURRENT_EMPLOYEE.fullName}, body));
-    if(!r.ok){ err.textContent = r.error || "Couldn't submit."; err.style.display='block'; btnReset('concernSubmitBtn','Submit Concern'); return; }
-    await refreshMyConcerns();
+    btnLoading('concernSubmitBtn');
+    const From = anon ? "Anonymous" : CURRENT_EMPLOYEE.fullName;
+    // Kept the SAME id across a retry — the backend recognizes a
+    // resubmission via ClientId and returns the existing concern
+    // (same RefNo) instead of creating a duplicate report.
+    if(!pendingConcernClientId) pendingConcernClientId = (crypto.randomUUID ? crypto.randomUUID() : ('cid-' + Date.now() + '-' + Math.random().toString(36).slice(2)));
+    if(USE_REMOTE()){
+      const r = await apiPostMinDelayRetrying('submitConcern', Object.assign({From, SubmittedBy: CURRENT_EMPLOYEE.fullName, clientId: pendingConcernClientId}, body));
+      if(!r.ok){ err.textContent = r.error || "Couldn't submit."; err.style.display='block'; btnReset('concernSubmitBtn','Submit Concern'); return; }
+      pendingConcernClientId = null; // succeeded — a future submission gets a fresh id
+      await refreshMyConcerns();
+    }
+    await btnSent('concernSubmitBtn');
+    ok.style.display='block';
+    renderView('concern');
+  } catch(e){
+    err.textContent = e.message || "Couldn't submit — please try again.";
+    err.style.display='block';
+    btnReset('concernSubmitBtn', editingConcernId ? 'Update Concern' : 'Submit Concern');
   }
-  await btnSent('concernSubmitBtn');
-  ok.style.display='block';
-  renderView('concern');
 }
 
 function viewMyConcernDetail(id){
@@ -9073,6 +9092,7 @@ async function withdrawMyConcern(id, el){
 }
 
 let editingSuggestionId = null;
+let pendingSuggestionClientId = null; // stable id kept across a retry of the SAME not-yet-confirmed suggestion submission
 
 async function submitMySuggestion(){
   const Idea = document.getElementById('suggIdea').value.trim();
@@ -9109,10 +9129,15 @@ async function submitMySuggestion(){
 
   const From = anon ? "Anonymous" : CURRENT_EMPLOYEE.fullName;
   btnLoading('suggSubmitBtn');
+  // Kept the SAME id across a retry — the backend recognizes a
+  // resubmission via ClientId and returns the existing suggestion
+  // instead of creating a duplicate.
+  if(!pendingSuggestionClientId) pendingSuggestionClientId = (crypto.randomUUID ? crypto.randomUUID() : ('cid-' + Date.now() + '-' + Math.random().toString(36).slice(2)));
   try{
     if(USE_REMOTE()){
-      const r = await apiPostMinDelay('submitSuggestion', {From, Idea, Anonymous: anon, SubmittedBy: CURRENT_EMPLOYEE.fullName});
+      const r = await apiPostMinDelayRetrying('submitSuggestion', {From, Idea, Anonymous: anon, SubmittedBy: CURRENT_EMPLOYEE.fullName, clientId: pendingSuggestionClientId});
       if(!r.ok){ err.textContent = r.error || "Couldn't submit."; err.style.display='block'; btnReset('suggSubmitBtn','Submit Suggestion'); return; }
+      pendingSuggestionClientId = null; // succeeded — a future submission gets a fresh id
       await refreshMySuggestions();
     }
     await btnSent('suggSubmitBtn');
@@ -9149,6 +9174,7 @@ async function deleteMySuggestion(id, el){
 }
 
 let editingEvaluationId = null;
+let pendingEvaluationClientId = null; // stable id kept across a retry of the SAME not-yet-confirmed evaluation submission
 
 // Live "Overall Score" preview shown on the Evaluate a Staff form —
 // recalculates the moment any rating changes, using the exact same
@@ -9222,10 +9248,16 @@ async function submitEvaluationNow(){
   }
 
   btnLoading('evalSubmitBtn');
+  // Kept the SAME id across a retry — the backend recognizes a
+  // resubmission via ClientId and returns the existing evaluation
+  // instead of creating a duplicate.
+  if(!pendingEvaluationClientId) pendingEvaluationClientId = (crypto.randomUUID ? crypto.randomUUID() : ('cid-' + Date.now() + '-' + Math.random().toString(36).slice(2)));
+  body.clientId = pendingEvaluationClientId;
   try{
     if(USE_REMOTE()){
-      const r = await apiPostMinDelay('submitEvaluation', body);
+      const r = await apiPostMinDelayRetrying('submitEvaluation', body);
       if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnReset('evalSubmitBtn','Submit Evaluation'); return; }
+      pendingEvaluationClientId = null; // succeeded — a future submission gets a fresh id
       await loadRemoteData();
     }
     await btnSent('evalSubmitBtn');
@@ -9297,7 +9329,7 @@ async function submitNomination(){
   try{
     if(isEditing){
       if(USE_REMOTE()){
-        const r = await apiPostMinDelay('editNomination', {id: editingNominationId, nominatorName: CURRENT_EMPLOYEE.fullName, NomineeName: nomineeName, AwardCategory: category, Month: month, Year: year, Reason: reason, SupportingDetails: details});
+        const r = await apiPostMinDelayRetrying('editNomination', {id: editingNominationId, nominatorName: CURRENT_EMPLOYEE.fullName, NomineeName: nomineeName, AwardCategory: category, Month: month, Year: year, Reason: reason, SupportingDetails: details});
         if(!r.ok){ err.textContent = r.error || "Couldn't update — please try again."; err.style.display='block'; btnReset('nominateSubmitBtn','Update Nomination'); return; }
       }
       const n = MY_NOMINATIONS.find(x=>x.ID===editingNominationId);
@@ -9305,9 +9337,14 @@ async function submitNomination(){
       editingNominationId = null;
       await btnSent('nominateSubmitBtn');
     } else {
+      // Kept the SAME id across a retry — the backend recognizes a
+      // resubmission via ClientId and returns the existing nomination
+      // instead of creating a duplicate.
+      if(!pendingNominationClientId) pendingNominationClientId = (crypto.randomUUID ? crypto.randomUUID() : ('cid-' + Date.now() + '-' + Math.random().toString(36).slice(2)));
       if(USE_REMOTE()){
-        const r = await apiPostMinDelay('submitNomination', {NomineeName: nomineeName, AwardCategory: category, Month: month, Year: year, Reason: reason, SupportingDetails: details, NominatorName: CURRENT_EMPLOYEE.fullName});
+        const r = await apiPostMinDelayRetrying('submitNomination', {NomineeName: nomineeName, AwardCategory: category, Month: month, Year: year, Reason: reason, SupportingDetails: details, NominatorName: CURRENT_EMPLOYEE.fullName, clientId: pendingNominationClientId});
         if(!r.ok){ err.textContent = r.error || "Couldn't submit — please try again."; err.style.display='block'; btnReset('nominateSubmitBtn','Submit Nomination'); return; }
+        pendingNominationClientId = null; // succeeded — a future submission gets a fresh id
         await refreshNominationsOnly();
       }
       await btnSent('nominateSubmitBtn');
@@ -9358,6 +9395,7 @@ async function deleteMyEvaluation(id, el){
   });
 }
 
+let pendingRecognitionClientId = null; // stable id kept across a retry of the SAME not-yet-confirmed recognition submission
 async function issueRecognitionNow(){
   const EmployeeName = readEmployeePicker('recogEmp');
   const AwardTitle = document.getElementById('recogTitle').value.trim();
@@ -9372,12 +9410,22 @@ async function issueRecognitionNow(){
   btn.disabled = true;
   btn.innerHTML = `<span class="btn-spinner"></span>Sending...`;
 
+  // Kept the SAME id across a retry — the backend recognizes a
+  // resubmission via ClientId and returns the existing recognition
+  // instead of creating a duplicate.
+  if(!pendingRecognitionClientId) pendingRecognitionClientId = (crypto.randomUUID ? crypto.randomUUID() : ('cid-' + Date.now() + '-' + Math.random().toString(36).slice(2)));
   try{
+    let newId = null;
     if(USE_REMOTE()){
-      const r = await apiPostMinDelay('issueRecognition', {EmployeeName, AwardTitle, Note});
+      const r = await apiPostMinDelayRetrying('issueRecognition', {EmployeeName, AwardTitle, Note, clientId: pendingRecognitionClientId});
       if(!r.ok){ err.textContent = r.error || "Couldn't issue award."; err.style.display='block'; btn.disabled=false; btn.innerHTML='Issue Award'; return; }
+      newId = r.id;
+      pendingRecognitionClientId = null; // succeeded — a future submission gets a fresh id
     }
-    MOCK.recognition.unshift({medal:"🏆", name:AwardTitle, desc:Note, employeeName:EmployeeName, date:"Just now"});
+    // Without an id here, View Details on this just-issued recognition
+    // would silently do nothing — same class of bug fixed earlier for
+    // Announcements.
+    MOCK.recognition.unshift({medal:"🏆", name:AwardTitle, desc:Note, employeeName:EmployeeName, date:"Just now", id:newId});
     btn.innerHTML = `✓ Sent`;
     await new Promise(r=>setTimeout(r, 600));
     renderView('mgmt-recognition');
