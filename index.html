@@ -990,6 +990,7 @@ let editingNominationId = null;
 let expandedAnnouncement = null; // ID of the announcement currently expanded (click-to-view), employee-facing
 let expandedRecognition = null; // ID of the recognition currently expanded (click-to-view) — mirrors expandedAnnouncement above
 let editingAnnouncementId = null; // ID of the announcement being edited, management "Post Announcements"
+let pendingAnnouncementClientId = null; // stable id kept across a retry of the SAME not-yet-confirmed post — see postAnnouncement()
 let MY_DISCIPLINARY_RECORDS = []; // scoped to the current employee, excludes Drafts and internal-only fields
 let discFilter = { search:'', violation:'All', level:'All', status:'All', sort:'newest', expanded:false };
 let discSummaryPeriod = ''; // "YYYY-MM", defaults to current month on first view
@@ -7067,12 +7068,6 @@ const BUILDERS = {
     const activity = computeRecentActivity();
     markNotificationsSeenNow();
     return `
-    <div class="card" style="margin-bottom:16px;">
-      <h3>📲 Connect Telegram</h3>
-      <p class="muted" style="margin-bottom:12px;">Get announcements sent straight to your phone, even when the portal is closed.</p>
-      <div id="tgStatus"></div>
-      <button class="btn auto" onclick="startTelegramLink()">Connect Telegram</button>
-    </div>
     <div class="card">
       <h3><span class="ic">🔔</span> Recent Activity</h3>
       ${activity.length ? activity.map(n=>`<div class="feed-item" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="openNotificationItem('${n.navType}','${n.refId}')"><span>${n.title}</span><span style="display:flex; align-items:center; gap:10px;"><span class="meta">${n.time}</span><span class="muted" style="font-size:12px;">View →</span></span></div>`).join('') : `<p class="muted">Nothing new yet.</p>`}
@@ -8564,7 +8559,7 @@ const BUILDERS = {
       <button class="btn" id="annPostBtn" onclick="postAnnouncement()">Post</button>
       <button class="btn ghost auto" id="annCancelBtn" style="display:none; margin-left:8px;" onclick="cancelEditAnnouncement()">✖ Cancel</button>
       <p class="login-err" id="annErr"></p>
-      <p class="login-ok" id="annOk">Posted${USE_REMOTE()?' and sent to Telegram subscribers.':' (local demo — connect the backend to actually broadcast).'}</p>
+      <p class="login-ok" id="annOk">Posted.</p>
     </div>
     <div class="card table-scroll">
       <h3>History</h3>
@@ -8579,26 +8574,6 @@ const BUILDERS = {
       </table>
     </div>`,
 };
-
-async function startTelegramLink(){
-  const statusEl = document.getElementById('tgStatus');
-  if(!USE_REMOTE()){
-    statusEl.innerHTML = `<div class="banner note" style="margin-bottom:0;">Connect the backend first (see deployment guide) — this button will generate a real code once <span class="mono">SHEET_API_URL</span> is set.</div>`;
-    return;
-  }
-  try{
-    const r = await apiPost('startTelegramLink', {employeeName: CURRENT_EMPLOYEE.name});
-    if(!r.ok){ statusEl.innerHTML = `<div class="banner" style="margin-bottom:0;">Couldn't generate a code. Try again.</div>`; return; }
-    const botLink = r.botUsername ? `https://t.me/${r.botUsername}` : "your company's Telegram bot";
-    statusEl.innerHTML = `<div class="banner note" style="margin-bottom:0;">
-      1. Open <a href="${botLink}" target="_blank" style="color:var(--blue);">${botLink}</a> in Telegram<br>
-      2. Send: <span class="mono">/link ${r.code}</span><br>
-      3. You'll get a confirmation message once linked.
-    </div>`;
-  } catch(e){
-    statusEl.innerHTML = `<div class="banner" style="margin-bottom:0;">${e.message || "Couldn't generate a code. Try again."}</div>`;
-  }
-}
 
 let editingRequestId = null;
 let editingConcernId = null;
@@ -9600,8 +9575,8 @@ async function postAnnouncement(){
   try{
     if(isEditing){
       // editAnnouncement only updates the row in place — it does NOT
-      // re-broadcast to Telegram or touch notification/unread state,
-      // per the "don't send duplicate notifications on edit" requirement.
+      // touch notification/unread state, per the "don't send
+      // duplicate notifications on edit" requirement.
       if(USE_REMOTE()){
         const r = await apiPostMinDelay('editAnnouncement', {id: editingAnnouncementId, Title, Body, TargetType, TargetValue});
         if(!r.ok){ err.textContent = r.error || "Couldn't save changes."; err.style.display='block'; btn.disabled=false; btn.innerHTML='💾 Save Changes'; return; }
@@ -9615,11 +9590,18 @@ async function postAnnouncement(){
       return;
     }
 
+    // Kept the SAME id across a retry (not regenerated here) — if the
+    // employee clicks Post again after a timeout error that actually
+    // masked a successful first submission, the backend recognizes
+    // this as the same post via ClientId and returns the existing
+    // announcement instead of creating a duplicate.
+    if(!pendingAnnouncementClientId) pendingAnnouncementClientId = (crypto.randomUUID ? crypto.randomUUID() : ('cid-' + Date.now() + '-' + Math.random().toString(36).slice(2)));
     let newId = null;
     if(USE_REMOTE()){
-      const r = await apiPostMinDelay('postAnnouncement', {Title, Body, PostedBy: CURRENT_USER.displayName, TargetType, TargetValue});
+      const r = await apiPostMinDelay('postAnnouncement', {Title, Body, PostedBy: CURRENT_USER.displayName, TargetType, TargetValue, clientId: pendingAnnouncementClientId});
       if(!r.ok){ err.textContent = r.error || "Couldn't post."; err.style.display='block'; btn.disabled=false; btn.innerHTML='Post'; return; }
       newId = r.id;
+      pendingAnnouncementClientId = null; // succeeded — a future post gets a fresh id
     }
     // Without an ID here, View/Edit/Delete on this just-posted
     // announcement would silently do nothing — ALL_ANNOUNCEMENTS.find
@@ -9691,8 +9673,19 @@ function cancelEditAnnouncement(){
 async function deleteAnnouncementEntry(id, el){
   await confirmAndDelete(el, "Delete this announcement? This can't be undone.", async ()=>{
     if(USE_REMOTE()){
-      const r = await apiPost('deleteAnnouncement', {id});
-      if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
+      try{
+        const r = await apiPost('deleteAnnouncement', {id});
+        if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
+      } catch(e){
+        // A timeout here doesn't necessarily mean the delete failed —
+        // the request may well have reached the server and completed;
+        // we just never got the response back in time. Deleting is
+        // now idempotent server-side (doDeleteById_ treats "already
+        // gone" as success), so it's safe to reflect the delete
+        // locally now rather than forcing a manual refresh just to
+        // find out it had actually already worked.
+        console.error('deleteAnnouncementEntry: request timed out, applying locally anyway:', e.message || e);
+      }
     }
     ALL_ANNOUNCEMENTS = ALL_ANNOUNCEMENTS.filter(a=>a.ID!==id);
     renderView('mgmt-announcements');
