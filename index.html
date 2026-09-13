@@ -4087,6 +4087,22 @@ function popHandbookState(){
 // this deliberately.
 async function ensureHandbookLoaded(){
   if(HANDBOOK_INDEX !== null || handbookLoading) return;
+  // Session-level cache — if the employee already opened the
+  // Assistant once this browser session (even navigated away and
+  // back, or reloaded the page), reuse that copy instead of
+  // re-fetching from the server at all. Cleared automatically when
+  // the tab closes, and soft-expires after 10 minutes so an Admin
+  // updating the handbook mid-session is picked up reasonably soon
+  // rather than the cache silently outliving how long anyone is
+  // actually likely to stay on one page.
+  try{
+    const cached = JSON.parse(sessionStorage.getItem('hb_index_cache') || 'null');
+    if(cached && Array.isArray(cached.sections) && (Date.now() - cached.savedAt) < 10*60*1000){
+      HANDBOOK_INDEX = cached.sections;
+      HANDBOOK_VERSION = cached.version || '';
+      return;
+    }
+  } catch(e){ /* sessionStorage unavailable (e.g. some private-browsing modes) — just fetch normally below */ }
   handbookLoading = true;
   handbookLoadError = false;
   renderView('handbook');
@@ -4132,6 +4148,7 @@ async function ensureHandbookLoaded(){
         };
       });
       HANDBOOK_VERSION = data.version || '';
+      try{ sessionStorage.setItem('hb_index_cache', JSON.stringify({sections: HANDBOOK_INDEX, version: HANDBOOK_VERSION, savedAt: Date.now()})); } catch(e){ /* storage full/unavailable — fine, just means no session cache this time */ }
       handbookLoading = false;
       renderView('handbook');
       return;
