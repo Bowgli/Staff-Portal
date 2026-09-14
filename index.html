@@ -7031,7 +7031,7 @@ const BUILDERS = {
           <option>Positive Attitude Award</option>
           <option>Other</option>
         </select>
-        <div id="nominateOtherCategoryWrap" style="display:none;">
+        <div id="nominateOtherCategoryWrap" style="display:none; margin-bottom:14px;">
           <label>Please Specify Award Category</label>
           <input type="text" id="nominateOtherCategory" placeholder="Enter the award category name">
         </div>
@@ -7060,7 +7060,7 @@ const BUILDERS = {
         <h3>Your Nominations</h3>
         <table>
           <tr><th>Nominee</th><th>Category</th><th>Period</th><th>Date Submitted</th><th></th></tr>
-          ${MY_NOMINATIONS.map(n=>`<tr><td>${n.NomineeName}</td><td>${n.AwardCategory}</td><td class="muted">${n.Month||''} ${n.Year||''}</td><td>${fmtDateTime(n.DateSubmitted)}</td><td><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditNomination('${n.ID}')">Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyNomination('${n.ID}', this)">🗑️ Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">No nominations submitted yet.</td></tr>`}
+          ${MY_NOMINATIONS.map(n=>`<tr><td>${n.NomineeName}</td><td>${n.AwardCategory}</td><td class="muted">${n.Month||''} ${n.Year||''}</td><td>${fmtDateTime(n.DateSubmitted)}</td><td><button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditNomination('${n.ID}')">✏️ Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyNomination('${n.ID}', this)">🗑️ Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">No nominations submitted yet.</td></tr>`}
         </table>
       </div>
     </div>`,
