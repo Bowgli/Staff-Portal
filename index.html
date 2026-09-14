@@ -7017,12 +7017,24 @@ const BUILDERS = {
         <label>Employee Being Nominated</label>
         ${employeePickerHtml('nominateEmp', EMPLOYEE_ROSTER.filter(e=>e.name!==CURRENT_EMPLOYEE.name))}
         <label>Award Category</label>
-        <select id="nominateCategory">
+        <select id="nominateCategory" onchange="toggleNominateOtherCategory()">
+          <option value="" disabled selected>Select Award Category</option>
           <option>Employee of the Month</option>
           <option>Customer Service Excellence</option>
           <option>Outstanding Performance</option>
+          <option>Teamwork & Collaboration</option>
+          <option>Leadership Excellence</option>
+          <option>Most Improved Employee</option>
+          <option>Reliability & Attendance</option>
+          <option>Initiative & Innovation</option>
+          <option>Going Above and Beyond</option>
+          <option>Positive Attitude Award</option>
           <option>Other</option>
         </select>
+        <div id="nominateOtherCategoryWrap" style="display:none;">
+          <label>Please Specify Award Category</label>
+          <input type="text" id="nominateOtherCategory" placeholder="Enter the award category name">
+        </div>
         <div class="grid grid-2">
           <div>
             <label>Month</label>
@@ -7048,7 +7060,7 @@ const BUILDERS = {
         <h3>Your Nominations</h3>
         <table>
           <tr><th>Nominee</th><th>Category</th><th>Period</th><th>Date Submitted</th><th></th></tr>
-          ${MY_NOMINATIONS.map(n=>`<tr><td>${n.NomineeName}</td><td>${n.AwardCategory}</td><td class="muted">${n.Month||''} ${n.Year||''}</td><td>${fmtDateTime(n.DateSubmitted)}</td><td><button class="btn ghost auto" style="padding:5px 10px;" onclick="startEditNomination('${n.ID}')">Edit</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">No nominations submitted yet.</td></tr>`}
+          ${MY_NOMINATIONS.map(n=>`<tr><td>${n.NomineeName}</td><td>${n.AwardCategory}</td><td class="muted">${n.Month||''} ${n.Year||''}</td><td>${fmtDateTime(n.DateSubmitted)}</td><td><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditNomination('${n.ID}')">Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyNomination('${n.ID}', this)">🗑️ Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">No nominations submitted yet.</td></tr>`}
         </table>
       </div>
     </div>`,
@@ -9502,6 +9514,11 @@ async function refreshNominationsOnly(){
   if(myNominationsRaw) MY_NOMINATIONS = myNominationsRaw.slice().reverse();
 }
 
+const NOMINATION_STANDARD_CATEGORIES_ = ["Employee of the Month","Customer Service Excellence","Outstanding Performance","Teamwork & Collaboration","Leadership Excellence","Most Improved Employee","Reliability & Attendance","Initiative & Innovation","Going Above and Beyond","Positive Attitude Award"];
+function toggleNominateOtherCategory(){
+  const isOther = document.getElementById('nominateCategory').value === 'Other';
+  document.getElementById('nominateOtherCategoryWrap').style.display = isOther ? 'block' : 'none';
+}
 function clearNominationForm(){
   if(!confirm("Are you sure you want to clear this nomination? All unsaved information will be removed.")) return;
   editingNominationId = null;
@@ -9509,7 +9526,7 @@ function clearNominationForm(){
 }
 async function submitNomination(){
   const nomineeName = readEmployeePicker('nominateEmp');
-  const category = document.getElementById('nominateCategory').value;
+  const categorySelect = document.getElementById('nominateCategory').value;
   const month = document.getElementById('nominateMonth').value;
   const year = document.getElementById('nominateYear').value.trim();
   const reason = document.getElementById('nominateReason').value.trim();
@@ -9517,6 +9534,13 @@ async function submitNomination(){
   const err = document.getElementById('nominateErr');
   err.style.display = 'none';
   if(!nomineeName){ err.textContent = "Type a name and pick a real match from the suggestions."; err.style.display='block'; return; }
+  if(!categorySelect){ err.textContent = "Please select an award category."; err.style.display='block'; return; }
+  let category = categorySelect;
+  if(categorySelect === 'Other'){
+    const otherText = document.getElementById('nominateOtherCategory').value.trim();
+    if(!otherText){ err.textContent = "Please specify the award category."; err.style.display='block'; return; }
+    category = otherText;
+  }
   if(!reason){ err.textContent = "Add a reason for the nomination."; err.style.display='block'; return; }
 
   const isEditing = !!editingNominationId;
@@ -9581,7 +9605,10 @@ function startEditNomination(id){
   if(!n) return;
   editingNominationId = id;
   document.getElementById('nominateEmp').value = n.NomineeName;
-  document.getElementById('nominateCategory').value = n.AwardCategory;
+  const isStandardCategory = NOMINATION_STANDARD_CATEGORIES_.includes(n.AwardCategory);
+  document.getElementById('nominateCategory').value = isStandardCategory ? n.AwardCategory : 'Other';
+  toggleNominateOtherCategory();
+  if(!isStandardCategory) document.getElementById('nominateOtherCategory').value = n.AwardCategory || '';
   document.getElementById('nominateMonth').value = n.Month || 'January';
   document.getElementById('nominateYear').value = n.Year || String(new Date().getFullYear());
   document.getElementById('nominateReason').value = n.Reason || '';
@@ -9593,6 +9620,17 @@ function startEditNomination(id){
   document.getElementById('nominateEmp').scrollIntoView({behavior:'smooth', block:'center'});
 }
 
+async function deleteMyNomination(id, el){
+  await confirmAndDelete(el, "Delete this nomination? This can't be undone.", async ()=>{
+    if(USE_REMOTE()){
+      const r = await apiPost('deleteNomination', {id, nominatorName: CURRENT_EMPLOYEE.fullName});
+      if(!r.ok){ alert(r.error || "Couldn't delete."); return; }
+    }
+    MY_NOMINATIONS = MY_NOMINATIONS.filter(x=>x.ID!==id);
+    refreshNominationsOnly().then(()=>{ if(activeView === 'nominate') renderView('nominate'); }).catch(e=>console.warn('background nominations refresh failed (already-correct local data is unaffected):', e.message || e));
+    renderView('nominate');
+  });
+}
 function cancelEditNomination(){
   editingNominationId = null;
   renderView('nominate');
