@@ -1634,25 +1634,6 @@ function computeProbationEndDate(dateHired){
   d.setDate(d.getDate() + PROBATION_TOTAL_DAYS - 1);
   return d.toISOString().slice(0,10);
 }
-// Simple "this year's occurrence of the Regular Employment Date's
-// month/day" — matches company policy: the Anniversary Date is
-// referenced from the date the employee was hired under Regular
-// status (a separate, Admin-entered field, distinct from both the
-// original Date Hired and the calculated Probation Completion Date).
-// Returns blank whenever that date hasn't been entered yet, rather
-// than falling back to either of those — this is only ever a
-// reference date shown on the form, no paid-leave-eligibility or
-// leave-balance calculation is derived from it here; that's
-// explicitly out of scope until HR records are complete and verified.
-function employeeAnniversaryDate_(employeeName){
-  const emp = EMPLOYEE_ROSTER.find(e=>e.name===employeeName);
-  if(!emp || !emp.regularEmploymentDate) return '';
-  const regularDate = new Date(emp.regularEmploymentDate + 'T00:00:00');
-  if(isNaN(regularDate.getTime())) return '';
-  const thisYear = new Date().getFullYear();
-  const anniv = new Date(thisYear, regularDate.getMonth(), regularDate.getDate());
-  return anniv.toISOString().slice(0,10);
-}
 function employmentStatusPill(employmentStatus, dateHired){
   if(!employmentStatus) return '<span class="muted">—</span>';
   if(employmentStatus === 'Probationary'){
@@ -2667,7 +2648,7 @@ async function loadRemoteData(){
     // already established for Employment Status.
     ACCOUNT_ROLE_BY_EMPLOYEE = {};
     accountsStatus.forEach(a => { if(a.employeeName) ACCOUNT_ROLE_BY_EMPLOYEE[a.employeeName] = a.role || ''; });
-    roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, position:r.Position, status:r.Status||"Active", employmentStatus:r.EmploymentStatus||'', archiveStatus:r.ArchiveStatus||'', probationMilestonesSent:r.ProbationMilestonesSent||'[]', attendance:"—", dateHired:r.DateHired||'', regularEmploymentDate:r.RegularEmploymentDate||'', phone:(acctByName[r.Name]&&acctByName[r.Name].phone)||'', email:(acctByName[r.Name]&&acctByName[r.Name].email)||'', photoFileId:(acctByName[r.Name]&&acctByName[r.Name].photoFileId)||''}));
+    roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, position:r.Position, status:r.Status||"Active", employmentStatus:r.EmploymentStatus||'', archiveStatus:r.ArchiveStatus||'', probationMilestonesSent:r.ProbationMilestonesSent||'[]', attendance:"—", dateHired:r.DateHired||'', phone:(acctByName[r.Name]&&acctByName[r.Name].phone)||'', email:(acctByName[r.Name]&&acctByName[r.Name].email)||'', photoFileId:(acctByName[r.Name]&&acctByName[r.Name].photoFileId)||''}));
     SCHEDULE_DAYS = schedule.days || [];
     SCHEDULE_ROWS = schedule.rows || [];
     NEXT_SCHEDULE_DAYS = nextSchedule.days || [];
@@ -5240,7 +5221,6 @@ async function saveEmployeeProfile(){
   const status = document.getElementById('empProfileStatus').value;
   const employmentStatus = document.getElementById('empProfileEmploymentStatus').value;
   const dateHired = document.getElementById('empProfileDateHired').value;
-  const regularEmploymentDate = document.getElementById('empProfileRegularDate').value;
   const err = document.getElementById('empProfileErr');
   err.style.display = 'none';
   if(!newName){ err.textContent = "Name can't be empty."; err.style.display='block'; return; }
@@ -5249,11 +5229,11 @@ async function saveEmployeeProfile(){
   btnLoadingEl(btn, 'Saving...');
   try{
     if(USE_REMOTE()){
-      const r = await apiPostRetrying('updateEmployee', {name: oldName, newName, position, status, dateHired, employmentStatus, regularEmploymentDate});
+      const r = await apiPostRetrying('updateEmployee', {name: oldName, newName, position, status, dateHired, employmentStatus});
       if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnResetEl(btn); return; }
     }
     const roster = EMPLOYEE_ROSTER.find(e=>e.name===oldName);
-    if(roster){ roster.name = newName; roster.position = position; roster.status = status; roster.employmentStatus = employmentStatus; roster.dateHired = dateHired; roster.regularEmploymentDate = regularEmploymentDate; }
+    if(roster){ roster.name = newName; roster.position = position; roster.status = status; roster.employmentStatus = employmentStatus; roster.dateHired = dateHired; }
     viewingEmployeeName = newName; // keep viewing the same person under their (possibly new) name
     await btnSentEl(btn, 'Saved');
     employeeProfileEditMode = false;
@@ -7199,8 +7179,8 @@ const BUILDERS = {
               <input type="date" id="reqLeaveReturn">
             </div>
           </div>
-          <label>Anniversary Date <span class="muted">(auto-filled from your Regular Employment Date, if available)</span></label>
-          <input type="date" id="reqLeaveAnniversary" value="${employeeAnniversaryDate_(CURRENT_EMPLOYEE.name)}">
+          <label>Anniversary Date <span class="muted">(optional)</span></label>
+          <input type="date" id="reqLeaveAnniversary">
           <label>Type of Request</label>
           <select id="reqLeaveType" onchange="toggleLeaveTypeOther()">
             <option value="">Select Leave Type</option>
@@ -7580,8 +7560,6 @@ const BUILDERS = {
           <input type="date" id="empProfileDateHired" value="${e.dateHired||''}" onchange="updateProbationEndDatePreview()">
           <label>Probation End Date <span class="muted">(auto-calculated — Date Hired + 3 months)</span></label>
           <input type="text" id="empProfileProbationEnd" value="${e.employmentStatus==='Probationary' ? (computeProbationEndDate(e.dateHired) ? fmtDiscDate(computeProbationEndDate(e.dateHired)) : '—') : '—'}" readonly style="opacity:0.7;">
-          <label>Regular Employment Date <span class="muted">(date hired under Regular status — used as the Anniversary Date reference on Leave Requests; leave blank if not yet regularized)</span></label>
-          <input type="date" id="empProfileRegularDate" value="${e.regularEmploymentDate||''}">
           <p id="empProfileErr" class="login-err"></p>
           <div style="display:flex; gap:8px; margin-top:8px;">
             <button class="btn ghost auto" onclick="toggleEmployeeProfileEdit(false)">Cancel</button>
