@@ -7151,7 +7151,7 @@ const BUILDERS = {
       <div class="card">
         <h3><span class="ic">📝</span> File a Request</h3>
         <label>Request type</label>
-        <select id="reqType" onchange="toggleSwapFields()"><option>Leave Request</option><option>Schedule Swap</option><option>Uniform Replacement</option><option>Certificate of Employment (COE)</option><option>Absence / Call-Out Notice</option><option>Late / Tardiness Notice</option><option>Other</option></select>
+        <select id="reqType" onchange="toggleSwapFields()"><option value="" disabled selected>Select a Request Type</option><option>Leave Request</option><option>Schedule Swap</option><option>Uniform Replacement</option><option>Certificate of Employment (COE)</option><option>Absence / Call-Out Notice</option><option>Late / Tardiness Notice</option><option>Other</option></select>
         <div id="swapFields" style="display:none;">
           <label>Your day to give up</label>
           <select id="reqSwapDay" onchange="syncTheirDayDefault(); updateSwapPreview()">${SCHEDULE_DAYS.map(d=>`<option value="${d}">${fmtDayLabel(d)}</option>`).join('')}</select>
@@ -9101,6 +9101,7 @@ async function submitMyRequestInner(){
   const err = document.getElementById('reqErr');
   const ok = document.getElementById('reqOk');
   err.style.display='none'; ok.style.display='none';
+  if(!Type){ err.textContent="Please select a request type."; err.style.display='block'; return; }
   if(!Details){ err.textContent="Add some details."; err.style.display='block'; return; }
 
   let SwapDay = '', TheirDay = '', SwapWithName = '';
