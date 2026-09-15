@@ -6165,6 +6165,29 @@ function fmtDateTime(raw){
 // Request detail view and printable form, where a plain readable
 // date (not a timestamp, and not the abbreviated-month style
 // fmtDateTime/fmtDiscDate use elsewhere) reads best.
+// Normalizes a date value — whether it's already a clean
+// "YYYY-MM-DD" string, or one that Google Sheets auto-converted into
+// a full date-time (e.g. records saved before LeaveStartDate/
+// LeaveEndDate/etc. were added to TEXT_FORCED_FIELDS_ in Code.gs) —
+// into the plain "YYYY-MM-DD" an <input type="date"> requires.
+// Setting .value to anything else fails silently and leaves the
+// field blank, which is exactly what made Edit look like it had
+// "reset" the dates on an older request. Uses LOCAL date parts, not
+// toISOString(), so this can't shift the date by a day depending on
+// timezone.
+function toDateInputValue_(raw){
+  if(!raw) return '';
+  const str = String(raw).trim();
+  if(!str) return '';
+  const cleanMatch = str.match(/^(\d{4}-\d{2}-\d{2})/);
+  if(cleanMatch) return cleanMatch[1]; // already correct (or starts with the correct 10 chars) — use as-is
+  const d = new Date(str);
+  if(isNaN(d.getTime())) return '';
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const dd = String(d.getDate()).padStart(2,'0');
+  return `${yyyy}-${mm}-${dd}`;
+}
 function fmtLongDate(raw){
   if(!raw) return '—';
   const str = String(raw);
@@ -7211,8 +7234,10 @@ const BUILDERS = {
         </div>
         <label id="reqDetailsLabel">Details</label>
         <textarea id="reqDetails" placeholder="Describe your request..."></textarea>
-        <button class="btn" id="reqSubmitBtn" onclick="submitMyRequest()">Submit Request</button>
-        ${editingRequestId ? `<button class="btn ghost auto" style="margin-top:8px;" onclick="cancelEditRequest()">Cancel</button>` : ''}
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <button class="btn" id="reqSubmitBtn" onclick="submitMyRequest()" style="flex:1;">Submit Request</button>
+          ${editingRequestId ? `<button class="btn ghost auto" onclick="cancelEditRequest()">Cancel</button>` : ''}
+        </div>
         <p class="login-err" id="reqErr"></p>
         <p class="login-ok" id="reqOk">Saved.</p>
       </div>
@@ -9227,11 +9252,18 @@ function startEditRequest(id){
     if(r.leaveType) document.getElementById('reqLeaveType').value = r.leaveType;
     toggleLeaveTypeOther();
     if(r.leaveTypeOther) document.getElementById('reqLeaveTypeOther').value = r.leaveTypeOther;
-    if(r.leaveStartDate) document.getElementById('reqLeaveStart').value = r.leaveStartDate;
-    if(r.leaveEndDate) document.getElementById('reqLeaveEnd').value = r.leaveEndDate;
+    // Logged so a report of "dates went blank on Edit" can be
+    // diagnosed instantly from the console instead of guessing —
+    // shows exactly what raw value came in and what got parsed out
+    // of it for each of the four date fields.
+    ['leaveStartDate','leaveEndDate','returnToWorkDate','anniversaryDate'].forEach(k=>{
+      if(r[k]) console.log(`startEditRequest: ${k} raw="${r[k]}" -> parsed="${toDateInputValue_(r[k])}"`);
+    });
+    if(r.leaveStartDate) document.getElementById('reqLeaveStart').value = toDateInputValue_(r.leaveStartDate);
+    if(r.leaveEndDate) document.getElementById('reqLeaveEnd').value = toDateInputValue_(r.leaveEndDate);
     if(r.numberOfDays) document.getElementById('reqLeaveDays').value = r.numberOfDays;
-    if(r.returnToWorkDate) document.getElementById('reqLeaveReturn').value = r.returnToWorkDate;
-    if(r.anniversaryDate) document.getElementById('reqLeaveAnniversary').value = r.anniversaryDate;
+    if(r.returnToWorkDate) document.getElementById('reqLeaveReturn').value = toDateInputValue_(r.returnToWorkDate);
+    if(r.anniversaryDate) document.getElementById('reqLeaveAnniversary').value = toDateInputValue_(r.anniversaryDate);
   }
   editingRequestId = id;
   document.getElementById('reqSubmitBtn').textContent = 'Update Request';
