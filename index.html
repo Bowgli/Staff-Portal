@@ -1634,6 +1634,26 @@ function computeProbationEndDate(dateHired){
   d.setDate(d.getDate() + PROBATION_TOTAL_DAYS - 1);
   return d.toISOString().slice(0,10);
 }
+// Simple "this year's occurrence of the Probation Completion Date's
+// month/day" — matches company policy: the Anniversary Date is
+// referenced from Probation Completion (hire date + 90 days, the
+// SAME computeProbationEndDate() already used everywhere else in the
+// app for probation tracking, so this never disagrees with it), NOT
+// the raw hire date. This is only ever a reference date shown on the
+// form — no paid-leave-eligibility or leave-balance calculation is
+// derived from it here; that's explicitly out of scope until HR
+// records are complete and verified.
+function employeeAnniversaryDate_(employeeName){
+  const emp = EMPLOYEE_ROSTER.find(e=>e.name===employeeName);
+  if(!emp || !emp.dateHired) return '';
+  const probationEndStr = computeProbationEndDate(emp.dateHired);
+  if(!probationEndStr) return '';
+  const probationEnd = new Date(probationEndStr + 'T00:00:00');
+  if(isNaN(probationEnd.getTime())) return '';
+  const thisYear = new Date().getFullYear();
+  const anniv = new Date(thisYear, probationEnd.getMonth(), probationEnd.getDate());
+  return anniv.toISOString().slice(0,10);
+}
 function employmentStatusPill(employmentStatus, dateHired){
   if(!employmentStatus) return '<span class="muted">—</span>';
   if(employmentStatus === 'Probationary'){
@@ -2515,7 +2535,9 @@ async function refreshMyRequests(){
   ALL_REQUESTS = requests;
   MY_REQUESTS = ALL_REQUESTS
     .filter(r => CURRENT_EMPLOYEE && r.EmployeeName === CURRENT_EMPLOYEE.name)
-    .map(r => ({type:r.Type, date:r.Date, status:r.Status, id:r.ID, details:r.Details, swapDay:r.SwapDay, theirDay:r.TheirDay, swapWithName:r.SwapWithName, reasonForAbsence:r.ReasonForAbsence, minutesLate:r.MinutesLate, shiftSchedule:r.ShiftSchedule}));
+    .map(r => ({type:r.Type, date:r.Date, status:r.Status, id:r.ID, details:r.Details, swapDay:r.SwapDay, theirDay:r.TheirDay, swapWithName:r.SwapWithName, reasonForAbsence:r.ReasonForAbsence, minutesLate:r.MinutesLate, shiftSchedule:r.ShiftSchedule,
+      venue:r.Venue, leaveType:r.LeaveType, leaveTypeOther:r.LeaveTypeOther, numberOfDays:r.NumberOfDays, leaveStartDate:r.LeaveStartDate, leaveEndDate:r.LeaveEndDate, returnToWorkDate:r.ReturnToWorkDate, anniversaryDate:r.AnniversaryDate,
+      declineReason:r.DeclineReason, clarificationMessage:r.ClarificationMessage, clarificationResponse:r.ClarificationResponse, actionDate:r.ActionDate, statusHistory:r.StatusHistory}));
   MOCK.requests = MY_REQUESTS;
   // Keep the polling baseline in sync too — otherwise a stale
   // baseline (from login time, or before this refresh) makes the
@@ -2669,7 +2691,9 @@ async function loadRemoteData(){
     ALL_FORMS = formsLibrary.slice().reverse();
     const myRequestsSource = isMgmtCapable ? requests : myRequestsScopedRaw;
     MOCK.requests = myRequestsSource.filter(r => r.EmployeeName === (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.name))
-      .map(r => ({type:r.Type, date:r.Date, status:r.Status, id:r.ID, details:r.Details, swapDay:r.SwapDay, theirDay:r.TheirDay, swapWithName:r.SwapWithName, reasonForAbsence:r.ReasonForAbsence, minutesLate:r.MinutesLate, shiftSchedule:r.ShiftSchedule}));
+      .map(r => ({type:r.Type, date:r.Date, status:r.Status, id:r.ID, details:r.Details, swapDay:r.SwapDay, theirDay:r.TheirDay, swapWithName:r.SwapWithName, reasonForAbsence:r.ReasonForAbsence, minutesLate:r.MinutesLate, shiftSchedule:r.ShiftSchedule,
+      venue:r.Venue, leaveType:r.LeaveType, leaveTypeOther:r.LeaveTypeOther, numberOfDays:r.NumberOfDays, leaveStartDate:r.LeaveStartDate, leaveEndDate:r.LeaveEndDate, returnToWorkDate:r.ReturnToWorkDate, anniversaryDate:r.AnniversaryDate,
+      declineReason:r.DeclineReason, clarificationMessage:r.ClarificationMessage, clarificationResponse:r.ClarificationResponse, actionDate:r.ActionDate, statusHistory:r.StatusHistory}));
     ALL_REQUESTS = requests.slice().reverse();
     EMPLOYEE_ACCOUNTS.length = 0;
     accountsStatus.forEach(a => EMPLOYEE_ACCOUNTS.push({employeeName:a.employeeName, fullName:a.fullName, username:a.username, role:"employee", email:a.email, phone:a.phone, photoFileId:a.photoFileId||''}));
@@ -4526,6 +4550,9 @@ function computeRecentActivity(){
     if(r.status==='approved' || r.status==='declined'){
       items.push({title:`Your ${r.type} request was ${r.status}`, time:fmtDateTime(r.date), rawDate:r.date, navType:'request', refId:r.id});
     }
+    if(r.status==='needs-clarification'){
+      items.push({title:`Management needs clarification on your ${r.type} request`, time:fmtDateTime(r.actionDate||r.date), rawDate:r.actionDate||r.date, navType:'request', refId:r.id});
+    }
   });
   MY_CONCERNS.forEach(c=>{
     // Any progress past the initial submitted state is worth
@@ -4784,7 +4811,7 @@ function setRole(role){
    ============================================================ */
 const DISC_VIOLATION_TYPES = ["Attendance / Tardiness","Absence","Undertime","Work Performance","Company Policy","Workplace Conduct","Customer Service","Safety","Insubordination","Phone / Mobile Device Usage","Cash Handling / Cage Transaction Procedures","Procedural / Technical Error","Other"];
 const DISC_CONCERN_TYPES = ["Unprofessional Behavior","Disrespectful Attitude","Failure to Follow Instructions","Policy / Procedure Violation","Workplace Conflict","Inappropriate Interaction with Customer","Harassment / Bullying","Failure to Perform Assigned Duties","Attendance / Punctuality Concern","Misuse of Company Property","Other"];
-const STATUS_LABELS = {"pending":"Pending","approved":"Approved","declined":"Declined","acknowledged":"Acknowledged","needs-clarification":"Needs Clarification"};
+const STATUS_LABELS = {"pending":"Pending","approved":"Approved","declined":"Declined","acknowledged":"Acknowledged","needs-clarification":"Need Clarification"};
 const DISC_CUSTOMER_CONCERN_TYPES = ["Panhandling","Abusive Behavior / Shouting at Staff","Disrespectful Attitude","Threatening Behavior","Aggressive or Confrontational Behavior","Intoxicated / Drunk Customer","Refusal to Follow House Rules","Creating Disturbance to Other Guests","Harassment of Staff or Guests","Inappropriate Language or Comments","Disorderly Conduct","Other"];
 const CONCERN_SAFETY_TYPES = ["Slip / Trip Hazard","Electrical Hazard","Fire Safety Concern","Unsafe Equipment","Blocked Emergency Exit","Water Leak / Flooding","Injury / Accident","Unsafe Working Condition","Other"];
 const CONCERN_FACILITIES_TYPES = ["Electrical","Air Conditioning","Plumbing","Lighting","Furniture","Equipment Damage","Cleaning / Sanitation","Building Damage","Other"];
@@ -5959,6 +5986,7 @@ const TITLES = {
   evaluate:["Evaluate a Staff","Rate a coworker's monthly performance"],
   nominate:["Nominate for Award","Recognize a coworker for an employee award"],
   requests:["My Requests","Leave, swaps, and other requests you've filed"],
+  "request-detail":["Request Details","Full details, status, and any admin comments for this request"],
   concern:["Report a Concern","Sent directly to management"],
   suggestion:["Suggestion Box","Share an idea — anonymously if you prefer"],
   "my-disciplinary":["My Records","Disciplinary case records that name you"],
@@ -6576,7 +6604,7 @@ function renderAttendanceQuickAttention(todayCounts, thisMonthRecords){
 
 function statusPill(status){
   const map = {"approved":"ok","done":"ok","Active":"ok","pending":"warn","open":"bad","resolved":"ok","On Leave":"bad","declined":"bad","acknowledged":"ok","needs-clarification":"warn","Inactive":"bad","Under Probation":"warn","Furlough":"warn","Resigned":"bad","Terminated":"bad"};
-  const labels = {"acknowledged":"Acknowledged","needs-clarification":"Needs Clarification"};
+  const labels = {"acknowledged":"Acknowledged","needs-clarification":"Need Clarification"};
   return `<span class="pill ${map[status]||'ok'}">${labels[status]||status}</span>`;
 }
 
@@ -7065,6 +7093,59 @@ const BUILDERS = {
       </div>
     </div>`,
 
+  "request-detail": ()=>{
+    const r = MOCK.requests.find(x=>x.id===viewingRequestDetailId);
+    if(!r){
+      return `<div class="card"><button class="btn info auto" onclick="closeMyRequestDetail()">← Back</button><p class="muted" style="margin-top:14px;">That request couldn't be found.</p></div>`;
+    }
+    const isLeave = r.type === 'Leave Request';
+    let history = [];
+    try{ history = JSON.parse(r.statusHistory || '[]'); } catch(e){ history = []; }
+    return `
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:14px;">
+        <button class="btn info auto no-print" onclick="closeMyRequestDetail()">← Back</button>
+        ${isLeave ? `<button class="btn auto no-print" onclick="printLeaveRequestForm('${r.id}')">🖨️ Print</button>` : ''}
+      </div>
+      <h3>${r.type}</h3>
+      <p class="muted" style="font-size:12px; margin-bottom:14px;">Request ID: <span class="mono">${r.id}</span> · Submitted ${fmtDateTime(r.date)}</p>
+      <p style="margin-bottom:14px;">${statusPill(r.status)}</p>
+
+      ${isLeave ? `
+        <table style="margin-bottom:14px;">
+          <tr><td class="muted">Venue</td><td>${r.venue||'—'}</td></tr>
+          <tr><td class="muted">Leave Type</td><td>${r.leaveType==='Other' ? (r.leaveTypeOther||'Other') : (r.leaveType||'—')}</td></tr>
+          <tr><td class="muted">Leave Start Date</td><td>${r.leaveStartDate||'—'}</td></tr>
+          <tr><td class="muted">Leave End Date</td><td>${r.leaveEndDate||'—'}</td></tr>
+          <tr><td class="muted">Number of Days</td><td>${r.numberOfDays||'—'}</td></tr>
+          <tr><td class="muted">Expected Return to Work</td><td>${r.returnToWorkDate||'—'}</td></tr>
+          <tr><td class="muted">Anniversary Date</td><td>${r.anniversaryDate||'—'}</td></tr>
+        </table>
+        <p class="muted" style="font-size:12px; margin-bottom:4px;">Reason for Leave</p>
+        <p style="margin-bottom:14px;">${r.details||'—'}</p>
+      ` : `
+        <p class="muted" style="font-size:12px; margin-bottom:4px;">Details</p>
+        <p style="margin-bottom:14px;">${r.details||'—'}</p>
+      `}
+
+      ${r.status==='declined' && r.declineReason ? `<div class="banner" style="margin-bottom:14px;"><strong>Decline Reason:</strong> ${r.declineReason}</div>` : ''}
+      ${r.status==='needs-clarification' && r.clarificationMessage ? `
+        <div class="banner note" style="margin-bottom:14px;"><strong>Management is asking:</strong> ${r.clarificationMessage}</div>
+        <label>Your Response</label>
+        <textarea id="reqClarifyResponse" rows="3" placeholder="Type your response here..."></textarea>
+        <p class="login-err" id="reqClarifyErr" style="display:none;"></p>
+        <button class="btn no-print" onclick="submitClarificationResponse('${r.id}')">Submit Response</button>
+      ` : ''}
+      ${r.clarificationResponse ? `<div class="banner note" style="margin-bottom:14px;"><strong>Your Previous Response:</strong> ${r.clarificationResponse}</div>` : ''}
+      ${r.actionDate ? `<p class="muted" style="font-size:12px; margin-bottom:14px;">Last reviewed: ${fmtDateTime(r.actionDate)}</p>` : ''}
+
+      ${history.length ? `
+        <p class="muted" style="font-size:12px; margin:14px 0 6px;">Status History</p>
+        ${history.map(h=>`<div class="feed-item" style="padding:8px 0;"><span style="font-size:13px;">${h.event} — <span class="muted">${h.by||''}, ${fmtDateTime(h.date)}</span>${h.reason?`<br><span class="muted">Reason: ${h.reason}</span>`:''}${h.message?`<br><span class="muted">Message: ${h.message}</span>`:''}${h.response?`<br><span class="muted">Response: ${h.response}</span>`:''}</span></div>`).join('')}
+      ` : ''}
+    </div>`;
+  },
+
   requests: ()=>`
     <div class="grid grid-2">
       <div class="card">
@@ -7087,7 +7168,57 @@ const BUILDERS = {
           <label>Date of Absence</label>
           <input type="date" id="reqAbsenceDate">
         </div>
-        <label>Details</label>
+        <div id="leaveRequestFields" style="display:none;">
+          <div class="grid grid-2">
+            <div>
+              <label>Venue</label>
+              <select id="reqLeaveVenue"><option value="">Select Venue</option><option>Saipan Vegas</option><option>Club 88</option></select>
+            </div>
+            <div>
+              <label>Position</label>
+              <input type="text" value="${CURRENT_EMPLOYEE.position||''}" disabled style="opacity:0.7;">
+            </div>
+          </div>
+          <div class="grid grid-2">
+            <div>
+              <label>Leave Start Date</label>
+              <input type="date" id="reqLeaveStart" onchange="updateLeaveDaysCalc()">
+            </div>
+            <div>
+              <label>Leave End Date</label>
+              <input type="date" id="reqLeaveEnd" onchange="updateLeaveDaysCalc()">
+            </div>
+          </div>
+          <div class="grid grid-2">
+            <div>
+              <label>Number of Days</label>
+              <input type="number" id="reqLeaveDays" min="1" placeholder="Auto-calculated from dates">
+            </div>
+            <div>
+              <label>Expected Return to Work Date</label>
+              <input type="date" id="reqLeaveReturn">
+            </div>
+          </div>
+          <label>Anniversary Date <span class="muted">(auto-filled from your Probation Completion Date, if available)</span></label>
+          <input type="date" id="reqLeaveAnniversary" value="${employeeAnniversaryDate_(CURRENT_EMPLOYEE.name)}">
+          <label>Type of Request</label>
+          <select id="reqLeaveType" onchange="toggleLeaveTypeOther()">
+            <option value="">Select Leave Type</option>
+            <option>Vacation Leave</option>
+            <option>Sick Leave</option>
+            <option>Emergency Leave</option>
+            <option>Jury or Witness Duty Leave</option>
+            <option>Maternity Leave</option>
+            <option>Bereavement Leave</option>
+            <option>Military Leave</option>
+            <option>Other</option>
+          </select>
+          <div id="reqLeaveTypeOtherWrap" style="display:none; margin-bottom:14px;">
+            <label>Please Specify</label>
+            <input type="text" id="reqLeaveTypeOther" placeholder="Specify the leave type">
+          </div>
+        </div>
+        <label id="reqDetailsLabel">Details</label>
         <textarea id="reqDetails" placeholder="Describe your request..."></textarea>
         <button class="btn" id="reqSubmitBtn" onclick="submitMyRequest()">Submit Request</button>
         ${editingRequestId ? `<button class="btn ghost auto" style="margin-top:8px;" onclick="cancelEditRequest()">Cancel</button>` : ''}
@@ -7099,11 +7230,12 @@ const BUILDERS = {
         <table>
           <tr><th>Type</th><th>Date</th><th>Status</th><th></th></tr>
           ${MOCK.requests.map(r=>{
-            return `<tr><td>${r.type}${r.type==='Schedule Swap' && r.swapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.swapDay)}${r.theirDay && r.theirDay!==r.swapDay ? ' ↔ '+fmtDayLabel(r.theirDay) : ''} ↔ ${r.swapWithName}</span>` : ''}</td><td>${fmtDateTime(r.date)}</td><td>${statusPill(r.status)}</td>
-            <td>${(()=>{
+            const leaveSubtitle = r.type==='Leave Request' ? `<br><span class="muted" style="font-size:11px;">${r.leaveType==='Other'?r.leaveTypeOther:r.leaveType||''} · ${r.leaveStartDate||'?'} to ${r.leaveEndDate||'?'} (${r.numberOfDays||'?'}d)</span>` : '';
+            return `<tr><td>${r.type}${r.type==='Schedule Swap' && r.swapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.swapDay)}${r.theirDay && r.theirDay!==r.swapDay ? ' ↔ '+fmtDayLabel(r.theirDay) : ''} ↔ ${r.swapWithName}</span>` : ''}${leaveSubtitle}</td><td>${fmtDateTime(r.date)}</td><td>${statusPill(r.status)}</td>
+            <td style="white-space:nowrap;">${(()=>{
               const canEdit = r.status==='pending' || r.status==='needs-clarification';
               const canDelete = r.status==='pending';
-              return `${canEdit ? `<button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditRequest('${r.id}')">✏️ Edit</button>` : ''}${canDelete ? `<button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyRequest('${r.id}', this)">🗑️ Delete</button>` : ''}`;
+              return `<button class="btn info auto" style="padding:5px 10px; margin-right:6px;" onclick="viewMyRequestDetail('${r.id}')">👁️ View</button>${canEdit ? `<button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditRequest('${r.id}')">✏️ Edit</button>` : ''}${canDelete ? `<button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyRequest('${r.id}', this)">🗑️ Delete</button>` : ''}`;
             })()}</td></tr>`;
           }).join('') || `<tr><td colspan="4" class="muted">No requests yet.</td></tr>`}
         </table>
@@ -8227,7 +8359,7 @@ const BUILDERS = {
     const filtered = ALL_REQUESTS
       .map((r, idx) => Object.assign({}, r, {_idx: idx})) // remember original position as a tiebreaker for same-timestamp entries
       .filter(r=>{
-        if(reqFilter.employee && !r.EmployeeName.toLowerCase().includes(reqFilter.employee.toLowerCase())) return false;
+        if(reqFilter.employee && !r.EmployeeName.toLowerCase().includes(reqFilter.employee.toLowerCase()) && !String(r.ID||'').toLowerCase().includes(reqFilter.employee.toLowerCase())) return false;
         if(reqFilter.type !== 'All' && r.Type !== reqFilter.type) return false;
         if(reqFilter.status !== 'All' && r.Status !== reqFilter.status) return false;
         if(reqFilter.dateFrom){ const dt = new Date(r.Date); if(isNaN(dt) || dt < new Date(reqFilter.dateFrom)) return false; }
@@ -8246,7 +8378,7 @@ const BUILDERS = {
       <div class="grid grid-2">
         <div>
           <label>Employee</label>
-          <input type="text" list="reqEmployeeDatalist" data-filter="reqEmployee" placeholder="Search or select employee..." value="${reqFilter.employee}" oninput="setReqFilter('employee', this.value)">
+          <input type="text" list="reqEmployeeDatalist" data-filter="reqEmployee" placeholder="Search by employee name or Request ID..." value="${reqFilter.employee}" oninput="setReqFilter('employee', this.value)">
           <datalist id="reqEmployeeDatalist">
             ${EMPLOYEE_ROSTER.map(e=>`<option value="${e.name}">`).join('')}
           </datalist>
@@ -8266,7 +8398,7 @@ const BUILDERS = {
             <option value="approved" ${reqFilter.status==='approved'?'selected':''}>Approved</option>
             <option value="declined" ${reqFilter.status==='declined'?'selected':''}>Declined</option>
             <option value="acknowledged" ${reqFilter.status==='acknowledged'?'selected':''}>Acknowledged</option>
-            <option value="needs-clarification" ${reqFilter.status==='needs-clarification'?'selected':''}>Needs Clarification</option>
+            <option value="needs-clarification" ${reqFilter.status==='needs-clarification'?'selected':''}>Need Clarification</option>
           </select>
         </div>
         <div></div>
@@ -8296,15 +8428,15 @@ const BUILDERS = {
         ${filtered.map(r=>`<tr><td>${r.EmployeeName}</td><td>${r.Type}${r.Type==='Schedule Swap' && r.SwapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.SwapDay)}${r.TheirDay && r.TheirDay!==r.SwapDay ? ' ↔ '+fmtDayLabel(r.TheirDay) : ''} ↔ ${r.SwapWithName}</span>` : ''}</td><td class="muted">${r.Details||''}</td><td>${fmtDateTime(r.Date)}</td>
           <td>
             ${savingRequestIds.has(r.ID) ? `<span class="btn-spinner"></span><span class="muted" style="font-size:12px;">Saving...</span>` : `
-            <select class="status-select ${r.Status}" onchange="this.className='status-select '+this.value; setRequestStatus('${r.ID}', this.value)">
+            <select class="status-select ${r.Status}" onchange="handleRequestStatusChange(this, '${r.ID}', '${r.Status}', '${r.Type.replace(/'/g,"\\'")}')">
               <option value="pending" ${r.Status==='pending'?'selected':''}>Pending</option>
               <option value="approved" ${r.Status==='approved'?'selected':''}>Approved</option>
               <option value="declined" ${r.Status==='declined'?'selected':''}>Declined</option>
               <option value="acknowledged" ${r.Status==='acknowledged'?'selected':''}>Acknowledged</option>
-              <option value="needs-clarification" ${r.Status==='needs-clarification'?'selected':''}>Needs Clarification</option>
+              <option value="needs-clarification" ${r.Status==='needs-clarification'?'selected':''}>Need Clarification</option>
             </select>`}
           </td>
-          <td class="muted">${r.Status !== 'pending' && r.ActionBy ? r.ActionBy : '—'}</td>
+          <td class="muted">${r.Status !== 'pending' && r.ActionBy ? r.ActionBy : '—'}${r.Type==='Leave Request' ? `<br><button class="btn ghost auto no-print" style="padding:3px 8px; margin-top:4px; font-size:11px;" onclick="printLeaveRequestForm('${r.ID}')">🖨️ Print Form</button>` : ''}</td>
           ${isFullAdmin() ? `<td>${REQUEST_ARCHIVABLE_STATUSES.has(r.Status) ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="archiveRecordNow('request','${r.ID}', this)">📦 Archive</button>` : ''}</td>` : ''}</tr>`).join('') || `<tr><td colspan="${isFullAdmin()?7:6}" class="muted">No matching requests.</td></tr>`}
       </table>
       <table class="print-only" style="display:none;" id="reqPrintTable">
@@ -8804,6 +8936,36 @@ const BUILDERS = {
 
 let editingRequestId = null;
 let pendingRequestClientId = null; // stable id kept across a retry of the SAME not-yet-confirmed request submission
+let viewingRequestDetailId = null; // which request "View Details" (employee side) is currently showing
+function viewMyRequestDetail(id){
+  viewingRequestDetailId = id;
+  renderView('request-detail');
+}
+function closeMyRequestDetail(){
+  viewingRequestDetailId = null;
+  renderView('requests');
+}
+async function submitClarificationResponse(id){
+  const responseEl = document.getElementById('reqClarifyResponse');
+  const err = document.getElementById('reqClarifyErr');
+  err.style.display = 'none';
+  const response = responseEl.value.trim();
+  if(!response){ err.textContent = "Please enter a response before submitting."; err.style.display = 'block'; return; }
+  if(USE_REMOTE()){
+    try{
+      const r = await apiPostRetrying('submitClarificationResponse', {id, response, employeeName: CURRENT_EMPLOYEE.name});
+      if(!r.ok){ err.textContent = r.error || "Couldn't submit — please try again."; err.style.display = 'block'; return; }
+    } catch(e){
+      err.textContent = e.message || "Couldn't submit — please try again.";
+      err.style.display = 'block';
+      return;
+    }
+  }
+  const req = MOCK.requests.find(x=>x.id===id);
+  if(req){ req.status = 'pending'; req.clarificationResponse = response; }
+  refreshMyRequests().then(()=>{ if(activeView === 'request-detail') renderView('request-detail'); }).catch(e=>console.warn('background requests refresh failed (already-correct local data is unaffected):', e.message || e));
+  renderView('request-detail');
+}
 let editingConcernId = null;
 let pendingConcernClientId = null; // stable id kept across a retry of the SAME not-yet-confirmed concern submission
 
@@ -8829,11 +8991,37 @@ function toggleSwapFields(){
 
   document.getElementById('absenceDateField').style.display = (type === 'Absence / Call-Out Notice') ? 'block' : 'none';
 
+  const isLeave = type === 'Leave Request';
+  document.getElementById('leaveRequestFields').style.display = isLeave ? 'block' : 'none';
+  document.getElementById('reqDetailsLabel').textContent = isLeave ? 'Reason for Leave' : 'Details';
+
   const placeholders = {
     'Absence / Call-Out Notice': 'Reason for Absence / Shift Schedule',
     'Late / Tardiness Notice': 'Describe Your Notice / Minutes Late / Shift Schedule',
+    'Leave Request': 'Why does this person need this leave?',
   };
   document.getElementById('reqDetails').placeholder = placeholders[type] || 'Describe your request...';
+}
+function toggleLeaveTypeOther(){
+  const isOther = document.getElementById('reqLeaveType').value === 'Other';
+  document.getElementById('reqLeaveTypeOtherWrap').style.display = isOther ? 'block' : 'none';
+}
+// Purely a convenience default — filled in automatically from the
+// selected Start/End dates, but left as a normal editable number
+// field (not disabled), since the employee may need to adjust it
+// (e.g. a leave period that excludes a rest day already built into
+// their schedule). This never overwrites a value the employee has
+// already typed in by hand.
+function updateLeaveDaysCalc(){
+  const startVal = document.getElementById('reqLeaveStart').value;
+  const endVal = document.getElementById('reqLeaveEnd').value;
+  const daysField = document.getElementById('reqLeaveDays');
+  if(!startVal || !endVal) return;
+  const start = new Date(startVal + 'T00:00:00');
+  const end = new Date(endVal + 'T00:00:00');
+  if(isNaN(start) || isNaN(end) || end < start) return;
+  const diffDays = Math.round((end - start) / 86400000) + 1; // inclusive of both the start and end day
+  daysField.value = diffDays;
 }
 
 function toggleDiffDay(){
@@ -8929,18 +9117,50 @@ async function submitMyRequestInner(){
     if(!AbsenceDate){ err.textContent="Please select the date you'll be absent."; err.style.display='block'; return; }
   }
 
+  let Venue = '', LeaveType = '', LeaveTypeOther = '', NumberOfDays = '', LeaveStartDate = '', LeaveEndDate = '', ReturnToWorkDate = '', AnniversaryDate = '';
+  if(Type === 'Leave Request'){
+    Venue = document.getElementById('reqLeaveVenue').value;
+    LeaveType = document.getElementById('reqLeaveType').value;
+    LeaveTypeOther = document.getElementById('reqLeaveTypeOther').value.trim();
+    NumberOfDays = document.getElementById('reqLeaveDays').value;
+    LeaveStartDate = document.getElementById('reqLeaveStart').value;
+    LeaveEndDate = document.getElementById('reqLeaveEnd').value;
+    ReturnToWorkDate = document.getElementById('reqLeaveReturn').value;
+    AnniversaryDate = document.getElementById('reqLeaveAnniversary').value;
+
+    if(!Venue){ err.textContent="Please select a venue."; err.style.display='block'; return; }
+    if(!LeaveType){ err.textContent="Please select a leave type."; err.style.display='block'; return; }
+    if(LeaveType === 'Other' && !LeaveTypeOther){ err.textContent="Please specify the leave type."; err.style.display='block'; return; }
+    if(!LeaveStartDate || !LeaveEndDate){ err.textContent="Please select both a start and end date."; err.style.display='block'; return; }
+    if(new Date(LeaveStartDate) > new Date(LeaveEndDate)){ err.textContent="Start Date cannot be later than End Date."; err.style.display='block'; return; }
+    if(!NumberOfDays || Number(NumberOfDays) < 1){ err.textContent="Please enter a valid number of days."; err.style.display='block'; return; }
+    if(ReturnToWorkDate && new Date(ReturnToWorkDate) < new Date(LeaveEndDate)){ err.textContent="Return to Work Date should be on or after the Leave End Date."; err.style.display='block'; return; }
+
+    // A simple review step, not a separate page — matches the "show
+    // a summary so the employee can confirm before submitting"
+    // requirement without adding a whole new modal/UI for it.
+    const leaveTypeDisplay = LeaveType === 'Other' ? LeaveTypeOther : LeaveType;
+    const summary = `Please review your leave request:\n\n`+
+      `Venue: ${Venue}\n`+
+      `Leave Type: ${leaveTypeDisplay}\n`+
+      `Dates: ${LeaveStartDate} to ${LeaveEndDate} (${NumberOfDays} day${NumberOfDays==1?'':'s'})\n`+
+      (ReturnToWorkDate ? `Return to Work: ${ReturnToWorkDate}\n` : '') +
+      `\nSubmit this leave request?`;
+    if(!confirm(summary)) return;
+  }
+
   if(editingRequestId){
     btnLoading('reqSubmitBtn', 'Updating...');
     try{
       if(USE_REMOTE()){
-        const r = await apiPostMinDelayRetrying('editRequest', {id:editingRequestId, Type, Details, SwapDay, TheirDay, SwapWithName, AbsenceDate});
+        const r = await apiPostMinDelayRetrying('editRequest', {id:editingRequestId, Type, Details, SwapDay, TheirDay, SwapWithName, AbsenceDate, Venue, LeaveType, LeaveTypeOther, NumberOfDays, LeaveStartDate, LeaveEndDate, ReturnToWorkDate, AnniversaryDate});
         if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('reqSubmitBtn','Update Request'); return; }
         // Applied directly to MOCK.requests (what the History table
         // actually reads from) rather than waiting on a full refresh
         // first — mirrors exactly what refreshMyRequests() would set,
         // just for this one record.
         const reqLocal = MOCK.requests.find(x=>x.id===editingRequestId);
-        if(reqLocal) Object.assign(reqLocal, {type:Type, details:Details, swapDay:SwapDay, theirDay:TheirDay, swapWithName:SwapWithName});
+        if(reqLocal) Object.assign(reqLocal, {type:Type, details:Details, swapDay:SwapDay, theirDay:TheirDay, swapWithName:SwapWithName, venue:Venue, leaveType:LeaveType, leaveTypeOther:LeaveTypeOther, numberOfDays:NumberOfDays, leaveStartDate:LeaveStartDate, leaveEndDate:LeaveEndDate, returnToWorkDate:ReturnToWorkDate, anniversaryDate:AnniversaryDate});
         refreshMyRequests().then(()=>{ if(activeView === 'requests') renderView('requests'); }).catch(e=>console.warn('background requests refresh failed (already-correct local data is unaffected):', e.message || e));
       } else {
         const req = MOCK.requests.find(x=>x.id===editingRequestId);
@@ -8966,13 +9186,13 @@ async function submitMyRequestInner(){
   if(!pendingRequestClientId) pendingRequestClientId = (crypto.randomUUID ? crypto.randomUUID() : ('cid-' + Date.now() + '-' + Math.random().toString(36).slice(2)));
   try{
     if(USE_REMOTE()){
-      const r = await apiPostMinDelayRetrying('submitRequest', {EmployeeName: CURRENT_EMPLOYEE.name, Type, Details, SwapDay, TheirDay, SwapWithName, AbsenceDate, clientId: pendingRequestClientId});
+      const r = await apiPostMinDelayRetrying('submitRequest', {EmployeeName: CURRENT_EMPLOYEE.name, Type, Details, SwapDay, TheirDay, SwapWithName, AbsenceDate, Venue, LeaveType, LeaveTypeOther, NumberOfDays, LeaveStartDate, LeaveEndDate, ReturnToWorkDate, AnniversaryDate, clientId: pendingRequestClientId});
       if(!r.ok){ err.textContent = r.error || "Couldn't submit."; err.style.display='block'; btnReset('reqSubmitBtn','Submit Request'); return; }
       pendingRequestClientId = null; // succeeded — a future submission gets a fresh id
       // Added directly to MOCK.requests (what the History table
       // actually reads from) rather than waiting on a full refresh
       // first — mirrors the same shape refreshMyRequests() builds.
-      MOCK.requests.unshift({type:Type, date:"Just now", status:"pending", id:r.id, details:Details, swapDay:SwapDay, theirDay:TheirDay, swapWithName:SwapWithName});
+      MOCK.requests.unshift({type:Type, date:"Just now", status:"pending", id:r.id, details:Details, swapDay:SwapDay, theirDay:TheirDay, swapWithName:SwapWithName, venue:Venue, leaveType:LeaveType, leaveTypeOther:LeaveTypeOther, numberOfDays:NumberOfDays, leaveStartDate:LeaveStartDate, leaveEndDate:LeaveEndDate, returnToWorkDate:ReturnToWorkDate, anniversaryDate:AnniversaryDate});
       refreshMyRequests().then(()=>{ if(activeView === 'requests') renderView('requests'); }).catch(e=>console.warn('background requests refresh failed (already-correct local data is unaffected):', e.message || e));
     } else {
       MOCK.requests.unshift({type:Type, date:"Just now", status:"pending", swapDay:SwapDay, theirDay:TheirDay, swapWithName:SwapWithName});
@@ -9009,6 +9229,17 @@ function startEditRequest(id){
   }
   if(r.type === 'Absence / Call-Out Notice' && r.absenceDate){
     document.getElementById('reqAbsenceDate').value = r.absenceDate;
+  }
+  if(r.type === 'Leave Request'){
+    if(r.venue) document.getElementById('reqLeaveVenue').value = r.venue;
+    if(r.leaveType) document.getElementById('reqLeaveType').value = r.leaveType;
+    toggleLeaveTypeOther();
+    if(r.leaveTypeOther) document.getElementById('reqLeaveTypeOther').value = r.leaveTypeOther;
+    if(r.leaveStartDate) document.getElementById('reqLeaveStart').value = r.leaveStartDate;
+    if(r.leaveEndDate) document.getElementById('reqLeaveEnd').value = r.leaveEndDate;
+    if(r.numberOfDays) document.getElementById('reqLeaveDays').value = r.numberOfDays;
+    if(r.returnToWorkDate) document.getElementById('reqLeaveReturn').value = r.returnToWorkDate;
+    if(r.anniversaryDate) document.getElementById('reqLeaveAnniversary').value = r.anniversaryDate;
   }
   editingRequestId = id;
   document.getElementById('reqSubmitBtn').textContent = 'Update Request';
@@ -9845,7 +10076,41 @@ async function refreshScheduleOnly(){
   try{ await scheduleRefreshPromise; } finally { scheduleRefreshPromise = null; }
 }
 
-async function setRequestStatus(id, status){
+// Intercepts a Decline / Need Clarification selection to require the
+// reason/message BEFORE the status actually changes — but ONLY for
+// Leave Requests, per the new workflow. Every OTHER pre-existing
+// request type (Schedule Swap, Uniform Replacement, Absence / Call-
+// Out Notice, Late / Tardiness Notice, COE, Other) keeps its exact
+// original behavior — an immediate status change with no prompt —
+// so Admin's established workflow for those isn't disrupted by a
+// requirement that was only ever asked for on Leave Requests.
+// Enforced again server-side in doSetRequestStatus_ for Leave
+// Requests specifically, so the Admin isn't surprised by a rejected
+// save after already seeing the dropdown change. Reverts the
+// dropdown back to its current value if the Admin cancels or leaves
+// the prompt blank, rather than silently applying the status change
+// without the required text.
+function handleRequestStatusChange(selectEl, id, currentStatus, requestType){
+  const status = selectEl.value;
+  const requiresReason = requestType === 'Leave Request';
+  if(requiresReason && status === 'declined'){
+    const reason = prompt("Please enter a reason for declining this request:");
+    if(!reason || !reason.trim()){ selectEl.value = currentStatus; selectEl.className = 'status-select '+currentStatus; return; }
+    selectEl.className = 'status-select '+status;
+    setRequestStatus(id, status, reason.trim());
+    return;
+  }
+  if(requiresReason && status === 'needs-clarification'){
+    const message = prompt("What information do you need from the employee?");
+    if(!message || !message.trim()){ selectEl.value = currentStatus; selectEl.className = 'status-select '+currentStatus; return; }
+    selectEl.className = 'status-select '+status;
+    setRequestStatus(id, status, null, message.trim());
+    return;
+  }
+  selectEl.className = 'status-select '+status;
+  setRequestStatus(id, status);
+}
+async function setRequestStatus(id, status, declineReason, clarificationMessage){
   const req = ALL_REQUESTS.find(r=>r.ID===id);
   const previousStatus = req ? req.Status : null;
   const previousActionBy = req ? req.ActionBy : null;
@@ -9856,7 +10121,7 @@ async function setRequestStatus(id, status){
 
   if(USE_REMOTE()){
     try{
-      const r = await apiPost('updateRequestStatus', {id, status, actionBy});
+      const r = await apiPost('updateRequestStatus', {id, status, actionBy, declineReason, clarificationMessage});
       savingRequestIds.delete(id);
       if(!r.ok){
         if(req){ req.Status = previousStatus; req.ActionBy = previousActionBy; } // revert since it didn't actually save
@@ -10197,12 +10462,124 @@ async function printEmployeeLog(){
     records.map(a=>`<tr><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td>${a.remarks||'—'}</td><td>${a.loggedBy||'—'}</td></tr>`).join('') || `<tr><td colspan="5">No entries logged for this year.</td></tr>`;
   printWithPageSettings('letter','portrait','0.75in');
 }
+// Generates and prints the official MP Holdings, LLC Leave Request
+// Form from a saved request record — works from either the
+// employee's own "My Requests" detail page (MOCK.requests, which
+// only ever holds the CURRENT employee's own records) or an Admin's
+// Manage Requests table (ALL_REQUESTS, any employee), whichever one
+// actually has this ID. A4 portrait is set via a temporary injected
+// <style> — scoped to just this one print action (removed right
+// after) so it never affects the paper size used by any OTHER
+// printable page in the portal.
+function printLeaveRequestForm(id){
+  let name, position, r;
+  const mine = MOCK.requests.find(x=>x.id===id);
+  if(mine){
+    name = CURRENT_EMPLOYEE.fullName;
+    position = CURRENT_EMPLOYEE.position;
+    r = {venue:mine.venue, leaveType:mine.leaveType, leaveTypeOther:mine.leaveTypeOther, numberOfDays:mine.numberOfDays, leaveStartDate:mine.leaveStartDate, leaveEndDate:mine.leaveEndDate, returnToWorkDate:mine.returnToWorkDate, anniversaryDate:mine.anniversaryDate, details:mine.details, date:mine.date, status:mine.status, actionBy:mine.actionBy, actionDate:mine.actionDate, declineReason:mine.declineReason};
+  } else {
+    const admin = ALL_REQUESTS.find(x=>x.ID===id);
+    if(!admin){ alert("That request couldn't be found."); return; }
+    const roster = EMPLOYEE_ROSTER.find(e=>e.name===admin.EmployeeName);
+    name = admin.EmployeeName;
+    position = roster ? roster.position : '';
+    r = {venue:admin.Venue, leaveType:admin.LeaveType, leaveTypeOther:admin.LeaveTypeOther, numberOfDays:admin.NumberOfDays, leaveStartDate:admin.LeaveStartDate, leaveEndDate:admin.LeaveEndDate, returnToWorkDate:admin.ReturnToWorkDate, anniversaryDate:admin.AnniversaryDate, details:admin.Details, date:admin.Date, status:admin.Status, actionBy:admin.ActionBy, actionDate:admin.ActionDate, declineReason:admin.DeclineReason};
+  }
+
+  const leaveTypeDisplay = r.leaveType === 'Other' ? (r.leaveTypeOther || 'Other') : (r.leaveType || '');
+  const LEAVE_TYPES_COL1 = ['Vacation Leave','Sick Leave','Emergency Leave','Jury or Witness Duty Leave'];
+  const LEAVE_TYPES_COL2 = ['Maternity Leave','Bereavement Leave','Military Leave','Other'];
+  const checkbox = (label) => `<span style="display:inline-block; width:12px; height:12px; border:1px solid #000; margin-right:6px; vertical-align:middle; text-align:center; line-height:11px; font-size:10px;">${(r.leaveType===label || (label==='Other' && r.leaveType==='Other'))?'✓':''}</span>${label}`;
+
+  const formHtml = `
+    <div style="font-family:Georgia,serif; color:#000; padding:20px; max-width:720px; margin:0 auto;">
+      <h2 style="text-align:center; margin:0 0 2px;">MP Holdings, LLC</h2>
+      <p style="text-align:center; font-style:italic; margin:0 0 16px;">LEAVE REQUEST FORM</p>
+      <p style="text-align:right; font-size:11px; margin:0 0 10px;">Request ID: ${id} &nbsp;|&nbsp; Status: ${STATUS_LABELS[r.status] || r.status}</p>
+
+      <div style="border:1.5px solid #000; padding:10px 14px; margin-bottom:0;">
+        <p style="font-weight:700; margin:0 0 8px;">Employee Information:</p>
+        <table style="width:100%; border:none; font-size:12px;">
+          <tr><td style="border:none; padding:4px 0;">Name: <strong>${name}</strong> (${position||'—'})</td><td style="border:none; padding:4px 0; text-align:right;">Today's Date: <strong>${fmtDiscDate(r.date)}</strong></td></tr>
+          <tr><td style="border:none; padding:4px 0;" colspan="2">I would like <strong>${r.numberOfDays||'___'}</strong> days off, starting on <strong>${r.leaveStartDate||'________'}</strong> and ending on <strong>${r.leaveEndDate||'________'}</strong>.</td></tr>
+          <tr><td style="border:none; padding:4px 0;">I will return to work on <strong>${r.returnToWorkDate||'________'}</strong>.</td><td style="border:none; padding:4px 0; text-align:right;">Anniversary Date: <strong>${r.anniversaryDate||'—'}</strong></td></tr>
+        </table>
+      </div>
+
+      <div style="border:1.5px solid #000; border-top:none; padding:10px 14px;">
+        <p style="font-weight:700; margin:0 0 8px;">TYPE OF REQUEST</p>
+        <table style="width:100%; border:none; font-size:12px;">
+          <tr>
+            <td style="border:none; padding:2px 0;">${LEAVE_TYPES_COL1.map(t=>`<div>${checkbox(t)}</div>`).join('')}</td>
+            <td style="border:none; padding:2px 0;">${LEAVE_TYPES_COL2.map(t=>`<div>${checkbox(t)}</div>`).join('')}</td>
+          </tr>
+        </table>
+        <p style="font-weight:700; margin:10px 0 4px;">Reason for leave:</p>
+        <p style="border-bottom:1px solid #000; min-height:36px; font-size:12px;">${r.details||''}</p>
+      </div>
+
+      <div style="border:1.5px solid #000; border-top:none; padding:10px 14px;">
+        <p style="font-size:10.5px; margin:0 0 10px;">I understand that time away from work is subject to manager approval and company policies. I further understand that if I do not have leave time accrued, I will not be paid for the absence.</p>
+        <table style="width:100%; border:none; font-size:12px;">
+          <tr><td style="border:none; padding:10px 0 4px;">Employee Signature: _______________________</td><td style="border:none; padding:10px 0 4px; text-align:right;">Date: _______________</td></tr>
+          <tr><td style="border:none; padding:10px 0 4px;">Received By: _______________________</td><td style="border:none; padding:10px 0 4px; text-align:right;">Date: _______________</td></tr>
+          <tr><td style="border:none; padding:10px 0 4px;" colspan="2">Paid: &nbsp;☐ YES &nbsp;&nbsp; ☐ NO &nbsp;&nbsp; <span style="font-size:10.5px;">(Only if vacation leave days are available)</span></td></tr>
+          <tr><td style="border:none; padding:10px 0 4px;" colspan="2">Manager: _______________________________________________</td></tr>
+          <tr><td style="border:none; padding:10px 0 4px;">Consultant: _______________________</td><td style="border:none; padding:10px 0 4px; text-align:right;">Date: _______________</td></tr>
+          <tr><td style="border:none; padding:10px 0 4px;" colspan="2">Comments: ${r.status==='declined' && r.declineReason ? r.declineReason : ''}${r.actionBy ? `<br><span style="font-size:10.5px;">Reviewed by ${r.actionBy}${r.actionDate ? ' on '+fmtDiscDate(r.actionDate) : ''}</span>` : ''}</td></tr>
+        </table>
+      </div>
+
+      <div style="display:flex; border:1.5px solid #000; border-top:none;">
+        <div style="flex:1; padding:10px 14px; border-right:1.5px solid #000; font-size:12px;">
+          <p style="font-weight:700; margin:0 0 8px;">FOR ADMIN USE ONLY</p>
+          <p style="margin:6px 0;">Paid Vacation Days Available: <span style="color:#555;">Pending Verification</span></p>
+          <p style="margin:6px 0;">Pay Period Applied to: _______________</p>
+          <p style="margin:6px 0;">Total Hours Paid: _______________</p>
+          <p style="margin:6px 0;">Vacation Days Left: <span style="color:#555;">Pending Verification</span></p>
+          <p style="font-size:9.5px; margin:2px 0 0; font-style:italic;">(Note: After deducted leave days from pay period)</p>
+        </div>
+        <div style="flex:1; padding:10px 14px; font-size:12px;">
+          <p style="font-weight:700; margin:0 0 8px;">Leave Used:</p>
+          <div style="min-height:50px;"></div>
+          <p style="margin:6px 0;">Cash Advance: &nbsp;☐ Yes &nbsp;&nbsp; ☐ No</p>
+          <p style="margin:6px 0;">Comments: _______________________</p>
+        </div>
+      </div>
+    </div>`;
+
+  const container = document.createElement('div');
+  container.id = 'leaveFormPrintContainer';
+  container.innerHTML = formHtml;
+  document.body.appendChild(container);
+
+  const pageStyle = document.createElement('style');
+  pageStyle.id = 'leaveFormPrintStyle';
+  pageStyle.textContent = `
+    @page { size: A4 portrait; margin: 12mm; }
+    @media print {
+      body > *:not(#leaveFormPrintContainer) { display: none !important; }
+      #leaveFormPrintContainer { display: block !important; }
+    }
+    @media screen { #leaveFormPrintContainer { display: none; } }
+  `;
+  document.head.appendChild(pageStyle);
+
+  const cleanup = () => {
+    container.remove();
+    pageStyle.remove();
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  window.print();
+}
 function printRequestsLog(){
   const types = Array.from(new Set(ALL_REQUESTS.map(r=>r.Type))).sort();
   const filtered = ALL_REQUESTS
     .map((r, idx) => Object.assign({}, r, {_idx: idx}))
     .filter(r=>{
-      if(reqFilter.employee && !r.EmployeeName.toLowerCase().includes(reqFilter.employee.toLowerCase())) return false;
+      if(reqFilter.employee && !r.EmployeeName.toLowerCase().includes(reqFilter.employee.toLowerCase()) && !String(r.ID||'').toLowerCase().includes(reqFilter.employee.toLowerCase())) return false;
       if(reqFilter.type !== 'All' && r.Type !== reqFilter.type) return false;
       if(reqFilter.status !== 'All' && r.Status !== reqFilter.status) return false;
       if(reqFilter.dateFrom){ const dt = new Date(r.Date); if(isNaN(dt) || dt < new Date(reqFilter.dateFrom)) return false; }
