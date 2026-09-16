@@ -7135,8 +7135,22 @@ const BUILDERS = {
   "request-detail": ()=>{
     const r = MOCK.requests.find(x=>x.id===viewingRequestDetailId);
     if(!r){
+      // Not necessarily a genuinely missing request — MOCK.requests
+      // can momentarily be mid-refresh (a background refresh from an
+      // earlier edit/delete/clarification-response action landing
+      // right around the same time "View" was clicked). One retry
+      // covers that timing gap before concluding it's truly not
+      // found; requestDetailRetried resets whenever a different
+      // request is opened, so this can never loop.
+      if(requestDetailRetriedFor !== viewingRequestDetailId){
+        requestDetailRetriedFor = viewingRequestDetailId;
+        refreshMyRequests().then(()=>{ if(activeView === 'request-detail') renderView('request-detail'); }).catch(e=>console.warn('request-detail retry refresh failed:', e.message || e));
+        return `<div class="card"><button class="btn info auto" onclick="closeMyRequestDetail()">← Back</button><p class="muted" style="margin-top:14px;"><span class="btn-spinner"></span> Loading request…</p></div>`;
+      }
+      console.warn('request-detail: id not found after retry —', viewingRequestDetailId, 'available ids:', MOCK.requests.map(x=>x.id));
       return `<div class="card"><button class="btn info auto" onclick="closeMyRequestDetail()">← Back</button><p class="muted" style="margin-top:14px;">That request couldn't be found.</p></div>`;
     }
+    requestDetailRetriedFor = null; // found successfully — clear so a future miss on a DIFFERENT request still gets its own retry
     const isLeave = r.type === 'Leave Request';
     let history = [];
     try{ history = JSON.parse(r.statusHistory || '[]'); } catch(e){ history = []; }
@@ -7268,18 +7282,30 @@ const BUILDERS = {
       </div>
       <div class="card">
         <h3>Your Request History</h3>
-        <table>
-          <tr><th>Type</th><th>Date</th><th>Status</th><th></th></tr>
-          ${MOCK.requests.map(r=>{
-            const leaveSubtitle = r.type==='Leave Request' ? `<br><span class="muted" style="font-size:11px;">${r.leaveRequestNumber?r.leaveRequestNumber+' · ':''}${r.leaveType==='Other'?r.leaveTypeOther:r.leaveType||''} · ${fmtLongDate(r.leaveStartDate)} to ${fmtLongDate(r.leaveEndDate)} (${r.numberOfDays||'?'}d)</span>` : '';
-            return `<tr><td>${r.type}${r.type==='Schedule Swap' && r.swapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.swapDay)}${r.theirDay && r.theirDay!==r.swapDay ? ' ↔ '+fmtDayLabel(r.theirDay) : ''} ↔ ${r.swapWithName}</span>` : ''}${leaveSubtitle}</td><td>${fmtDateTime(r.date)}</td><td>${statusPill(r.status)}</td>
-            <td style="white-space:nowrap;">${(()=>{
-              const canEdit = r.status==='pending' || r.status==='needs-clarification';
-              const canDelete = r.status==='pending';
-              return `<button class="btn info auto" style="padding:5px 10px; margin-right:6px;" onclick="viewMyRequestDetail('${r.id}')">👁️ View</button>${canEdit ? `<button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditRequest('${r.id}')">✏️ Edit</button>` : ''}${canDelete ? `<button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyRequest('${r.id}', this)">🗑️ Delete</button>` : ''}`;
-            })()}</td></tr>`;
-          }).join('') || `<tr><td colspan="4" class="muted">No requests yet.</td></tr>`}
-        </table>
+        <div style="display:flex; flex-direction:column; gap:10px; margin-top:10px;">
+          ${MOCK.requests.length ? MOCK.requests.map(r=>{
+            const leaveSubtitle = r.type==='Leave Request' ? `<div class="muted" style="font-size:11px; margin-top:2px;">${r.leaveRequestNumber?r.leaveRequestNumber+' · ':''}${r.leaveType==='Other'?r.leaveTypeOther:r.leaveType||''} · ${fmtLongDate(r.leaveStartDate)} to ${fmtLongDate(r.leaveEndDate)} (${r.numberOfDays||'?'}d)</div>` : '';
+            const swapSubtitle = r.type==='Schedule Swap' && r.swapWithName ? `<div class="muted" style="font-size:11px; margin-top:2px;">${fmtDayLabel(r.swapDay)}${r.theirDay && r.theirDay!==r.swapDay ? ' ↔ '+fmtDayLabel(r.theirDay) : ''} ↔ ${r.swapWithName}</div>` : '';
+            const canEdit = r.status==='pending' || r.status==='needs-clarification';
+            const canDelete = r.status==='pending';
+            return `
+            <div style="border:1px solid var(--line); border-radius:10px; padding:12px;">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px;">
+                <div style="min-width:0;">
+                  <div style="font-weight:600;">${r.type}</div>
+                  ${leaveSubtitle}${swapSubtitle}
+                  <div class="muted" style="font-size:11px; margin-top:2px;">Filed ${fmtDateTime(r.date)}</div>
+                </div>
+                ${statusPill(r.status)}
+              </div>
+              <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;">
+                <button class="btn info auto" style="padding:5px 10px;" onclick="viewMyRequestDetail('${r.id}')">👁️ View</button>
+                ${canEdit ? `<button class="btn edit auto" style="padding:5px 10px;" onclick="startEditRequest('${r.id}')">✏️ Edit</button>` : ''}
+                ${canDelete ? `<button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyRequest('${r.id}', this)">🗑️ Delete</button>` : ''}
+              </div>
+            </div>`;
+          }).join('') : `<p class="muted">No requests yet.</p>`}
+        </div>
       </div>
     </div>`,
 
@@ -8978,6 +9004,7 @@ const BUILDERS = {
 let editingRequestId = null;
 let pendingRequestClientId = null; // stable id kept across a retry of the SAME not-yet-confirmed request submission
 let viewingRequestDetailId = null; // which request "View Details" (employee side) is currently showing
+let requestDetailRetriedFor = null; // guards the one-time auto-retry-refresh in the request-detail view against looping
 function viewMyRequestDetail(id){
   viewingRequestDetailId = id;
   renderView('request-detail');
