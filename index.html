@@ -99,8 +99,8 @@
     #soundAlertToggle{display:none !important;}
     .topbar h2{font-size:17px !important; white-space:normal; overflow-wrap:break-word; line-height:1.3;}
     .who-name, .who-role{display:none;}
-    .grid-4, .grid-3, .grid-2{grid-template-columns:1fr;}
-    .grid-7{grid-template-columns:repeat(2,1fr);}
+    .grid-4, .grid-3, .grid-2{grid-template-columns:minmax(0,1fr);}
+    .grid-7{grid-template-columns:repeat(2,minmax(0,1fr));}
   }
   .brand{padding:22px 20px 18px; border-bottom:1px solid var(--line);}
   .brand-chip{width:44px; height:44px; display:flex; align-items:center; justify-content:center; margin-bottom:10px;}
@@ -137,13 +137,13 @@
 
   .content{padding:26px 28px 60px; overflow-y:auto;}
   .grid{display:grid; gap:16px;}
-  .grid-2{grid-template-columns:1fr 1fr;}
-  .grid-3{grid-template-columns:1fr 1fr 1fr;}
-  .grid-4{grid-template-columns:repeat(4,1fr);}
-  .grid-5{grid-template-columns:repeat(5,1fr);}
-  .grid-7{grid-template-columns:repeat(7,1fr);}
-  @media(max-width:1100px){.grid-7{grid-template-columns:repeat(4,1fr);}}
-  @media(max-width:900px){.grid-2,.grid-3,.grid-4,.grid-5{grid-template-columns:1fr;} .grid-7{grid-template-columns:repeat(2,1fr);}}
+  .grid-2{grid-template-columns:minmax(0,1fr) minmax(0,1fr);}
+  .grid-3{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);}
+  .grid-4{grid-template-columns:repeat(4,minmax(0,1fr));}
+  .grid-5{grid-template-columns:repeat(5,minmax(0,1fr));}
+  .grid-7{grid-template-columns:repeat(7,minmax(0,1fr));}
+  @media(max-width:1100px){.grid-7{grid-template-columns:repeat(4,minmax(0,1fr));}}
+  @media(max-width:900px){.grid-2,.grid-3,.grid-4,.grid-5{grid-template-columns:minmax(0,1fr);} .grid-7{grid-template-columns:repeat(2,minmax(0,1fr));}}
 
   .card{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:20px;}
   .card.clickable{cursor:pointer; transition:background .15s ease, border-color .15s ease, transform .1s ease;}
@@ -194,7 +194,7 @@
   .chip-meter::after{content:''; width:48px; height:48px; border-radius:50%; background:var(--panel); position:absolute;}
   .chip-meter span{position:relative; font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:600;}
 
-  textarea, input[type=text], input[type=password], select{width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:9px; padding:10px 12px; font-family:'Inter',sans-serif; font-size:13px;}
+  textarea, input[type=text], input[type=password], select, input[type=date], input[type=number]{width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:9px; padding:10px 12px; font-family:'Inter',sans-serif; font-size:13px; box-sizing:border-box;}
   textarea{resize:vertical; min-height:90px;}
   label{font-size:11.5px; color:var(--text-mute); font-weight:600; display:block; margin-bottom:6px; margin-top:14px;}
   label:first-child{margin-top:0;}
@@ -7144,7 +7144,7 @@ const BUILDERS = {
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:14px;">
         <button class="btn info auto no-print" onclick="closeMyRequestDetail()">← Back</button>
-        ${isLeave ? `<button class="btn auto no-print" onclick="printLeaveRequestForm('${r.id}')">🖨️ Print</button>` : ''}
+        ${isLeave && currentMgmtRole() ? `<button class="btn auto no-print" onclick="printLeaveRequestForm('${r.id}')">🖨️ Print</button>` : ''}
       </div>
       <h3>${r.type}</h3>
       <p class="muted" style="font-size:12px; margin-bottom:14px;">${isLeave ? `Leave Request Number: <span class="mono">${r.leaveRequestNumber||'—'}</span>` : `Request ID: <span class="mono">${r.id}</span>`} · Submitted ${fmtDateTime(r.date)}</p>
@@ -10526,6 +10526,11 @@ async function printEmployeeLog(){
 // after) so it never affects the paper size used by any OTHER
 // printable page in the portal.
 function printLeaveRequestForm(id){
+  // Enforced here, not just by hiding the button — printing the
+  // official form is an Admin/management function; a plain employee
+  // account calling this directly (e.g. from the browser console)
+  // is refused the same as if they'd never seen a Print button at all.
+  if(!currentMgmtRole()){ alert("Printing the official Leave Request Form is only available to Admin accounts."); return; }
   let name, position, r;
   const mine = MOCK.requests.find(x=>x.id===id);
   if(mine){
