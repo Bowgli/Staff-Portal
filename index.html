@@ -2250,6 +2250,7 @@ const MOCK = {
    ============================================================ */
 const SESSION_KEY = "sv_staff_portal_session";
 const LAST_VIEW_KEY = "sv_staff_portal_last_view";
+const LAST_REQUEST_DETAIL_ID_KEY = "sv_staff_portal_last_request_detail_id";
 
 async function doLoginWithCredentials(u, p){
   if(USE_REMOTE()){
@@ -3596,6 +3597,7 @@ function logout(){
   stopSessionTimeout();
   try{ localStorage.removeItem(SESSION_KEY); } catch(e){}
   try{ localStorage.removeItem(LAST_VIEW_KEY); } catch(e){}
+  try{ localStorage.removeItem(LAST_REQUEST_DETAIL_ID_KEY); } catch(e){}
   document.getElementById('loginUser').value = '';
   document.getElementById('loginPass').value = '';
   document.getElementById('appRoot').style.display = 'none';
@@ -5843,6 +5845,16 @@ function restoreLastViewOrDefault(){
   // to mgmt-home on its own if a role genuinely isn't authorized for
   // a "mgmt-" view, so no separate role check is needed here.
   if(savedView && BUILDERS[savedView]) activeView = savedView;
+  // request-detail alone among the pages restored here needs an id
+  // alongside the view name — restore it too, or fall back to the
+  // request list instead of showing a detail page with nothing to
+  // display.
+  if(activeView === 'request-detail'){
+    let savedId = null;
+    try{ savedId = localStorage.getItem(LAST_REQUEST_DETAIL_ID_KEY); } catch(e){}
+    if(savedId){ viewingRequestDetailId = savedId; }
+    else { activeView = 'requests'; }
+  }
   renderView(activeView);
 }
 
@@ -6099,6 +6111,15 @@ function renderView(id, fromHistory){
     }
   }
   try{ localStorage.setItem(LAST_VIEW_KEY, id); } catch(e){} // so a full page refresh (F5) can restore this page, not just Home
+  // request-detail specifically needs to know WHICH request to show
+  // — restoring just the view name isn't enough for this one page,
+  // unlike most other views. Without this, an F5 refresh while
+  // looking at a request landed back on this same page but with no
+  // id to look up, showing "that request couldn't be found" for a
+  // request that was actually fine.
+  if(id === 'request-detail' && viewingRequestDetailId){
+    try{ localStorage.setItem(LAST_REQUEST_DETAIL_ID_KEY, viewingRequestDetailId); } catch(e){}
+  }
 }
 
 async function refreshRequestsOnNavigate(){
