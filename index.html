@@ -2918,7 +2918,16 @@ function checkCatchupReminders(){
   const announcedConcerns = new Set(announced.concerns || []);
   const announcedSuggestions = new Set(announced.suggestions || []);
 
-  const newRequests = catchupRequests.filter(r => !announcedRequests.has(r.ID));
+  // Tracked as ID + how many StatusHistory entries the request has,
+  // not just ID alone — a request that goes pending, gets sent to
+  // Needs Clarification, and comes back to pending once the employee
+  // responds is landing on "pending" for a SECOND time with a LONGER
+  // history than when it was first announced. Keying on ID alone
+  // meant that second arrival was invisible: its ID was already in
+  // the "seen" set from the very first time it went pending, so the
+  // employee's response never got flagged to Admin at all.
+  const requestKey = r => { let h=[]; try{ h = JSON.parse(r.StatusHistory||'[]'); }catch(e){ h=[]; } return r.ID + ':' + h.length; };
+  const newRequests = catchupRequests.filter(r => !announcedRequests.has(requestKey(r)));
   const newConcerns = catchupConcerns.filter(c => !announcedConcerns.has(c.id));
   const newSuggestions = catchupSuggestions.filter(s => !announcedSuggestions.has(s.id));
 
@@ -2931,16 +2940,32 @@ function checkCatchupReminders(){
   // still correctly counted everywhere that reads status directly).
   try{
     localStorage.setItem('sv_mgmt_catchup_announced', JSON.stringify({
-      requests: catchupRequests.map(r=>r.ID),
+      requests: catchupRequests.map(requestKey),
       concerns: catchupConcerns.map(c=>c.id),
       suggestions: catchupSuggestions.map(s=>s.id),
     }));
   }catch(e){}
 
   if(soundAlertsEnabled()) playAlertTone();
-  if(newRequests.length){
-    const detail = newRequests.length===1 ? `${newRequests[0].EmployeeName} — ${newRequests[0].Type}` : newRequests.map(r=>`${r.EmployeeName} (${r.Type})`).join(', ');
-    showMgmtToast('📝', newRequests.length===1?'Request Awaiting Review':`${newRequests.length} Requests Awaiting Review`, `${detail} — tap to view`, 'mgmt-requests');
+
+  // Split "newly pending" requests into ones that just arrived back
+  // from a clarification response (worth calling out specifically —
+  // the whole reason this employee is waiting on Admin again) versus
+  // everything else (a brand-new submission, or one still sitting
+  // pending from before).
+  const isClarificationResponse = r => { let h=[]; try{ h = JSON.parse(r.StatusHistory||'[]'); }catch(e){ h=[]; } const last = h[h.length-1]; return last && last.event === 'needs-clarification → pending'; };
+  const clarificationReplies = newRequests.filter(isClarificationResponse);
+  const otherNewRequests = newRequests.filter(r => !isClarificationResponse(r));
+
+  if(clarificationReplies.length){
+    const detail = clarificationReplies.length===1
+      ? `${clarificationReplies[0].EmployeeName} submitted a clarification response${clarificationReplies[0].LeaveRequestNumber ? ' — '+clarificationReplies[0].LeaveRequestNumber : ''} — tap to view`
+      : clarificationReplies.map(r=>`${r.EmployeeName}${r.LeaveRequestNumber ? ' ('+r.LeaveRequestNumber+')' : ''}`).join(', ') + ' submitted clarification responses — tap to view';
+    showMgmtToast('💬', clarificationReplies.length===1?'Clarification Response Received':`${clarificationReplies.length} Clarification Responses Received`, detail, 'mgmt-requests');
+  }
+  if(otherNewRequests.length){
+    const detail = otherNewRequests.length===1 ? `${otherNewRequests[0].EmployeeName} — ${otherNewRequests[0].Type}` : otherNewRequests.map(r=>`${r.EmployeeName} (${r.Type})`).join(', ');
+    showMgmtToast('📝', otherNewRequests.length===1?'Request Awaiting Review':`${otherNewRequests.length} Requests Awaiting Review`, `${detail} — tap to view`, 'mgmt-requests');
   }
   if(newConcerns.length){
     const detail = newConcerns.length===1 ? `${newConcerns[0].from} — concern still open` : newConcerns.map(c=>c.from).join(', ');
@@ -7148,7 +7173,7 @@ const BUILDERS = {
         <label>Your Response</label>
         <textarea id="reqClarifyResponse" rows="3" placeholder="Type your response here..."></textarea>
         <p class="login-err" id="reqClarifyErr" style="display:none;"></p>
-        <button class="btn no-print" onclick="submitClarificationResponse('${r.id}')">Submit Response</button>
+        <button class="btn no-print" id="reqClarifyResponseBtn" onclick="submitClarificationResponse('${r.id}')">Submit Response</button>
       ` : ''}
       ${r.clarificationResponse ? `<div class="banner note" style="margin-bottom:14px;"><strong>Your Previous Response:</strong> ${r.clarificationResponse}</div>` : ''}
       ${r.actionDate ? `<p class="muted" style="font-size:12px; margin-bottom:14px;">Last reviewed: ${fmtDateTime(r.actionDate)}</p>` : ''}
@@ -8964,22 +8989,27 @@ function closeMyRequestDetail(){
 async function submitClarificationResponse(id){
   const responseEl = document.getElementById('reqClarifyResponse');
   const err = document.getElementById('reqClarifyErr');
+  const btn = document.getElementById('reqClarifyResponseBtn');
   err.style.display = 'none';
+  if(btn && btn.disabled) return; // already submitting — a repeated click while it's in flight does nothing
   const response = responseEl.value.trim();
   if(!response){ err.textContent = "Please enter a response before submitting."; err.style.display = 'block'; return; }
+  btnLoadingEl(btn, 'Submitting response...');
   if(USE_REMOTE()){
     try{
       const r = await apiPostRetrying('submitClarificationResponse', {id, response, employeeName: CURRENT_EMPLOYEE.name});
-      if(!r.ok){ err.textContent = r.error || "Couldn't submit — please try again."; err.style.display = 'block'; return; }
+      if(!r.ok){ err.textContent = r.error || "Couldn't submit — please try again."; err.style.display = 'block'; btnResetEl(btn); return; }
     } catch(e){
       err.textContent = e.message || "Couldn't submit — please try again.";
       err.style.display = 'block';
+      btnResetEl(btn);
       return;
     }
   }
   const req = MOCK.requests.find(x=>x.id===id);
   if(req){ req.status = 'pending'; req.clarificationResponse = response; }
   refreshMyRequests().then(()=>{ if(activeView === 'request-detail') renderView('request-detail'); }).catch(e=>console.warn('background requests refresh failed (already-correct local data is unaffected):', e.message || e));
+  await btnSentEl(btn, 'Response Submitted');
   renderView('request-detail');
 }
 let editingConcernId = null;
