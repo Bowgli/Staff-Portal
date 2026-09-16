@@ -9037,7 +9037,14 @@ async function submitClarificationResponse(id){
   if(req){ req.status = 'pending'; req.clarificationResponse = response; }
   refreshMyRequests().then(()=>{ if(activeView === 'request-detail') renderView('request-detail'); }).catch(e=>console.warn('background requests refresh failed (already-correct local data is unaffected):', e.message || e));
   await btnSentEl(btn, 'Response Submitted');
-  renderView('request-detail');
+  // Only re-render if the employee is STILL looking at this exact
+  // request — during the 600ms "✓ Response Submitted" pause above,
+  // they may have already tapped "← Back" (which resets
+  // viewingRequestDetailId to null and navigates to "requests"); an
+  // unconditional re-render here would then force the detail view
+  // back open with a null id, showing "that request couldn't be
+  // found" over a page the employee had already left.
+  if(activeView === 'request-detail' && viewingRequestDetailId === id) renderView('request-detail');
 }
 let editingConcernId = null;
 let pendingConcernClientId = null; // stable id kept across a retry of the SAME not-yet-confirmed concern submission
