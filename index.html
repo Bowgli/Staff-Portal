@@ -7296,7 +7296,7 @@ const BUILDERS = {
         <textarea id="reqDetails" placeholder="Describe your request..."></textarea>
         <div style="display:flex; gap:8px; margin-top:8px;">
           <button class="btn" id="reqSubmitBtn" onclick="submitMyRequest()" style="flex:1;">Submit Request</button>
-          ${editingRequestId ? `<button class="btn ghost auto" onclick="cancelEditRequest()">Cancel</button>` : ''}
+          <button class="btn ghost auto" id="reqCancelBtn" onclick="cancelEditRequest()" style="display:${editingRequestId ? '' : 'none'};">Cancel</button>
         </div>
         <p class="login-err" id="reqErr"></p>
         <p class="login-ok" id="reqOk">Saved.</p>
@@ -9352,6 +9352,7 @@ function startEditRequest(id){
   }
   editingRequestId = id;
   document.getElementById('reqSubmitBtn').textContent = 'Update Request';
+  document.getElementById('reqCancelBtn').style.display = ''; // startEditRequest() edits the form in place rather than re-rendering the page, so the Cancel button — only ever added to the page at render time based on editingRequestId — must be shown directly here too, or it stays invisible until some LATER unrelated re-render happens to catch up
   window.scrollTo({top:0, behavior:'smooth'});
 }
 
