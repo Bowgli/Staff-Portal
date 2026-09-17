@@ -7332,14 +7332,11 @@ const BUILDERS = {
 
   concern: ()=>{
     // The dropdown always starts on its first option (Employee /
-    // Coworker Concern) on a fresh form, but onchange only fires when
-    // the person actually CHANGES the selection — so on first load,
-    // with nothing changed yet, the matching section below needs its
-    // OWN initial visibility computed to match that default, instead
-    // of always starting hidden and waiting for a change event that
-    // never comes. toggleConcernCategoryFields() remains the source
-    // of truth for every change after this initial render.
-    const defaultType = concernCategoryType(CONCERN_CATEGORIES[0]);
+    // With no category selected yet by default (the placeholder), none
+    // of the category-specific sections below should show initially —
+    // toggleConcernCategoryFields() remains the source of truth for
+    // every change once the person actually picks one.
+    const defaultType = concernCategoryType('');
     return `
     <div class="grid grid-2">
       <div class="card">
@@ -7348,6 +7345,7 @@ const BUILDERS = {
 
       <label>Concern Category</label>
       <select id="concernTopic" onchange="toggleConcernCategoryFields()">
+          <option value="" disabled selected>Select a Concern Category</option>
           ${CONCERN_CATEGORIES.map(c=>`<option>${c}</option>`).join('')}
         </select>
 
@@ -9386,6 +9384,7 @@ async function submitMyConcern(){
   const err = document.getElementById('concernErr');
   const ok = document.getElementById('concernOk');
   err.style.display='none'; ok.style.display='none';
+  if(!Topic){ err.textContent="Please select a concern category."; err.style.display='block'; return; }
   if(!Details){ err.textContent="Add an Incident Description."; err.style.display='block'; return; }
 
   let CoworkerName = '', ConcernTypes = '', MembershipNumber = '', CustomerDescription = '', SafetyRisk = '', ImmediateActionTaken = '', Priority = '';
