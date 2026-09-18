@@ -8678,17 +8678,19 @@ const BUILDERS = {
     <div class="card table-scroll">
       <h3><span class="ic">⚠️</span> All Reported Concerns</h3>
       <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Showing ${filtered.length} of ${MOCK.concernsLog.length} active concerns</p>
-      <table>
-        <tr><th>Ref No.</th><th>Category</th><th>Subject</th><th>Venue</th><th>Date Submitted</th><th>Status</th><th></th></tr>
+      <table class="mobile-card-table">
+        <thead><tr><th>Ref No.</th><th>Category</th><th>Subject</th><th>Venue</th><th>Date Submitted</th><th>Status</th><th></th></tr></thead>
+        <tbody>
         ${filtered.map(c=>`<tr>
-          <td class="mono">${c.refNo||'—'}</td>
-          <td>${c.topic}</td>
-          <td class="muted">${c.coworkerName || '—'}</td>
-          <td class="muted">${c.venue||'—'}</td>
-          <td>${fmtDateTime(c.date)}</td>
-          <td>${concernStatusPill(c.status)}</td>
-          <td><button class="btn info auto" style="padding:5px 10px;" onclick="openConcernDetail('${c.id}')">View Report</button>${(isFullAdmin() && CONCERN_ARCHIVABLE_STATUSES.has(c.status)) ? ` <button class="btn ghost auto" style="padding:5px 10px;" onclick="archiveRecordNow('concern','${c.id}', this)">📦 Archive</button>` : ''}</td>
+          <td class="mono" data-label="Ref No.">${c.refNo||'—'}</td>
+          <td data-label="Category">${c.topic}</td>
+          <td class="muted" data-label="Subject">${c.coworkerName || '—'}</td>
+          <td class="muted" data-label="Venue">${c.venue||'—'}</td>
+          <td data-label="Date Submitted">${fmtDateTime(c.date)}</td>
+          <td data-label="Status">${concernStatusPill(c.status)}</td>
+          <td data-label="Actions"><button class="btn info auto" style="padding:5px 10px;" onclick="openConcernDetail('${c.id}')">View Report</button>${(isFullAdmin() && CONCERN_ARCHIVABLE_STATUSES.has(c.status)) ? ` <button class="btn ghost auto" style="padding:5px 10px;" onclick="archiveRecordNow('concern','${c.id}', this)">📦 Archive</button>` : ''}</td>
         </tr>`).join('') || `<tr><td colspan="7" class="muted">No matching concerns.</td></tr>`}
+        </tbody>
       </table>
     </div>`;
   },
