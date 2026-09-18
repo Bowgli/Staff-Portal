@@ -10613,7 +10613,7 @@ function printLeaveRequestForm(id){
 
       <div style="border:1.5px solid #000 !important; padding:16px 20px !important; margin-bottom:16px;">
         <p style="font-weight:700; margin:0 0 12px;">Employee Information:</p>
-        <table style="width:100%; border:none !important; font-size:14px !important; border-collapse:collapse;">
+        <table style="width:100%; border:none !important; font-size:12px !important; border-collapse:collapse;">
           <tr><td style="border:none !important; padding:6px 0 !important;">Name: <strong>${name}</strong> (${position||'—'})</td><td style="border:none !important; padding:6px 0 !important; text-align:right;">Today's Date: <strong>${fmtLongDate(r.date)}</strong></td></tr>
           <tr><td style="border:none !important; padding:6px 0 !important;" colspan="2">I would like <strong>${r.numberOfDays||'___'}</strong> days off, starting on <strong>${r.leaveStartDate?fmtLongDate(r.leaveStartDate):'________'}</strong> and ending on <strong>${r.leaveEndDate?fmtLongDate(r.leaveEndDate):'________'}</strong>.</td></tr>
           <tr><td style="border:none !important; padding:6px 0 !important;">I will return to work on <strong>${r.returnToWorkDate?fmtLongDate(r.returnToWorkDate):'________'}</strong>.</td><td style="border:none !important; padding:6px 0 !important; text-align:right;">Anniversary Date: <strong>${fmtLongDate(r.anniversaryDate)}</strong></td></tr>
@@ -10622,7 +10622,7 @@ function printLeaveRequestForm(id){
 
       <div style="border:1.5px solid #000 !important; padding:16px 20px !important; margin-bottom:16px;">
         <p style="font-weight:700; margin:0 0 12px;">TYPE OF REQUEST</p>
-        <table style="width:100%; border:none !important; font-size:14px !important; border-collapse:collapse;">
+        <table style="width:100%; border:none !important; font-size:12px !important; border-collapse:collapse;">
           <tr>
             <td style="border:none !important; padding:0 !important; vertical-align:top;">${LEAVE_TYPES_COL1.map(t=>`<div style="margin-bottom:8px;">${checkbox(t)}</div>`).join('')}</td>
             <td style="border:none !important; padding:0 !important; vertical-align:top;">${LEAVE_TYPES_COL2.map(t=>`<div style="margin-bottom:8px;">${checkbox(t)}</div>`).join('')}</td>
@@ -10634,7 +10634,7 @@ function printLeaveRequestForm(id){
 
       <div style="border:1.5px solid #000 !important; padding:16px 20px !important; margin-bottom:16px;">
         <p style="font-size:10.5px !important; margin:0 0 16px;">I understand that time away from work is subject to manager approval and company policies. I further understand that if I do not have leave time accrued, I will not be paid for the absence.</p>
-        <table style="width:100%; border:none !important; font-size:14px !important; border-collapse:collapse;">
+        <table style="width:100%; border:none !important; font-size:12px !important; border-collapse:collapse;">
           <tr><td style="border:none !important; padding:9px 0 !important;">Employee Signature: _______________________</td><td style="border:none !important; padding:9px 0 !important; text-align:right;">Date: _______________</td></tr>
           <tr><td style="border:none !important; padding:9px 0 !important;">Received By: _______________________</td><td style="border:none !important; padding:9px 0 !important; text-align:right;">Date: _______________</td></tr>
           <tr><td style="border:none !important; padding:9px 0 !important;" colspan="2">Paid: &nbsp;☐ YES &nbsp;&nbsp; ☐ NO &nbsp;&nbsp; <span>(Only if vacation leave days are available)</span></td></tr>
