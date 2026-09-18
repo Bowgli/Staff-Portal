@@ -10637,7 +10637,7 @@ function printLeaveRequestForm(id){
         <table style="width:100%; border:none; font-size:13px; border-collapse:collapse;">
           <tr><td style="border:none; padding:9px 0;">Employee Signature: _______________________</td><td style="border:none; padding:9px 0; text-align:right;">Date: _______________</td></tr>
           <tr><td style="border:none; padding:9px 0;">Received By: _______________________</td><td style="border:none; padding:9px 0; text-align:right;">Date: _______________</td></tr>
-          <tr><td style="border:none; padding:9px 0;" colspan="2">Paid: &nbsp;☐ YES &nbsp;&nbsp; ☐ NO &nbsp;&nbsp; <span style="font-size:10.5px;">(Only if vacation leave days are available)</span></td></tr>
+          <tr><td style="border:none; padding:9px 0;" colspan="2">Paid: &nbsp;☐ YES &nbsp;&nbsp; ☐ NO &nbsp;&nbsp; <span>(Only if vacation leave days are available)</span></td></tr>
           <tr><td style="border:none; padding:9px 0;" colspan="2">Manager: _______________________________________________</td></tr>
           <tr><td style="border:none; padding:9px 0;">Consultant: _______________________</td><td style="border:none; padding:9px 0; text-align:right;">Date: _______________</td></tr>
           <tr><td style="border:none; padding:9px 0;" colspan="2">Comments: ${r.status==='declined' && r.declineReason ? r.declineReason : ''}${r.actionBy ? `<br><span>Reviewed by ${r.actionBy}${r.actionDate ? ' on '+fmtLongDate(r.actionDate) : ''}</span>` : ''}</td></tr>
