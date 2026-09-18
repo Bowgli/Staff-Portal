@@ -5076,17 +5076,19 @@ function disciplinaryCasesTableSection(rows, title){
     <div class="card table-scroll">
       <h3><span class="ic">📁</span> ${title || 'Disciplinary Cases'}</h3>
       <input type="text" id="discCaseSearch" placeholder="🔍 Search employee name…" value="${discFilter.search}" oninput="setDiscSearch(this.value)" style="margin-bottom:12px;">
-      <table>
-        <tr><th>Case #</th><th>Employee</th><th>Date Reported</th><th>Violation</th><th>Level</th><th>Status</th><th></th></tr>
+      <table class="mobile-card-table">
+        <thead><tr><th>Case #</th><th>Employee</th><th>Date Reported</th><th>Violation</th><th>Level</th><th>Status</th><th></th></tr></thead>
+        <tbody>
         ${filtered.map(d=>`<tr>
-          <td class="mono">${d.CaseNumber||''}</td>
-          <td>${d.EmployeeName}</td>
-          <td>${fmtDateTime(d.DateReported)}</td>
-          <td class="muted">${discParseViolations(d.ViolationTypes).join(', ')||''}</td>
-          <td>${d.DisciplinaryLevel||'<span class="muted">—</span>'}</td>
-          <td>${discStatusPill(d.Status)}</td>
-          <td>${isViewAllowedForRole('mgmt-disciplinary-detail') ? `<button class="btn info auto" style="padding:5px 10px;" onclick="openDisciplinaryCase('${d.ID}')">View Case</button>` : '<span class="muted">Not authorized</span>'}</td>
+          <td class="mono" data-label="Case #">${d.CaseNumber||''}</td>
+          <td data-label="Employee">${d.EmployeeName}</td>
+          <td data-label="Date Reported">${fmtDateTime(d.DateReported)}</td>
+          <td class="muted" data-label="Violation">${discParseViolations(d.ViolationTypes).join(', ')||''}</td>
+          <td data-label="Level">${d.DisciplinaryLevel||'<span class="muted">—</span>'}</td>
+          <td data-label="Status">${discStatusPill(d.Status)}</td>
+          <td data-label="Actions">${isViewAllowedForRole('mgmt-disciplinary-detail') ? `<button class="btn info auto" style="padding:5px 10px;" onclick="openDisciplinaryCase('${d.ID}')">View Case</button>` : '<span class="muted">Not authorized</span>'}</td>
         </tr>`).join('') || `<tr><td colspan="7" class="muted">No matching cases.</td></tr>`}
+        </tbody>
       </table>
     </div>`;
 }
@@ -5186,17 +5188,19 @@ function disciplinaryCasesAdvancedSection(rows, title){
         </div>
       </div>` : ''}
       <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Showing ${filtered.length} of ${rows.length} case${rows.length===1?'':'s'}</p>
-      <table>
-        <tr><th>Case #</th><th>Employee</th><th>Date Reported</th><th>Violation</th><th>Level</th><th>Status</th><th></th></tr>
+      <table class="mobile-card-table">
+        <thead><tr><th>Case #</th><th>Employee</th><th>Date Reported</th><th>Violation</th><th>Level</th><th>Status</th><th></th></tr></thead>
+        <tbody>
         ${filtered.map(d=>`<tr>
-          <td class="mono">${d.CaseNumber||''}</td>
-          <td>${d.EmployeeName}</td>
-          <td>${fmtDateTime(d.DateReported)}</td>
-          <td class="muted">${discParseViolations(d.ViolationTypes).join(', ')||''}</td>
-          <td>${d.DisciplinaryLevel||'<span class="muted">—</span>'}</td>
-          <td>${discStatusPill(d.Status)}</td>
-          <td>${isViewAllowedForRole('mgmt-disciplinary-detail') ? `<button class="btn info auto" style="padding:5px 10px;" onclick="openDisciplinaryCase('${d.ID}')">View Case</button>` : '<span class="muted">Not authorized</span>'}</td>
+          <td class="mono" data-label="Case #">${d.CaseNumber||''}</td>
+          <td data-label="Employee">${d.EmployeeName}</td>
+          <td data-label="Date Reported">${fmtDateTime(d.DateReported)}</td>
+          <td class="muted" data-label="Violation">${discParseViolations(d.ViolationTypes).join(', ')||''}</td>
+          <td data-label="Level">${d.DisciplinaryLevel||'<span class="muted">—</span>'}</td>
+          <td data-label="Status">${discStatusPill(d.Status)}</td>
+          <td data-label="Actions">${isViewAllowedForRole('mgmt-disciplinary-detail') ? `<button class="btn info auto" style="padding:5px 10px;" onclick="openDisciplinaryCase('${d.ID}')">View Case</button>` : '<span class="muted">Not authorized</span>'}</td>
         </tr>`).join('') || `<tr><td colspan="7" class="muted">No matching cases.</td></tr>`}
+        </tbody>
       </table>
     </div>`;
 }
@@ -7933,8 +7937,8 @@ const BUILDERS = {
         <div class="no-print" style="margin-bottom:12px;">
           <input type="text" id="attendanceSearch" placeholder="Search employee name..." value="${attendanceSearchQuery}" oninput="filterAttendanceLog(this.value)" style="margin-bottom:0;">
         </div>
-        <table class="no-print">
-          <tr><th>Employee</th><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th><th>Logged By</th><th></th></tr>
+        <table class="no-print mobile-card-table">
+          <thead><tr><th>Employee</th><th>Date</th><th>Time</th><th>Status</th><th>Remarks</th><th>Logged By</th><th></th></tr></thead>
           <tbody id="attendanceLogRows">${renderAttendanceLogRows()}</tbody>
         </table>
         <table class="print-only" style="display:none;" id="attendancePrintTable">
@@ -8899,10 +8903,12 @@ const BUILDERS = {
     </div>
     <div class="card table-scroll">
       <h3>History</h3>
-      <table>
-        <tr><th>Employee</th><th>Award</th><th>Note</th><th>Date</th><th></th></tr>
-        ${MOCK.recognition.map(r=>`<tr><td>${r.employeeName||''}</td><td>${r.name}</td><td class="muted">${r.desc}</td><td>${fmtDateTime(r.date)}</td>
-          <td style="white-space:nowrap;"><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="openRecognitionDetail('${r.id}', 'mgmt-recognition', 'Recognition')">👁 View Details</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteRecognitionEntry('${r.id}', this)">🗑️ Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">No awards issued yet.</td></tr>`}
+      <table class="mobile-card-table">
+        <thead><tr><th>Employee</th><th>Award</th><th>Note</th><th>Date</th><th></th></tr></thead>
+        <tbody>
+        ${MOCK.recognition.map(r=>`<tr><td data-label="Employee">${r.employeeName||''}</td><td data-label="Award">${r.name}</td><td class="muted" data-label="Note">${r.desc}</td><td data-label="Date">${fmtDateTime(r.date)}</td>
+          <td data-label="Actions"><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="openRecognitionDetail('${r.id}', 'mgmt-recognition', 'Recognition')">👁 View Details</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteRecognitionEntry('${r.id}', this)">🗑️ Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">No awards issued yet.</td></tr>`}
+        </tbody>
       </table>
     </div>`,
 
@@ -8974,9 +8980,11 @@ const BUILDERS = {
     <div class="card table-scroll">
       <h3><span class="ic">🌟</span> Award Nominations</h3>
       <p class="muted" style="margin-bottom:12px;">Employee-submitted nominations for recognition awards.</p>
-      <table>
-        <tr><th>Nominee</th><th>Category</th><th>Period</th><th>Reason</th><th>Nominated By</th><th>Date Submitted</th></tr>
-        ${filtered.map(n=>`<tr><td>${n.NomineeName}</td><td>${n.AwardCategory}</td><td class="muted">${n.Month||''} ${n.Year||''}</td><td class="muted" style="white-space:pre-wrap;">${n.Reason}${n.SupportingDetails ? `<br><span style="font-size:11px;">${n.SupportingDetails}</span>` : ''}</td><td>${n.NominatorName}</td><td>${fmtDateTime(n.DateSubmitted)}</td></tr>`).join('') || `<tr><td colspan="6" class="muted">No matching nominations.</td></tr>`}
+      <table class="mobile-card-table">
+        <thead><tr><th>Nominee</th><th>Category</th><th>Period</th><th>Reason</th><th>Nominated By</th><th>Date Submitted</th></tr></thead>
+        <tbody>
+        ${filtered.map(n=>`<tr><td data-label="Nominee">${n.NomineeName}</td><td data-label="Category">${n.AwardCategory}</td><td class="muted" data-label="Period">${n.Month||''} ${n.Year||''}</td><td class="muted" data-label="Reason" style="white-space:pre-wrap;">${n.Reason}${n.SupportingDetails ? `<br><span style="font-size:11px;">${n.SupportingDetails}</span>` : ''}</td><td data-label="Nominated By">${n.NominatorName}</td><td data-label="Date Submitted">${fmtDateTime(n.DateSubmitted)}</td></tr>`).join('') || `<tr><td colspan="6" class="muted">No matching nominations.</td></tr>`}
+        </tbody>
       </table>
     </div>`;
   },
@@ -9014,14 +9022,16 @@ const BUILDERS = {
     </div>
     <div class="card table-scroll">
       <h3>History</h3>
-      <table>
-        <tr><th>Title</th><th>Sent to</th><th>Date</th><th></th></tr>
-        ${ALL_ANNOUNCEMENTS.map(a=>`<tr><td>${a.Title}</td><td class="muted">${a.TargetType==='All'?'All Staff':a.TargetType==='Position'?a.TargetValue:a.TargetValue}</td><td>${fmtDateTime(a.Date)}</td>
-          <td style="white-space:nowrap;">
+      <table class="mobile-card-table">
+        <thead><tr><th>Title</th><th>Sent to</th><th>Date</th><th></th></tr></thead>
+        <tbody>
+        ${ALL_ANNOUNCEMENTS.map(a=>`<tr><td data-label="Title">${a.Title}</td><td class="muted" data-label="Sent to">${a.TargetType==='All'?'All Staff':a.TargetType==='Position'?a.TargetValue:a.TargetValue}</td><td data-label="Date">${fmtDateTime(a.Date)}</td>
+          <td data-label="Actions">
             <button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="viewAnnouncementDetail('${a.ID}')">👁️ View</button>
             <button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditAnnouncement('${a.ID}')">✏️ Edit</button>
             <button class="btn danger auto" style="padding:5px 10px;" onclick="deleteAnnouncementEntry('${a.ID}', this)">🗑️ Delete</button>
           </td></tr>`).join('') || `<tr><td colspan="4" class="muted">No announcements posted yet.</td></tr>`}
+        </tbody>
       </table>
     </div>`,
 };
@@ -10462,7 +10472,7 @@ function renderAttendanceLogRows(){
   let filtered = sortedAttendanceLog();
   const q = attendanceSearchQuery.toLowerCase();
   if(!q) filtered = filtered.slice(0, 6); // keep the default view short — search shows everything that matches
-  return filtered.map(a=>`<tr><td>${a.name}</td><td>${fmtLogDate(a.date)}</td><td class="mono">${fmtLogTime(a.time)}</td><td>${attendancePill(a.status)}</td><td class="muted">${a.remarks||'—'}</td><td class="muted">${a.loggedBy||'—'}</td><td><button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditAttendance('${a.id}')">✏️ Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteAttendanceEntry('${a.id}', this)">🗑️ Delete</button></td></tr>`).join('')
+  return filtered.map(a=>`<tr><td data-label="Employee">${a.name}</td><td data-label="Date">${fmtLogDate(a.date)}</td><td class="mono" data-label="Time">${fmtLogTime(a.time)}</td><td data-label="Status">${attendancePill(a.status)}</td><td class="muted" data-label="Remarks">${a.remarks||'—'}</td><td class="muted" data-label="Logged By">${a.loggedBy||'—'}</td><td data-label="Actions"><button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditAttendance('${a.id}')">✏️ Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteAttendanceEntry('${a.id}', this)">🗑️ Delete</button></td></tr>`).join('')
     || `<tr><td colspan="7" class="muted">${attendanceSearchQuery ? 'No entries match that search.' : 'No entries logged yet.'}</td></tr>`;
 }
 /* Individual Employee Print Log — search shows an on-screen preview
