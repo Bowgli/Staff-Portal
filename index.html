@@ -175,6 +175,20 @@
     .mobile-card-table td[data-label]::before{ content: attr(data-label); display:block; font-size:10px; text-transform:uppercase; letter-spacing:0.4px; color:var(--text-faint); margin-bottom:2px; }
     .mobile-card-table td:empty{ display:none; }
   }
+  /* Desktop-only — Announcement History's Actions column (View, Edit,
+     Delete) was wrapping the third button to its own row once the
+     "Sent to" column ate most of the row's width (long employee-name
+     lists), since the buttons are plain inline-block with nothing
+     keeping them on one line. Flex + gap keeps them evenly spaced on
+     one row without touching the mobile stacked-card layout at all —
+     that lives in a separate max-width:600px rule above, so this
+     never applies there. margin-right is only zeroed inside this same
+     desktop-only query too, so the original inline margin these
+     buttons already have is left completely alone on mobile. */
+  @media(min-width:601px){
+    .ann-history-table td[data-label="Actions"]{ display:flex; align-items:center; flex-wrap:nowrap; gap:6px; }
+    .ann-history-table td[data-label="Actions"] .btn{ margin-right:0; }
+  }
 
   .pill{display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; white-space:nowrap;}
   .pill.ok{background:var(--teal-soft); color:var(--teal);}
@@ -9022,7 +9036,7 @@ const BUILDERS = {
     </div>
     <div class="card table-scroll">
       <h3>History</h3>
-      <table class="mobile-card-table">
+      <table class="mobile-card-table ann-history-table">
         <thead><tr><th>Title</th><th>Sent to</th><th>Date</th><th></th></tr></thead>
         <tbody>
         ${ALL_ANNOUNCEMENTS.map(a=>`<tr><td data-label="Title">${a.Title}</td><td class="muted" data-label="Sent to">${a.TargetType==='All'?'All Staff':a.TargetType==='Position'?a.TargetValue:a.TargetValue}</td><td data-label="Date">${fmtDateTime(a.Date)}</td>
