@@ -181,7 +181,7 @@
   .pill.warn{background:var(--gold-soft); color:var(--gold);}
   .pill.danger{background:var(--red-soft); color:var(--red);}
   .pill.bad{background:var(--red-soft); color:var(--red);}
-  .status-select{min-width:130px; font-weight:600;}
+  .status-select{min-width:160px; font-weight:600;}
   .status-select.pending{background:var(--gold-soft); color:var(--gold); border-color:rgba(201,162,75,.4);}
   .status-select.approved{background:var(--teal-soft); color:var(--teal); border-color:rgba(79,167,124,.4);}
   .status-select.declined{background:var(--red-soft); color:var(--red); border-color:rgba(197,88,74,.4);}
@@ -8502,17 +8502,18 @@ const BUILDERS = {
         ${isFullAdmin() ? `<button class="btn ghost auto no-print" onclick="openRequestsArchivedPage()">📁 Archived Requests</button>` : ''}
       </div>
     </div>
-    <div class="card print-doc">
+    <div class="card print-doc table-scroll">
       <div class="no-print" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:4px;">
         <h3 style="margin:0;"><span class="ic">📝</span> All Requests</h3>
         <button class="btn auto" onclick="printRequestsLog()">🖨️ Print Filtered Requests</button>
       </div>
       <div class="print-only" style="display:none;" id="reqPrintHeader"></div>
       <p class="muted no-print" style="margin-bottom:12px;">Status can be changed anytime — handy for an accidental click or if the staff member changes their mind on a swap.</p>
-      <table class="no-print">
-        <tr><th>Employee</th><th>Type</th><th>Details</th><th>Date</th><th>Status</th><th>Action By</th>${isFullAdmin()?'<th></th>':''}</tr>
-        ${filtered.map(r=>`<tr><td>${r.EmployeeName}</td><td>${r.Type}${r.Type==='Schedule Swap' && r.SwapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.SwapDay)}${r.TheirDay && r.TheirDay!==r.SwapDay ? ' ↔ '+fmtDayLabel(r.TheirDay) : ''} ↔ ${r.SwapWithName}</span>` : ''}</td><td class="muted">${r.Details||''}</td><td>${fmtDateTime(r.Date)}</td>
-          <td>
+      <table class="no-print mobile-card-table">
+        <thead><tr><th>Employee</th><th>Type</th><th>Details</th><th>Date</th><th>Status</th><th>Action By</th>${isFullAdmin()?'<th></th>':''}</tr></thead>
+        <tbody>
+        ${filtered.map(r=>`<tr><td data-label="Employee">${r.EmployeeName}</td><td data-label="Type">${r.Type}${r.Type==='Schedule Swap' && r.SwapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.SwapDay)}${r.TheirDay && r.TheirDay!==r.SwapDay ? ' ↔ '+fmtDayLabel(r.TheirDay) : ''} ↔ ${r.SwapWithName}</span>` : ''}</td><td class="muted" data-label="Details">${r.Details||''}</td><td data-label="Date">${fmtDateTime(r.Date)}</td>
+          <td data-label="Status">
             ${savingRequestIds.has(r.ID) ? `<span class="btn-spinner"></span><span class="muted" style="font-size:12px;">Saving...</span>` : `
             <select class="status-select ${r.Status}" onchange="handleRequestStatusChange(this, '${r.ID}', '${r.Status}', '${r.Type.replace(/'/g,"\\'")}')">
               <option value="pending" ${r.Status==='pending'?'selected':''}>Pending</option>
@@ -8522,8 +8523,9 @@ const BUILDERS = {
               <option value="needs-clarification" ${r.Status==='needs-clarification'?'selected':''}>Need Clarification</option>
             </select>`}
           </td>
-          <td class="muted">${r.Status !== 'pending' && r.ActionBy ? r.ActionBy : '—'}${r.Type==='Leave Request' ? `<br><button class="btn ghost auto no-print" style="padding:3px 8px; margin-top:4px; font-size:11px;" onclick="printLeaveRequestForm('${r.ID}')">🖨️ Print Form</button>` : ''}</td>
-          ${isFullAdmin() ? `<td>${REQUEST_ARCHIVABLE_STATUSES.has(r.Status) ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="archiveRecordNow('request','${r.ID}', this)">📦 Archive</button>` : ''}</td>` : ''}</tr>`).join('') || `<tr><td colspan="${isFullAdmin()?7:6}" class="muted">No matching requests.</td></tr>`}
+          <td class="muted" data-label="Action By">${r.Status !== 'pending' && r.ActionBy ? r.ActionBy : '—'}${r.Type==='Leave Request' ? `<br><button class="btn ghost auto no-print" style="padding:3px 8px; margin-top:4px; font-size:11px;" onclick="printLeaveRequestForm('${r.ID}')">🖨️ Print Form</button>` : ''}</td>
+          ${isFullAdmin() ? `<td data-label="Actions">${REQUEST_ARCHIVABLE_STATUSES.has(r.Status) ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="archiveRecordNow('request','${r.ID}', this)">📦 Archive</button>` : ''}</td>` : ''}</tr>`).join('') || `<tr><td colspan="${isFullAdmin()?7:6}" class="muted">No matching requests.</td></tr>`}
+        </tbody>
       </table>
       <table class="print-only" style="display:none;" id="reqPrintTable">
         <tr><th>Date Submitted</th><th>Employee</th><th>Request Type</th><th>Date/Period</th><th>Details</th><th>Status</th></tr>
@@ -8844,16 +8846,18 @@ const BUILDERS = {
 
   "mgmt-suggestions": ()=>{
     return `
-    <div class="card">
+    <div class="card table-scroll">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:4px;">
         <h3 style="margin:0;"><span class="ic">💡</span> All Suggestions</h3>
         ${isFullAdmin() ? `<button class="btn ghost auto" onclick="openSuggestionsArchivedPage()">📁 Archived Suggestions</button>` : ''}
       </div>
       <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Showing ${MOCK.suggestionsLog.length} active suggestions</p>
-      <table>
-        <tr><th>From</th><th>Idea</th><th>Date</th><th>Status</th><th></th></tr>
-        ${MOCK.suggestionsLog.map(s=>`<tr><td>${s.from}</td><td>${s.idea}</td><td>${fmtDateTime(s.date)}</td><td><span class="pill ${s.status==='new'?'warn':'ok'}">${s.status==='new'?'New':'Reviewed'}</span></td>
-          <td>${s.status==='new' ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="reviewSuggestion('${s.id}', this)">Mark Reviewed</button>` : (isFullAdmin() && s.status==='reviewed' ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="archiveRecordNow('suggestion','${s.id}', this)">📦 Archive</button>` : '')}</td></tr>`).join('') || `<tr><td colspan="5" class="muted">No suggestions yet.</td></tr>`}
+      <table class="mobile-card-table">
+        <thead><tr><th>From</th><th>Idea</th><th>Date</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+        ${MOCK.suggestionsLog.map(s=>`<tr><td data-label="From">${s.from}</td><td data-label="Idea">${s.idea}</td><td data-label="Date">${fmtDateTime(s.date)}</td><td data-label="Status"><span class="pill ${s.status==='new'?'warn':'ok'}">${s.status==='new'?'New':'Reviewed'}</span></td>
+          <td data-label="Actions">${s.status==='new' ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="reviewSuggestion('${s.id}', this)">Mark Reviewed</button>` : (isFullAdmin() && s.status==='reviewed' ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="archiveRecordNow('suggestion','${s.id}', this)">📦 Archive</button>` : '')}</td></tr>`).join('') || `<tr><td colspan="5" class="muted">No suggestions yet.</td></tr>`}
+        </tbody>
       </table>
     </div>`;
   },
