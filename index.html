@@ -7309,7 +7309,18 @@ const BUILDERS = {
       <h3>${r.Type}</h3>
       <p class="muted" style="font-size:12px; margin-bottom:4px;">Employee: <strong>${r.EmployeeName}</strong></p>
       <p class="muted" style="font-size:12px; margin-bottom:14px;">${isLeave ? `Leave Request Number: <span class="mono">${r.LeaveRequestNumber||'—'}</span>` : `Request ID: <span class="mono">${r.ID}</span>`} · Submitted ${fmtDateTime(r.Date)}</p>
-      <p style="margin-bottom:14px;">${statusPill(r.Status)}</p>
+      <p class="muted" style="font-size:12px; margin-bottom:4px;">Status</p>
+      <p class="no-print" style="margin-bottom:14px;">
+        ${savingRequestIds.has(r.ID) ? `<span class="btn-spinner"></span><span class="muted" style="font-size:12px;">Saving...</span>` : `
+        <select class="status-select ${r.Status}" onchange="handleRequestStatusChange(this, '${r.ID}', '${r.Status}', '${r.Type.replace(/'/g,"\\'")}')">
+          <option value="pending" ${r.Status==='pending'?'selected':''}>Pending</option>
+          <option value="approved" ${r.Status==='approved'?'selected':''}>Approved</option>
+          <option value="declined" ${r.Status==='declined'?'selected':''}>Declined</option>
+          <option value="acknowledged" ${r.Status==='acknowledged'?'selected':''}>Acknowledged</option>
+          <option value="needs-clarification" ${r.Status==='needs-clarification'?'selected':''}>Need Clarification</option>
+        </select>`}
+      </p>
+      <p class="print-only" style="display:none; margin-bottom:14px;">${statusPill(r.Status)}</p>
 
       ${isLeave ? `
         <table style="margin-bottom:14px;">
@@ -10370,6 +10381,16 @@ function handleRequestStatusChange(selectEl, id, currentStatus, requestType){
   selectEl.className = 'status-select '+status;
   setRequestStatus(id, status);
 }
+// Re-renders wherever the status change was actually made FROM —
+// the Manage Requests table (unchanged, existing behavior) or the
+// newer Admin Leave Request View, which should stay put on the same
+// request rather than being bounced back to the table it wasn't
+// even showing. Business logic above/below this call is untouched;
+// only this "where do we land" decision is shared instead of
+// hard-coded four times.
+function renderRequestStatusDestination_(){
+  renderView(activeView === 'mgmt-request-detail' ? 'mgmt-request-detail' : 'mgmt-requests');
+}
 async function setRequestStatus(id, status, declineReason, clarificationMessage){
   const req = ALL_REQUESTS.find(r=>r.ID===id);
   const previousStatus = req ? req.Status : null;
@@ -10377,7 +10398,7 @@ async function setRequestStatus(id, status, declineReason, clarificationMessage)
   const actionBy = CURRENT_USER.displayName || (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.fullName) || '';
   if(req){ req.Status = status; req.ActionBy = actionBy; } // optimistic — this IS the correct value once the write below succeeds, no need to re-fetch it
   savingRequestIds.add(id);
-  renderView('mgmt-requests');
+  renderRequestStatusDestination_();
 
   if(USE_REMOTE()){
     try{
@@ -10386,7 +10407,7 @@ async function setRequestStatus(id, status, declineReason, clarificationMessage)
       if(!r.ok){
         if(req){ req.Status = previousStatus; req.ActionBy = previousActionBy; } // revert since it didn't actually save
         alert(r.error || "Couldn't update.");
-        renderView('mgmt-requests');
+        renderRequestStatusDestination_();
         return;
       }
       // Adjust the alert baseline directly for THIS known change,
@@ -10400,18 +10421,18 @@ async function setRequestStatus(id, status, declineReason, clarificationMessage)
       }
 
       if(req && req.Type === 'Schedule Swap'){
-        // Not awaited — the page about to render (mgmt-requests)
-        // doesn't show schedule data at all, so there's nothing to
-        // gain by waiting here; this just keeps the Schedule tab
-        // itself in sync for whenever it's next opened.
+        // Not awaited — neither page this can land on shows schedule
+        // data, so there's nothing to gain by waiting here; this just
+        // keeps the Schedule tab itself in sync for whenever it's
+        // next opened.
         refreshScheduleOnly().catch(e=>console.warn('background schedule refresh after swap approval failed:', e.message || e));
       }
-      renderView('mgmt-requests');
+      renderRequestStatusDestination_();
     } catch(e){
       savingRequestIds.delete(id);
       if(req){ req.Status = previousStatus; req.ActionBy = previousActionBy; } // revert — the request never actually reached the server
       alert(e.message || "Couldn't update — please try again.");
-      renderView('mgmt-requests');
+      renderRequestStatusDestination_();
     }
   } else {
     savingRequestIds.delete(id);
