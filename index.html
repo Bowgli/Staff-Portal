@@ -2267,6 +2267,29 @@ const LAST_VIEW_KEY = "sv_staff_portal_last_view";
 const LAST_REQUEST_DETAIL_ID_KEY = "sv_staff_portal_last_request_detail_id";
 const LAST_CONCERN_DETAIL_ID_KEY = "sv_staff_portal_last_concern_detail_id";
 const LAST_CASE_DETAIL_ID_KEY = "sv_staff_portal_last_case_detail_id";
+const LAST_RECOGNITION_DETAIL_ID_KEY = "sv_staff_portal_last_recognition_detail_id";
+const LAST_EMPLOYEE_PROFILE_NAME_KEY = "sv_staff_portal_last_employee_profile_name";
+// Reusable "remember this record across an F5 refresh" registry — a
+// growing list of detail pages (Leave Request, Concern Report,
+// Disciplinary Case, and now Recognition Details and Employee
+// Profile) all hit the exact same bug: LAST_VIEW_KEY above already
+// remembers the PAGE NAME so a refresh lands back on the right page,
+// but a detail page also needs to know WHICH record to show, or it
+// renders with nothing to look up and shows "X not found" for a
+// record that's actually fine. Rather than writing a fresh dedicated
+// save/restore/cleanup block each time this turns up on yet another
+// page, every view needing this is listed once here — add an entry
+// and the save/restore/cleanup logic below picks it up automatically.
+// get/set are plain closures over each page's own existing tracking
+// variable, so nothing about how that variable is read or written
+// anywhere else in the app has to change.
+const DETAIL_VIEW_PERSISTENCE_ = [
+  { view: 'request-detail', key: LAST_REQUEST_DETAIL_ID_KEY, get: () => viewingRequestDetailId, set: v => { viewingRequestDetailId = v; }, fallback: 'requests' },
+  { view: 'mgmt-concern-detail', key: LAST_CONCERN_DETAIL_ID_KEY, get: () => discDetailConcernId, set: v => { discDetailConcernId = v; }, fallback: 'mgmt-concerns' },
+  { view: 'mgmt-disciplinary-detail', key: LAST_CASE_DETAIL_ID_KEY, get: () => discDetailCaseId, set: v => { discDetailCaseId = v; }, fallback: 'mgmt-disciplinary' },
+  { view: 'recognition-detail', key: LAST_RECOGNITION_DETAIL_ID_KEY, get: () => recognitionDetailId, set: v => { recognitionDetailId = v; }, fallback: 'mgmt-recognition' },
+  { view: 'mgmt-employee-profile', key: LAST_EMPLOYEE_PROFILE_NAME_KEY, get: () => viewingEmployeeName, set: v => { viewingEmployeeName = v; }, fallback: 'mgmt-employees' },
+];
 
 async function doLoginWithCredentials(u, p){
   if(USE_REMOTE()){
@@ -3613,9 +3636,7 @@ function logout(){
   stopSessionTimeout();
   try{ localStorage.removeItem(SESSION_KEY); } catch(e){}
   try{ localStorage.removeItem(LAST_VIEW_KEY); } catch(e){}
-  try{ localStorage.removeItem(LAST_REQUEST_DETAIL_ID_KEY); } catch(e){}
-  try{ localStorage.removeItem(LAST_CONCERN_DETAIL_ID_KEY); } catch(e){}
-  try{ localStorage.removeItem(LAST_CASE_DETAIL_ID_KEY); } catch(e){}
+  DETAIL_VIEW_PERSISTENCE_.forEach(e => { try{ localStorage.removeItem(e.key); } catch(err){} });
   document.getElementById('loginUser').value = '';
   document.getElementById('loginPass').value = '';
   document.getElementById('appRoot').style.display = 'none';
@@ -5868,31 +5889,16 @@ function restoreLastViewOrDefault(){
   // to mgmt-home on its own if a role genuinely isn't authorized for
   // a "mgmt-" view, so no separate role check is needed here.
   if(savedView && BUILDERS[savedView]) activeView = savedView;
-  // request-detail alone among the pages restored here needs an id
-  // alongside the view name — restore it too, or fall back to the
-  // request list instead of showing a detail page with nothing to
-  // display.
-  if(activeView === 'request-detail'){
+  // See DETAIL_VIEW_PERSISTENCE_ above — restores the specific record
+  // a detail page needs alongside the page name, or falls back to
+  // that page's own list view instead of showing a detail page with
+  // nothing to display.
+  const detailEntry = DETAIL_VIEW_PERSISTENCE_.find(e => e.view === activeView);
+  if(detailEntry){
     let savedId = null;
-    try{ savedId = localStorage.getItem(LAST_REQUEST_DETAIL_ID_KEY); } catch(e){}
-    if(savedId){ viewingRequestDetailId = savedId; }
-    else { activeView = 'requests'; }
-  }
-  // Same reasoning for mgmt-concern-detail (Concern Log's "View
-  // Report") — needs its own remembered id too, or falls back to the
-  // Concern Log list instead of showing "Concern not found".
-  if(activeView === 'mgmt-concern-detail'){
-    let savedConcernId = null;
-    try{ savedConcernId = localStorage.getItem(LAST_CONCERN_DETAIL_ID_KEY); } catch(e){}
-    if(savedConcernId){ discDetailConcernId = savedConcernId; }
-    else { activeView = 'mgmt-concerns'; }
-  }
-  // Same reasoning for mgmt-disciplinary-detail as above.
-  if(activeView === 'mgmt-disciplinary-detail'){
-    let savedCaseId = null;
-    try{ savedCaseId = localStorage.getItem(LAST_CASE_DETAIL_ID_KEY); } catch(e){}
-    if(savedCaseId){ discDetailCaseId = savedCaseId; }
-    else { activeView = 'mgmt-disciplinary'; }
+    try{ savedId = localStorage.getItem(detailEntry.key); } catch(e){}
+    if(savedId){ detailEntry.set(savedId); }
+    else { activeView = detailEntry.fallback; }
   }
   renderView(activeView);
 }
@@ -6150,28 +6156,13 @@ function renderView(id, fromHistory){
     }
   }
   try{ localStorage.setItem(LAST_VIEW_KEY, id); } catch(e){} // so a full page refresh (F5) can restore this page, not just Home
-  // request-detail specifically needs to know WHICH request to show
-  // — restoring just the view name isn't enough for this one page,
-  // unlike most other views. Without this, an F5 refresh while
-  // looking at a request landed back on this same page but with no
-  // id to look up, showing "that request couldn't be found" for a
-  // request that was actually fine.
-  if(id === 'request-detail' && viewingRequestDetailId){
-    try{ localStorage.setItem(LAST_REQUEST_DETAIL_ID_KEY, viewingRequestDetailId); } catch(e){}
-  }
-  // Same reasoning as request-detail above — mgmt-concern-detail
-  // (Concern Log's "View Report") needs its own id remembered too, or
-  // an F5 refresh landed back on this page with no id to look up,
-  // showing "Concern not found" for a report that was actually fine.
-  if(id === 'mgmt-concern-detail' && discDetailConcernId){
-    try{ localStorage.setItem(LAST_CONCERN_DETAIL_ID_KEY, discDetailConcernId); } catch(e){}
-  }
-  // Same reasoning again for mgmt-disciplinary-detail (Disciplinary
-  // Reports' "View Case") — needs its own remembered id too, or an F5
-  // refresh landed back on this page with no id to look up, showing
-  // "Case not found" for a case that was actually fine.
-  if(id === 'mgmt-disciplinary-detail' && discDetailCaseId){
-    try{ localStorage.setItem(LAST_CASE_DETAIL_ID_KEY, discDetailCaseId); } catch(e){}
+  // See DETAIL_VIEW_PERSISTENCE_ above — remembers which specific
+  // record a detail page is showing, for the handful of pages that
+  // need more than just the page name restored after a refresh.
+  const detailEntry = DETAIL_VIEW_PERSISTENCE_.find(e => e.view === id);
+  if(detailEntry){
+    const val = detailEntry.get();
+    if(val){ try{ localStorage.setItem(detailEntry.key, val); } catch(e){} }
   }
 }
 
