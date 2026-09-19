@@ -2266,6 +2266,7 @@ const SESSION_KEY = "sv_staff_portal_session";
 const LAST_VIEW_KEY = "sv_staff_portal_last_view";
 const LAST_REQUEST_DETAIL_ID_KEY = "sv_staff_portal_last_request_detail_id";
 const LAST_CONCERN_DETAIL_ID_KEY = "sv_staff_portal_last_concern_detail_id";
+const LAST_CASE_DETAIL_ID_KEY = "sv_staff_portal_last_case_detail_id";
 
 async function doLoginWithCredentials(u, p){
   if(USE_REMOTE()){
@@ -3614,6 +3615,7 @@ function logout(){
   try{ localStorage.removeItem(LAST_VIEW_KEY); } catch(e){}
   try{ localStorage.removeItem(LAST_REQUEST_DETAIL_ID_KEY); } catch(e){}
   try{ localStorage.removeItem(LAST_CONCERN_DETAIL_ID_KEY); } catch(e){}
+  try{ localStorage.removeItem(LAST_CASE_DETAIL_ID_KEY); } catch(e){}
   document.getElementById('loginUser').value = '';
   document.getElementById('loginPass').value = '';
   document.getElementById('appRoot').style.display = 'none';
@@ -5885,6 +5887,13 @@ function restoreLastViewOrDefault(){
     if(savedConcernId){ discDetailConcernId = savedConcernId; }
     else { activeView = 'mgmt-concerns'; }
   }
+  // Same reasoning for mgmt-disciplinary-detail as above.
+  if(activeView === 'mgmt-disciplinary-detail'){
+    let savedCaseId = null;
+    try{ savedCaseId = localStorage.getItem(LAST_CASE_DETAIL_ID_KEY); } catch(e){}
+    if(savedCaseId){ discDetailCaseId = savedCaseId; }
+    else { activeView = 'mgmt-disciplinary'; }
+  }
   renderView(activeView);
 }
 
@@ -6156,6 +6165,13 @@ function renderView(id, fromHistory){
   // showing "Concern not found" for a report that was actually fine.
   if(id === 'mgmt-concern-detail' && discDetailConcernId){
     try{ localStorage.setItem(LAST_CONCERN_DETAIL_ID_KEY, discDetailConcernId); } catch(e){}
+  }
+  // Same reasoning again for mgmt-disciplinary-detail (Disciplinary
+  // Reports' "View Case") — needs its own remembered id too, or an F5
+  // refresh landed back on this page with no id to look up, showing
+  // "Case not found" for a case that was actually fine.
+  if(id === 'mgmt-disciplinary-detail' && discDetailCaseId){
+    try{ localStorage.setItem(LAST_CASE_DETAIL_ID_KEY, discDetailCaseId); } catch(e){}
   }
 }
 
