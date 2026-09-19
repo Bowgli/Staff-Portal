@@ -2269,6 +2269,7 @@ const LAST_CONCERN_DETAIL_ID_KEY = "sv_staff_portal_last_concern_detail_id";
 const LAST_CASE_DETAIL_ID_KEY = "sv_staff_portal_last_case_detail_id";
 const LAST_RECOGNITION_DETAIL_ID_KEY = "sv_staff_portal_last_recognition_detail_id";
 const LAST_EMPLOYEE_PROFILE_NAME_KEY = "sv_staff_portal_last_employee_profile_name";
+const LAST_ADMIN_REQUEST_DETAIL_ID_KEY = "sv_staff_portal_last_admin_request_detail_id";
 // Reusable "remember this record across an F5 refresh" registry — a
 // growing list of detail pages (Leave Request, Concern Report,
 // Disciplinary Case, and now Recognition Details and Employee
@@ -2289,6 +2290,7 @@ const DETAIL_VIEW_PERSISTENCE_ = [
   { view: 'mgmt-disciplinary-detail', key: LAST_CASE_DETAIL_ID_KEY, get: () => discDetailCaseId, set: v => { discDetailCaseId = v; }, fallback: 'mgmt-disciplinary' },
   { view: 'recognition-detail', key: LAST_RECOGNITION_DETAIL_ID_KEY, get: () => recognitionDetailId, set: v => { recognitionDetailId = v; }, fallback: 'mgmt-recognition' },
   { view: 'mgmt-employee-profile', key: LAST_EMPLOYEE_PROFILE_NAME_KEY, get: () => viewingEmployeeName, set: v => { viewingEmployeeName = v; }, fallback: 'mgmt-employees' },
+  { view: 'mgmt-request-detail', key: LAST_ADMIN_REQUEST_DETAIL_ID_KEY, get: () => viewingAdminRequestId, set: v => { viewingAdminRequestId = v; }, fallback: 'mgmt-requests' },
 ];
 
 async function doLoginWithCredentials(u, p){
@@ -6049,6 +6051,7 @@ const TITLES = {
   nominate:["Nominate for Award","Recognize a coworker for an employee award"],
   requests:["My Requests","Leave, swaps, and other requests you've filed"],
   "request-detail":["Request Details","Full details, status, and any admin comments for this request"],
+  "mgmt-request-detail":["Request Details","Complete Leave Request details for review before printing"],
   concern:["Report a Concern","Sent directly to management"],
   suggestion:["Suggestion Box","Share an idea — anonymously if you prefer"],
   "my-disciplinary":["My Records","Disciplinary case records that name you"],
@@ -7281,6 +7284,54 @@ const BUILDERS = {
       ` : ''}
       ${r.clarificationResponse ? `<div class="banner note" style="margin-bottom:14px;"><strong>Your Previous Response:</strong> ${r.clarificationResponse}</div>` : ''}
       ${r.actionDate ? `<p class="muted" style="font-size:12px; margin-bottom:14px;">Last reviewed: ${fmtDateTime(r.actionDate)}</p>` : ''}
+
+      ${history.length ? `
+        <p class="muted" style="font-size:12px; margin:14px 0 6px;">Status History</p>
+        ${history.map(h=>`<div class="feed-item" style="padding:8px 0;"><span style="font-size:13px;">${h.event} — <span class="muted">${h.by||''}, ${fmtDateTime(h.date)}</span>${h.reason?`<br><span class="muted">Reason: ${h.reason}</span>`:''}${h.message?`<br><span class="muted">Message: ${h.message}</span>`:''}${h.response?`<br><span class="muted">Response: ${h.response}</span>`:''}</span></div>`).join('')}
+      ` : ''}
+    </div>`;
+  },
+
+  "mgmt-request-detail": ()=>{
+    const r = ALL_REQUESTS.find(x=>x.ID===viewingAdminRequestId);
+    if(!r){
+      return `<div class="card"><button class="btn info auto" onclick="closeAdminRequestDetail()">← Back</button><p class="muted" style="margin-top:14px;">That request couldn't be found.</p></div>`;
+    }
+    const isLeave = r.Type === 'Leave Request';
+    let history = [];
+    try{ history = JSON.parse(r.StatusHistory || '[]'); } catch(e){ history = []; }
+    return `
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:14px;">
+        <button class="btn info auto no-print" onclick="closeAdminRequestDetail()">← Back</button>
+        ${isLeave ? `<button class="btn auto no-print" onclick="printLeaveRequestForm('${r.ID}')">🖨️ Print</button>` : ''}
+      </div>
+      <h3>${r.Type}</h3>
+      <p class="muted" style="font-size:12px; margin-bottom:4px;">Employee: <strong>${r.EmployeeName}</strong></p>
+      <p class="muted" style="font-size:12px; margin-bottom:14px;">${isLeave ? `Leave Request Number: <span class="mono">${r.LeaveRequestNumber||'—'}</span>` : `Request ID: <span class="mono">${r.ID}</span>`} · Submitted ${fmtDateTime(r.Date)}</p>
+      <p style="margin-bottom:14px;">${statusPill(r.Status)}</p>
+
+      ${isLeave ? `
+        <table style="margin-bottom:14px;">
+          <tr><td class="muted">Venue</td><td>${r.Venue||'—'}</td></tr>
+          <tr><td class="muted">Leave Type</td><td>${r.LeaveType==='Other' ? (r.LeaveTypeOther||'Other') : (r.LeaveType||'—')}</td></tr>
+          <tr><td class="muted">Leave Start Date</td><td>${fmtLongDate(r.LeaveStartDate)}</td></tr>
+          <tr><td class="muted">Leave End Date</td><td>${fmtLongDate(r.LeaveEndDate)}</td></tr>
+          <tr><td class="muted">Number of Days</td><td>${r.NumberOfDays||'—'}</td></tr>
+          <tr><td class="muted">Expected Return to Work</td><td>${fmtLongDate(r.ReturnToWorkDate)}</td></tr>
+          <tr><td class="muted">Anniversary Date</td><td>${fmtLongDate(r.AnniversaryDate)}</td></tr>
+        </table>
+        <p class="muted" style="font-size:12px; margin-bottom:4px;">Reason for Leave</p>
+        <p style="margin-bottom:14px;">${r.Details||'—'}</p>
+      ` : `
+        <p class="muted" style="font-size:12px; margin-bottom:4px;">Details</p>
+        <p style="margin-bottom:14px;">${r.Details||'—'}</p>
+      `}
+
+      ${r.Status==='declined' && r.DeclineReason ? `<div class="banner" style="margin-bottom:14px;"><strong>Decline Reason:</strong> ${r.DeclineReason}</div>` : ''}
+      ${r.Status==='needs-clarification' && r.ClarificationMessage ? `<div class="banner note" style="margin-bottom:14px;"><strong>Clarification Requested:</strong> ${r.ClarificationMessage}</div>` : ''}
+      ${r.ClarificationResponse ? `<div class="banner note" style="margin-bottom:14px;"><strong>Employee's Response:</strong> ${r.ClarificationResponse}</div>` : ''}
+      ${r.ActionDate ? `<p class="muted" style="font-size:12px; margin-bottom:14px;">Last reviewed: ${fmtDateTime(r.ActionDate)}${r.ActionBy ? ' by '+r.ActionBy : ''}</p>` : ''}
 
       ${history.length ? `
         <p class="muted" style="font-size:12px; margin:14px 0 6px;">Status History</p>
@@ -8592,7 +8643,7 @@ const BUILDERS = {
               <option value="needs-clarification" ${r.Status==='needs-clarification'?'selected':''}>Need Clarification</option>
             </select>`}
           </td>
-          <td class="muted" data-label="Action By">${r.Status !== 'pending' && r.ActionBy ? r.ActionBy : '—'}${r.Type==='Leave Request' ? `<br><button class="btn ghost auto no-print" style="padding:3px 8px; margin-top:4px; font-size:11px;" onclick="printLeaveRequestForm('${r.ID}')">🖨️ Print Form</button>` : ''}</td>
+          <td class="muted" data-label="Action By">${r.Status !== 'pending' && r.ActionBy ? r.ActionBy : '—'}${r.Type==='Leave Request' ? `<br><button class="btn ghost auto no-print" style="padding:3px 8px; margin-top:4px; margin-right:4px; font-size:11px;" onclick="openAdminRequestDetail('${r.ID}')">👁 View</button><button class="btn ghost auto no-print" style="padding:3px 8px; margin-top:4px; font-size:11px;" onclick="printLeaveRequestForm('${r.ID}')">🖨️ Print Form</button>` : ''}</td>
           ${isFullAdmin() ? `<td data-label="Actions">${REQUEST_ARCHIVABLE_STATUSES.has(r.Status) ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="archiveRecordNow('request','${r.ID}', this)">📦 Archive</button>` : ''}</td>` : ''}</tr>`).join('') || `<tr><td colspan="${isFullAdmin()?7:6}" class="muted">No matching requests.</td></tr>`}
         </tbody>
       </table>
@@ -9112,6 +9163,23 @@ function viewMyRequestDetail(id){
 function closeMyRequestDetail(){
   viewingRequestDetailId = null;
   renderView('requests');
+}
+// Admin-side counterpart to viewMyRequestDetail() above — same
+// review-before-printing purpose, but reads from ALL_REQUESTS (every
+// employee's requests) rather than MOCK.requests (which only ever
+// holds the CURRENT employee's own), and returns to Manage Requests
+// rather than My Requests. Kept as its own view/functions rather than
+// reusing the employee-side one directly, since that one's data
+// source and Back destination are both wrong for an Admin looking at
+// someone else's request.
+let viewingAdminRequestId = null; // which request "mgmt-request-detail" (Admin side) is currently showing
+function openAdminRequestDetail(id){
+  viewingAdminRequestId = id;
+  renderView('mgmt-request-detail');
+}
+function closeAdminRequestDetail(){
+  viewingAdminRequestId = null;
+  renderView('mgmt-requests');
 }
 async function submitClarificationResponse(id){
   const responseEl = document.getElementById('reqClarifyResponse');
