@@ -964,6 +964,8 @@ async function archiveRecordNow(module, id, el){
     concern: "Archive Record?\n\nThis concern has been marked as completed/closed.\n\nArchiving will remove it from the active list, but the record will remain safely stored in Archived Records for authorized Admin viewing, searching, and printing.",
     request: "Archive Record?\n\nThis request has been marked as completed.\n\nArchiving will remove it from the active list, but the record will remain safely stored in Archived Records for authorized Admin viewing, searching, and printing.",
     suggestion: "Archive Record?\n\nThis suggestion has been marked as reviewed.\n\nArchiving will remove it from the active list, but the record will remain safely stored in Archived Records for authorized Admin viewing, searching, and printing.",
+    disciplinary: "Archive Case?\n\nThis disciplinary case has been marked as Closed.\n\nArchiving will remove it from the active list, but the record will remain safely stored in Archived Cases — and will still appear in the employee's full profile history and in Disciplinary Summary totals.",
+    announcement: "Archive Announcement?\n\nArchiving will remove it from the active History list, but the record will remain safely stored in Archived Announcements for authorized Admin viewing.",
   };
   await confirmAndDelete(el, messages[module] || "Archive this record?", async ()=>{
     const r = await apiPostRetrying('archiveRecord', {module, id, username: CURRENT_USER.username});
@@ -973,6 +975,22 @@ async function archiveRecordNow(module, id, el){
     if(module === 'concern'){ MOCK.concernsLog = MOCK.concernsLog.filter(c=>c.id!==id); concernsArchiveData = null; renderView('mgmt-concerns'); }
     if(module === 'request'){ ALL_REQUESTS = ALL_REQUESTS.filter(r=>r.ID!==id); requestsArchiveData = null; renderView('mgmt-requests'); }
     if(module === 'suggestion'){ MOCK.suggestionsLog = MOCK.suggestionsLog.filter(s=>s.id!==id); suggestionsArchiveData = null; renderView('mgmt-suggestions'); }
+    if(module === 'disciplinary'){
+      const rec = ALL_DISCIPLINARY_RECORDS.find(d=>d.ID===id);
+      ALL_DISCIPLINARY_RECORDS = ALL_DISCIPLINARY_RECORDS.filter(d=>d.ID!==id);
+      disciplinaryArchiveData = null;
+      // Also drop this employee's/year's cached archive slice (if
+      // ever loaded), so Employee Profile and Disciplinary Summary
+      // pick up the newly-archived case on their next open instead of
+      // showing it as missing until a full page reload.
+      if(rec){
+        delete DISCIPLINARY_ARCHIVE_BY_EMPLOYEE_CACHE[rec.EmployeeName];
+        const yr = rec.DateReported ? new Date(rec.DateReported).getFullYear() : null;
+        if(yr) delete DISCIPLINARY_ARCHIVE_BY_YEAR_CACHE[yr];
+      }
+      renderView('mgmt-disciplinary');
+    }
+    if(module === 'announcement'){ ALL_ANNOUNCEMENTS = ALL_ANNOUNCEMENTS.filter(a=>a.ID!==id); announcementArchiveData = null; renderView('mgmt-announcements'); }
   });
 }
 async function restoreRecordNow(module, id, el){
@@ -982,8 +1000,25 @@ async function restoreRecordNow(module, id, el){
     if(module === 'concern'){ concernsArchiveData = null; concernsArchiveShown = false; }
     if(module === 'request'){ requestsArchiveData = null; requestsArchiveShown = false; }
     if(module === 'suggestion'){ suggestionsArchiveData = null; suggestionsArchiveShown = false; }
+    if(module === 'disciplinary'){
+      // Same reasoning as archiving above, in reverse — a restored
+      // case needs to disappear from any cached archive slice, or it
+      // would still show as archived in Employee Profile/Summary
+      // even after coming back to the active list.
+      const restoredRec = (disciplinaryArchiveData || []).find(d=>d.ID===id);
+      disciplinaryArchiveData = null;
+      if(restoredRec){
+        delete DISCIPLINARY_ARCHIVE_BY_EMPLOYEE_CACHE[restoredRec.EmployeeName];
+        const yr = restoredRec.DateReported ? new Date(restoredRec.DateReported).getFullYear() : null;
+        if(yr) delete DISCIPLINARY_ARCHIVE_BY_YEAR_CACHE[yr];
+      } else {
+        DISCIPLINARY_ARCHIVE_BY_EMPLOYEE_CACHE = {};
+        DISCIPLINARY_ARCHIVE_BY_YEAR_CACHE = {};
+      }
+    }
+    if(module === 'announcement'){ announcementArchiveData = null; }
     await loadRemoteData(); // the restored record needs to come back through the normal live-data load to reappear correctly
-    renderView(module === 'concern' ? 'mgmt-concerns' : module === 'request' ? 'mgmt-requests' : 'mgmt-suggestions');
+    renderView(module === 'concern' ? 'mgmt-concerns' : module === 'request' ? 'mgmt-requests' : module === 'disciplinary' ? 'mgmt-disciplinary' : module === 'announcement' ? 'mgmt-announcements' : 'mgmt-suggestions');
   });
 }
 
@@ -4928,6 +4963,17 @@ let discDetailConcernId = null; // which concern mgmt-concern-detail is showing
 let concernsArchiveShown = false, concernsArchiveData = null, concernsArchiveLoading = false;
 let requestsArchiveShown = false, requestsArchiveData = null, requestsArchiveLoading = false;
 let suggestionsArchiveShown = false, suggestionsArchiveData = null, suggestionsArchiveLoading = false;
+let disciplinaryArchiveShown = false, disciplinaryArchiveData = null, disciplinaryArchiveLoading = false;
+let announcementArchiveShown = false, announcementArchiveData = null, announcementArchiveLoading = false;
+// Employee Profile and Disciplinary Summary each need only a SLICE
+// of the disciplinary archive (one employee's cases, or one year's
+// cases) rather than the whole thing — kept as separate, smaller
+// caches from disciplinaryArchiveData above (the full-archive list
+// for the Admin-facing "Archived Cases" page) so opening a profile or
+// a summary period never transfers more than that one employee's or
+// year's own records, however large the full archive grows.
+let DISCIPLINARY_ARCHIVE_BY_EMPLOYEE_CACHE = {}; // {[employeeName]: rows}
+let DISCIPLINARY_ARCHIVE_BY_YEAR_CACHE = {};      // {[year]: rows}
 let archivedRequestDetailIdx = null; // which entry in requestsArchiveData is being viewed
 let archivedSuggestionDetailIdx = null; // which entry in suggestionsArchiveData is being viewed
 function viewArchivedRequestDetail(idx){
@@ -5009,6 +5055,16 @@ function setSuggestionsArchiveSearch(v){
   suggestionsArchiveSearch = v;
   renderView('mgmt-suggestions-archived');
 }
+let disciplinaryArchiveSearch = ''; // search box on the dedicated Archived Cases page
+function setDisciplinaryArchiveSearch(v){
+  disciplinaryArchiveSearch = v;
+  renderView('mgmt-disciplinary-archived');
+}
+let announcementArchiveSearch = ''; // search box on the dedicated Archived Announcements page
+function setAnnouncementArchiveSearch(v){
+  announcementArchiveSearch = v;
+  renderView('mgmt-announcements-archived');
+}
 async function openSuggestionsArchivedPage(){
   if(!isFullAdmin()){ alert("Archive access is limited to Admin accounts."); return; }
   try{
@@ -5031,6 +5087,82 @@ async function openSuggestionsArchivedPage(){
   } finally {
     suggestionsArchiveLoading = false;
     renderView('mgmt-suggestions-archived');
+  }
+}
+let disciplinaryArchiveDataLoading = false;
+// Fetches and caches the full disciplinary archive WITHOUT navigating
+// anywhere — unlike openDisciplinaryArchivedPage() above, which is
+// meant to take the Admin to the Archived Cases list. This is for the
+// one case that page doesn't cover: opening an archived case's detail
+// view directly (via the refresh-safe id restore) when the archive
+// hasn't been loaded into this session yet. Safe to call repeatedly —
+// does nothing once loaded or while already in flight.
+async function ensureDisciplinaryArchiveDataLoaded(){
+  if(disciplinaryArchiveData !== null || disciplinaryArchiveDataLoading) return;
+  disciplinaryArchiveDataLoading = true;
+  try{
+    const raw = await apiGet('disciplinaryArchive&username=' + encodeURIComponent(CURRENT_USER.username||''));
+    disciplinaryArchiveData = Array.isArray(raw)
+      ? raw.map(d => Object.assign({}, d, {archived:true})).sort((a,b)=> new Date(b.DateReported) - new Date(a.DateReported))
+      : [];
+  } catch(e){
+    console.warn('ensureDisciplinaryArchiveDataLoaded failed:', e.message || e);
+  } finally {
+    disciplinaryArchiveDataLoading = false;
+  }
+  if(activeView === 'mgmt-disciplinary-detail') renderView(activeView);
+}
+async function openDisciplinaryArchivedPage(){
+  if(!isFullAdmin()){ alert("Archive access is limited to Admin accounts."); return; }
+  try{
+    if(disciplinaryArchiveData === null){
+      disciplinaryArchiveLoading = true;
+      renderView('mgmt-disciplinary-archived');
+      const raw = await apiGet('disciplinaryArchive&username=' + encodeURIComponent(CURRENT_USER.username||''));
+      if(!Array.isArray(raw)){
+        console.error('disciplinaryArchive did not return a list:', raw);
+        alert((raw && raw.error) || "Couldn't load Archived Cases — unexpected response from the server.");
+        disciplinaryArchiveData = [];
+      } else {
+        // Kept as raw PascalCase objects (EmployeeName, CaseNumber,
+        // Status, etc.) rather than remapped to another shape — this
+        // is exactly the field style disciplinaryCasesTableSection()
+        // already renders, the same helper the active Disciplinary
+        // Reports table below uses.
+        disciplinaryArchiveData = raw.map(d => Object.assign({}, d, {archived:true}))
+          .sort((a,b)=> new Date(b.DateReported) - new Date(a.DateReported)); // newest first
+      }
+    }
+  } catch(e){
+    console.error('openDisciplinaryArchivedPage failed:', e);
+    alert("Couldn't load Archived Cases — please try again.");
+  } finally {
+    disciplinaryArchiveLoading = false;
+    renderView('mgmt-disciplinary-archived');
+  }
+}
+async function openAnnouncementsArchivedPage(){
+  if(!isFullAdmin()){ alert("Archive access is limited to Admin accounts."); return; }
+  try{
+    if(announcementArchiveData === null){
+      announcementArchiveLoading = true;
+      renderView('mgmt-announcements-archived');
+      const raw = await apiGet('announcementArchive&username=' + encodeURIComponent(CURRENT_USER.username||''));
+      if(!Array.isArray(raw)){
+        console.error('announcementArchive did not return a list:', raw);
+        alert((raw && raw.error) || "Couldn't load Archived Announcements — unexpected response from the server.");
+        announcementArchiveData = [];
+      } else {
+        announcementArchiveData = raw.map(a => Object.assign({}, a, {archived:true}))
+          .sort((a,b)=> new Date(b.Date) - new Date(a.Date)); // newest first
+      }
+    }
+  } catch(e){
+    console.error('openAnnouncementsArchivedPage failed:', e);
+    alert("Couldn't load Archived Announcements — please try again.");
+  } finally {
+    announcementArchiveLoading = false;
+    renderView('mgmt-announcements-archived');
   }
 }
 let concernInvEditMode = null; // null = not yet decided for this record; true/false once initialized — see mgmt-concern-detail
@@ -5060,7 +5192,13 @@ function disciplinarySummarySection(){
 
   let inPeriod, periodLabel;
   if(discSummaryMode === 'year'){
-    inPeriod = ALL_DISCIPLINARY_RECORDS.filter(d=>{
+    // Historical totals include this year's archived cases too, or
+    // totals would appear to shrink simply because older Closed cases
+    // moved to the archive — see ensureDisciplinaryArchiveForYear()
+    // above. No de-dup needed: a case lives in exactly one of the two
+    // sheets at any given time.
+    ensureDisciplinaryArchiveForYear(discSummaryYear); // fire-and-forget; re-renders this page once loaded if still here
+    inPeriod = ALL_DISCIPLINARY_RECORDS.concat(DISCIPLINARY_ARCHIVE_BY_YEAR_CACHE[discSummaryYear] || []).filter(d=>{
       if(!d.DateReported) return false;
       const dt = new Date(d.DateReported);
       return !isNaN(dt) && dt.getFullYear()===discSummaryYear && d.Status !== 'Draft';
@@ -5068,7 +5206,12 @@ function disciplinarySummarySection(){
     periodLabel = String(discSummaryYear);
   } else {
     const [sy, sm] = discSummaryPeriod.split('-').map(Number);
-    inPeriod = ALL_DISCIPLINARY_RECORDS.filter(d=>{
+    // "By Month" is always inside one year, so it reuses the exact
+    // same per-year cache/fetch as "By Year" above — narrowed down to
+    // the selected month here on the client, with no separate
+    // by-month backend action needed.
+    ensureDisciplinaryArchiveForYear(sy);
+    inPeriod = ALL_DISCIPLINARY_RECORDS.concat(DISCIPLINARY_ARCHIVE_BY_YEAR_CACHE[sy] || []).filter(d=>{
       if(!d.DateReported) return false;
       const dt = new Date(d.DateReported);
       return !isNaN(dt) && dt.getFullYear()===sy && (dt.getMonth()+1)===sm && d.Status !== 'Draft';
@@ -5196,6 +5339,7 @@ function disciplinaryCasesAdvancedSection(rows, title){
         <input type="text" id="discAdvSearch" placeholder="🔍 Search employee, case #, or violation…" value="${discFilter.search}" oninput="setDiscSearch(this.value)" style="flex:1; min-width:220px; margin-bottom:0;">
         <button class="btn ghost auto" onclick="toggleDiscFiltersPanel()">${discFilter.expanded ? '▲ Hide Filters' : '▼ Filters'}</button>
         ${hasActiveFilters ? `<button class="btn reset auto" onclick="resetDiscFilter()">↻ Clear Filters</button>` : ''}
+        ${isFullAdmin() ? `<button class="btn ghost auto" onclick="openDisciplinaryArchivedPage()">📁 Archived Cases</button>` : ''}
       </div>
       ${discFilter.expanded ? `
       <div class="grid grid-4" style="margin-bottom:14px;">
@@ -5239,7 +5383,7 @@ function disciplinaryCasesAdvancedSection(rows, title){
           <td class="muted" data-label="Violation">${discParseViolations(d.ViolationTypes).join(', ')||''}</td>
           <td data-label="Level">${d.DisciplinaryLevel||'<span class="muted">—</span>'}</td>
           <td data-label="Status">${discStatusPill(d.Status)}</td>
-          <td data-label="Actions">${isViewAllowedForRole('mgmt-disciplinary-detail') ? `<button class="btn info auto" style="padding:5px 10px;" onclick="openDisciplinaryCase('${d.ID}')">View Case</button>` : '<span class="muted">Not authorized</span>'}</td>
+          <td data-label="Actions">${isViewAllowedForRole('mgmt-disciplinary-detail') ? `<button class="btn info auto" style="padding:5px 10px; margin-right:6px;" onclick="openDisciplinaryCase('${d.ID}')">View Case</button>` : '<span class="muted">Not authorized</span>'}${(isFullAdmin() && d.Status==='Closed') ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="archiveRecordNow('disciplinary','${d.ID}', this)">📦 Archive</button>` : ''}</td>
         </tr>`).join('') || `<tr><td colspan="7" class="muted">No matching cases.</td></tr>`}
         </tbody>
       </table>
@@ -5356,7 +5500,11 @@ let discStatusEditMode = false;
 function openDisciplinaryCase(id, sourceView, sourceLabel){
   discDetailCaseId = id;
   discDetailSource = sourceView ? {view: sourceView, label: sourceLabel || 'Back'} : null;
-  const d = ALL_DISCIPLINARY_RECORDS.find(x=>x.ID===id) || {};
+  // Falls back to the loaded archive list for a case opened from
+  // "Archived Cases" (View Case, and therefore Print Case too, work
+  // the same for an archived record as an active one — the printed
+  // page is just whatever's on screen here).
+  const d = ALL_DISCIPLINARY_RECORDS.find(x=>x.ID===id) || (disciplinaryArchiveData||[]).find(x=>x.ID===id) || {};
   discIncidentEditMode = false; // Incident Information is always filled in at creation, so it always starts read-only
   discCaseInfoEditMode = false; // same — always populated at creation
   discReviewEditMode = !(d.ManagementFindings || d.PreviousRelatedCases || d.ManagementComments);
@@ -6077,6 +6225,8 @@ const TITLES = {
   "mgmt-concern-detail":["Concern Report","Full details and investigation"],
   "mgmt-suggestions":["Suggestions Log","All submitted suggestions"],
   "mgmt-suggestions-archived":["Archived Suggestions","Reviewed suggestions moved out of the active list"],
+  "mgmt-disciplinary-archived":["Archived Cases","Closed disciplinary cases moved out of the active list"],
+  "mgmt-announcements-archived":["Archived Announcements","Announcements moved out of the active History list"],
   "archived-suggestion-detail":["Archived Suggestion","Full details — read-only"],
   "mgmt-recognition":["Recognition Management","Issue awards and recognitions"],
   "recognition-detail":["Recognition Details","Full award details"],
@@ -6583,6 +6733,50 @@ async function ensureAttendanceArchiveForRankings(year){
     delete attendanceArchiveRankingLoading[year];
   }
   if(activeView === 'mgmt-attendance' || activeView === 'mgmt-home') renderView(activeView);
+}
+let disciplinaryArchiveByEmployeeLoading = {}; // {[employeeName]: true} while a fetch for that employee is in flight
+// Employee Profile → Disciplinary needs this ONE employee's archived
+// cases merged in alongside the live ones, or an employee whose older
+// Closed cases have since been archived would appear to have a
+// shorter history than they actually do. Fetches (and caches) only
+// that employee's own archived rows — never the whole archive — so
+// opening a profile stays fast regardless of how large
+// DisciplinaryRecordsArchive grows company-wide.
+async function ensureDisciplinaryArchiveForEmployee(name){
+  if(DISCIPLINARY_ARCHIVE_BY_EMPLOYEE_CACHE[name] || disciplinaryArchiveByEmployeeLoading[name]) return;
+  disciplinaryArchiveByEmployeeLoading[name] = true;
+  try{
+    const rows = await safeApiGet('disciplinaryArchiveByEmployee&employeeName=' + encodeURIComponent(name), []);
+    DISCIPLINARY_ARCHIVE_BY_EMPLOYEE_CACHE[name] = rows;
+  } catch(e){
+    console.warn('ensureDisciplinaryArchiveForEmployee failed for', name, ':', e.message || e);
+  } finally {
+    delete disciplinaryArchiveByEmployeeLoading[name];
+  }
+  if(activeView === 'mgmt-employee-profile' && viewingEmployeeName === name) renderView(activeView);
+}
+let disciplinaryArchiveByYearLoading = {}; // {[year]: true} while a fetch for that year is in flight
+// Disciplinary Summary (By Year / By Month) needs this ONE year's
+// archived cases merged in, or a year whose Closed cases have since
+// been archived would show shrinking historical totals — the exact
+// same reasoning and pattern as ensureAttendanceArchiveForRankings
+// above, just for disciplinary cases instead of attendance. "By
+// Month" reuses this same per-year fetch too, since a month is always
+// inside one year — narrowed down to that month on the client, with
+// no second backend action needed.
+async function ensureDisciplinaryArchiveForYear(year){
+  year = String(year);
+  if(DISCIPLINARY_ARCHIVE_BY_YEAR_CACHE[year] || disciplinaryArchiveByYearLoading[year]) return;
+  disciplinaryArchiveByYearLoading[year] = true;
+  try{
+    const rows = await safeApiGet('disciplinaryArchiveByYear&year=' + encodeURIComponent(year), []);
+    DISCIPLINARY_ARCHIVE_BY_YEAR_CACHE[year] = rows;
+  } catch(e){
+    console.warn('ensureDisciplinaryArchiveForYear failed for', year, ':', e.message || e);
+  } finally {
+    delete disciplinaryArchiveByYearLoading[year];
+  }
+  if(activeView === 'mgmt-disciplinary') renderView(activeView);
 }
 // Combines the live log with cached archived rows for whichever year
 // is relevant to the current period selection — records older than
@@ -7751,7 +7945,14 @@ const BUILDERS = {
     if(!e) return `<div class="empty"><div class="ic">🚧</div>Employee not found. <button class="btn ghost auto" onclick="renderView('${employeeProfileSource ? employeeProfileSource.view : 'mgmt-employees'}')">Back to ${employeeProfileSource ? employeeProfileSource.label : 'Staff Directory'}</button></div>`;
 
     const myEvaluations = ALL_EVALUATIONS.filter(ev=>ev.EmployeeName===name);
-    const myDisc = ALL_DISCIPLINARY_RECORDS.filter(d=>d.EmployeeName===name && d.Status !== 'Draft');
+    // Complete disciplinary history = live (non-archived) cases plus
+    // this employee's own archived cases, fetched (and cached) only
+    // for them — see ensureDisciplinaryArchiveForEmployee() above.
+    // No de-dup needed: a case is in exactly one of the two sheets at
+    // any given time, never both.
+    ensureDisciplinaryArchiveForEmployee(name); // fire-and-forget; re-renders this page once loaded if still here
+    const myDisc = ALL_DISCIPLINARY_RECORDS.filter(d=>d.EmployeeName===name && d.Status !== 'Draft')
+      .concat(DISCIPLINARY_ARCHIVE_BY_EMPLOYEE_CACHE[name] || []);
     const myRecognition = MOCK.recognition.filter(r=>r.employeeName===name);
     const myNominations = ALL_NOMINATIONS.filter(n=>n.NomineeName===name);
 
@@ -8353,8 +8554,21 @@ const BUILDERS = {
   },
 
   "mgmt-disciplinary-detail": ()=>{
-    const d = ALL_DISCIPLINARY_RECORDS.find(x=>x.ID===discDetailCaseId);
-    if(!d) return `<div class="empty"><div class="ic">📁</div>Case not found.</div>`;
+    const d = ALL_DISCIPLINARY_RECORDS.find(x=>x.ID===discDetailCaseId) || (disciplinaryArchiveData||[]).find(x=>x.ID===discDetailCaseId);
+    if(!d){
+      // Not found in the live records, and the archive either hasn't
+      // been fetched into this session yet (most likely right after a
+      // full page refresh — the id itself IS correctly restored by
+      // DETAIL_VIEW_PERSISTENCE_, just not the archive data alongside
+      // it) or genuinely doesn't contain this id. Only the former is
+      // worth a retry — kick it off and show a loading state instead
+      // of a false "not found" while it's in flight.
+      if(disciplinaryArchiveData === null){
+        ensureDisciplinaryArchiveDataLoaded();
+        return `<div class="empty"><div class="ic">📁</div>Loading case…</div>`;
+      }
+      return `<div class="empty"><div class="ic">📁</div>Case not found.</div>`;
+    }
     const timeline = discParseTimeline(d.Timeline);
     const attachmentIds = (d.AttachmentFileIds||'').split(',').filter(Boolean);
     const attachmentNames = (d.AttachmentNames||'').split(',').filter(Boolean);
@@ -9014,6 +9228,59 @@ const BUILDERS = {
       </table>`}
     </div>`;
   },
+  "mgmt-disciplinary-archived": ()=>{
+    if(!isFullAdmin()) return `<div class="card"><p class="muted">🔒 Archive access is limited to Admin accounts.</p></div>`;
+    const q = disciplinaryArchiveSearch.toLowerCase();
+    const filtered = (disciplinaryArchiveData || []).filter(d => !q || (d.EmployeeName||'').toLowerCase().includes(q) || (d.CaseNumber||'').toLowerCase().includes(q));
+    return `
+    <div class="no-print" style="margin-bottom:16px;">
+      <button class="btn ghost auto" onclick="renderView('mgmt-disciplinary')">← Back to Disciplinary Reports</button>
+    </div>
+    <div class="card">
+      <h3><span class="ic">📁</span> All Archived Cases</h3>
+      <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Closed cases moved out of the active list — still fully viewable, searchable, and printable, and still counted in the employee's profile history and Disciplinary Summary totals.</p>
+      <input type="text" placeholder="🔍 Search by employee or case #..." value="${disciplinaryArchiveSearch}" oninput="setDisciplinaryArchiveSearch(this.value)" style="margin-bottom:12px;">
+      ${disciplinaryArchiveLoading ? `<p class="muted">Loading archived cases…</p>` : `
+      <table class="mobile-card-table">
+        <thead><tr><th>Case #</th><th>Employee</th><th>Date Reported</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+        ${filtered.map(d=>`<tr>
+          <td class="mono" data-label="Case #">${d.CaseNumber||''}</td>
+          <td data-label="Employee">${d.EmployeeName}</td>
+          <td data-label="Date Reported">${fmtDateTime(d.DateReported)}</td>
+          <td data-label="Status">${discStatusPill(d.Status)}</td>
+          <td data-label="Actions"><button class="btn info auto" style="padding:5px 10px; margin-right:6px;" onclick="openDisciplinaryCase('${d.ID}', 'mgmt-disciplinary-archived', 'Archived Cases')">View Case</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="restoreRecordNow('disciplinary','${d.ID}', this)">↩️ Restore</button></td>
+        </tr>`).join('') || `<tr><td colspan="5" class="muted">No archived cases${disciplinaryArchiveSearch?' match that search':' yet'}.</td></tr>`}
+        </tbody>
+      </table>`}
+    </div>`;
+  },
+  "mgmt-announcements-archived": ()=>{
+    if(!isFullAdmin()) return `<div class="card"><p class="muted">🔒 Archive access is limited to Admin accounts.</p></div>`;
+    const q = announcementArchiveSearch.toLowerCase();
+    const filtered = (announcementArchiveData || []).filter(a => !q || (a.Title||'').toLowerCase().includes(q));
+    return `
+    <div class="no-print" style="margin-bottom:16px;">
+      <button class="btn ghost auto" onclick="renderView('mgmt-announcements')">← Back to Post Announcements</button>
+    </div>
+    <div class="card">
+      <h3><span class="ic">📁</span> All Archived Announcements</h3>
+      <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Announcements moved out of the active History list — still fully viewable.</p>
+      <input type="text" placeholder="🔍 Search by title..." value="${announcementArchiveSearch}" oninput="setAnnouncementArchiveSearch(this.value)" style="margin-bottom:12px;">
+      ${announcementArchiveLoading ? `<p class="muted">Loading archived announcements…</p>` : `
+      <table class="mobile-card-table">
+        <thead><tr><th>Title</th><th>Sent to</th><th>Date</th><th></th></tr></thead>
+        <tbody>
+        ${filtered.map(a=>`<tr>
+          <td data-label="Title">${a.Title}</td>
+          <td class="muted" data-label="Sent to">${a.TargetType==='All'?'All Staff':a.TargetValue}</td>
+          <td data-label="Date">${fmtDateTime(a.Date)}</td>
+          <td data-label="Actions"><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="viewAnnouncementDetail('${a.ID}')">👁️ View</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="restoreRecordNow('announcement','${a.ID}', this)">↩️ Restore</button></td>
+        </tr>`).join('') || `<tr><td colspan="4" class="muted">No archived announcements${announcementArchiveSearch?' match that search':' yet'}.</td></tr>`}
+        </tbody>
+      </table>`}
+    </div>`;
+  },
 
   "mgmt-recognition": ()=>`
     <div class="card" style="max-width:520px; margin-bottom:16px;">
@@ -9148,7 +9415,10 @@ const BUILDERS = {
       <p class="login-ok" id="annOk">Posted.</p>
     </div>
     <div class="card table-scroll">
-      <h3>History</h3>
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:4px;">
+        <h3 style="margin:0;">History</h3>
+        ${isFullAdmin() ? `<button class="btn ghost auto" onclick="openAnnouncementsArchivedPage()">📁 Archived Announcements</button>` : ''}
+      </div>
       <table class="mobile-card-table ann-history-table">
         <thead><tr><th>Title</th><th>Sent to</th><th>Date</th><th></th></tr></thead>
         <tbody>
@@ -9156,6 +9426,7 @@ const BUILDERS = {
           <td data-label="Actions">
             <button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="viewAnnouncementDetail('${a.ID}')">👁️ View</button>
             <button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditAnnouncement('${a.ID}')">✏️ Edit</button>
+            ${isFullAdmin() ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="archiveRecordNow('announcement','${a.ID}', this)">📦 Archive</button>` : ''}
             <button class="btn danger auto" style="padding:5px 10px;" onclick="deleteAnnouncementEntry('${a.ID}', this)">🗑️ Delete</button>
           </td></tr>`).join('') || `<tr><td colspan="4" class="muted">No announcements posted yet.</td></tr>`}
         </tbody>
