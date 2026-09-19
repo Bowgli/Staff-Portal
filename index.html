@@ -8643,7 +8643,7 @@ const BUILDERS = {
               <option value="needs-clarification" ${r.Status==='needs-clarification'?'selected':''}>Need Clarification</option>
             </select>`}
           </td>
-          <td class="muted" data-label="Action By">${r.Status !== 'pending' && r.ActionBy ? r.ActionBy : '—'}${r.Type==='Leave Request' ? `<br><button class="btn ghost auto no-print" style="padding:3px 8px; margin-top:4px; margin-right:4px; font-size:11px;" onclick="openAdminRequestDetail('${r.ID}')">👁 View</button><button class="btn ghost auto no-print" style="padding:3px 8px; margin-top:4px; font-size:11px;" onclick="printLeaveRequestForm('${r.ID}')">🖨️ Print Form</button>` : ''}</td>
+          <td class="muted" data-label="Action By">${r.Status !== 'pending' && r.ActionBy ? r.ActionBy : '—'}${r.Type==='Leave Request' ? `<br><button class="btn ghost auto no-print" style="padding:3px 8px; margin-top:4px; font-size:11px;" onclick="openAdminRequestDetail('${r.ID}')">👁 View</button>` : ''}</td>
           ${isFullAdmin() ? `<td data-label="Actions">${REQUEST_ARCHIVABLE_STATUSES.has(r.Status) ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="archiveRecordNow('request','${r.ID}', this)">📦 Archive</button>` : ''}</td>` : ''}</tr>`).join('') || `<tr><td colspan="${isFullAdmin()?7:6}" class="muted">No matching requests.</td></tr>`}
         </tbody>
       </table>
@@ -9176,6 +9176,7 @@ let viewingAdminRequestId = null; // which request "mgmt-request-detail" (Admin 
 function openAdminRequestDetail(id){
   viewingAdminRequestId = id;
   renderView('mgmt-request-detail');
+  window.scrollTo(0, 0); // always land at the top of the request, not wherever the table happened to be scrolled to
 }
 function closeAdminRequestDetail(){
   viewingAdminRequestId = null;
