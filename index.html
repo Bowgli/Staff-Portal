@@ -2265,6 +2265,7 @@ const MOCK = {
 const SESSION_KEY = "sv_staff_portal_session";
 const LAST_VIEW_KEY = "sv_staff_portal_last_view";
 const LAST_REQUEST_DETAIL_ID_KEY = "sv_staff_portal_last_request_detail_id";
+const LAST_CONCERN_DETAIL_ID_KEY = "sv_staff_portal_last_concern_detail_id";
 
 async function doLoginWithCredentials(u, p){
   if(USE_REMOTE()){
@@ -3612,6 +3613,7 @@ function logout(){
   try{ localStorage.removeItem(SESSION_KEY); } catch(e){}
   try{ localStorage.removeItem(LAST_VIEW_KEY); } catch(e){}
   try{ localStorage.removeItem(LAST_REQUEST_DETAIL_ID_KEY); } catch(e){}
+  try{ localStorage.removeItem(LAST_CONCERN_DETAIL_ID_KEY); } catch(e){}
   document.getElementById('loginUser').value = '';
   document.getElementById('loginPass').value = '';
   document.getElementById('appRoot').style.display = 'none';
@@ -5874,6 +5876,15 @@ function restoreLastViewOrDefault(){
     if(savedId){ viewingRequestDetailId = savedId; }
     else { activeView = 'requests'; }
   }
+  // Same reasoning for mgmt-concern-detail (Concern Log's "View
+  // Report") — needs its own remembered id too, or falls back to the
+  // Concern Log list instead of showing "Concern not found".
+  if(activeView === 'mgmt-concern-detail'){
+    let savedConcernId = null;
+    try{ savedConcernId = localStorage.getItem(LAST_CONCERN_DETAIL_ID_KEY); } catch(e){}
+    if(savedConcernId){ discDetailConcernId = savedConcernId; }
+    else { activeView = 'mgmt-concerns'; }
+  }
   renderView(activeView);
 }
 
@@ -6138,6 +6149,13 @@ function renderView(id, fromHistory){
   // request that was actually fine.
   if(id === 'request-detail' && viewingRequestDetailId){
     try{ localStorage.setItem(LAST_REQUEST_DETAIL_ID_KEY, viewingRequestDetailId); } catch(e){}
+  }
+  // Same reasoning as request-detail above — mgmt-concern-detail
+  // (Concern Log's "View Report") needs its own id remembered too, or
+  // an F5 refresh landed back on this page with no id to look up,
+  // showing "Concern not found" for a report that was actually fine.
+  if(id === 'mgmt-concern-detail' && discDetailConcernId){
+    try{ localStorage.setItem(LAST_CONCERN_DETAIL_ID_KEY, discDetailConcernId); } catch(e){}
   }
 }
 
