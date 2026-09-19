@@ -5336,6 +5336,7 @@ function openDisciplinaryCase(id, sourceView, sourceLabel){
   discLevelEditMode = !d.DisciplinaryLevel;
   discStatusEditMode = false;
   renderView('mgmt-disciplinary-detail');
+  window.scrollTo(0, 0); // always land at the top of the case, not wherever the list happened to be scrolled to
 }
 function toggleDiscIncidentEdit(on){
   discIncidentEditMode = on;
@@ -10117,6 +10118,7 @@ function openConcernDetail(id){
   discDetailConcernId = id;
   concernInvEditMode = null; // re-initialize view/edit default for this record
   renderView('mgmt-concern-detail');
+  window.scrollTo(0, 0); // always land at the top of the report, not wherever the list happened to be scrolled to
 }
 
 // Captures the current field values right after the investigation
