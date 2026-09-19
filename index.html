@@ -6324,13 +6324,38 @@ function attendanceConcernsSection(){
   const entries = Object.entries(latestByEmployee).map(([name,e])=>[name, Number(e.AverageScore)]);
   const topOutstanding = entries.slice().sort((a,b)=>b[1]-a[1]).slice(0,5);
   const needsImprovement = entries.filter(([,score])=>score>=1.00 && score<=2.49).sort((a,b)=>a[1]-b[1]).slice(0,5);
+
+  // This quick-overview widget has no year/month selector of its own
+  // (unlike the full Attendance page), so it's scoped to the current
+  // year — live ATTENDANCE_LOG alone under-counts anyone whose
+  // absences/lates/etc. this year happened more than ~90 days ago and
+  // already moved to AttendanceArchive, exactly like the full
+  // Attendance page's rankings did before that fix. Reuses the SAME
+  // cache/fetch (ensureAttendanceArchiveForRankings) and de-dup
+  // approach as that fix, just filtered down to this year only —
+  // fetching every year here would be unnecessarily slow for a
+  // dashboard summary.
+  const currentYear = new Date().getFullYear();
+  ensureAttendanceArchiveForRankings(currentYear);
+  const archiveRows = ATTENDANCE_ARCHIVE_RANKING_CACHE[String(currentYear)] || [];
+  const seenIds = new Set();
+  const combinedThisYear = ATTENDANCE_LOG.concat(archiveRows).filter(a=>{
+    if(!a.date) return false;
+    const dt = new Date(a.date);
+    if(isNaN(dt) || dt.getFullYear() !== currentYear) return false;
+    if(a.id == null) return true;
+    if(seenIds.has(a.id)) return false;
+    seenIds.add(a.id);
+    return true;
+  });
+
   return `
     <div class="section-title">Attendance & Concerns</div>
     <div class="grid grid-4" style="margin-bottom:16px;">
-      ${topStatusChart(ATTENDANCE_LOG, '📊', 'Absent', 'Most Absences', 5, 'var(--red)', 'mgmt-attendance')}
-      ${topStatusChart(ATTENDANCE_LOG, '⏰', 'Late', 'Most Late', 5, 'var(--gold)', 'mgmt-attendance')}
-      ${topStatusChart(ATTENDANCE_LOG, '🕐', 'Undertime', 'Most Undertime', 5, 'var(--blue)', 'mgmt-attendance')}
-      ${topStatusChart(ATTENDANCE_LOG, '☕', 'Over Breaktime', 'Most Over Breaktime', 5, 'var(--gold)', 'mgmt-attendance')}
+      ${topStatusChart(combinedThisYear, '📊', 'Absent', 'Most Absences', 5, 'var(--red)', 'mgmt-attendance')}
+      ${topStatusChart(combinedThisYear, '⏰', 'Late', 'Most Late', 5, 'var(--gold)', 'mgmt-attendance')}
+      ${topStatusChart(combinedThisYear, '🕐', 'Undertime', 'Most Undertime', 5, 'var(--blue)', 'mgmt-attendance')}
+      ${topStatusChart(combinedThisYear, '☕', 'Over Breaktime', 'Most Over Breaktime', 5, 'var(--gold)', 'mgmt-attendance')}
     </div>
     <div class="grid grid-2" style="margin-bottom:16px;">
       ${renderRankedEvalCard('🌟', 'Outstanding Staff', topOutstanding, 'var(--teal)', undefined, 'mgmt-performance')}
@@ -6528,7 +6553,7 @@ async function ensureAttendanceArchiveForRankings(year){
   } finally {
     delete attendanceArchiveRankingLoading[year];
   }
-  if(activeView === 'mgmt-attendance') renderView('mgmt-attendance');
+  if(activeView === 'mgmt-attendance' || activeView === 'mgmt-home') renderView(activeView);
 }
 // Combines the live log with cached archived rows for whichever year
 // is relevant to the current period selection — records older than
