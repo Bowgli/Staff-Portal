@@ -718,6 +718,16 @@ const USE_REMOTE = () => SHEET_API_URL.trim().length > 0;
 const SHEETS_API_WORKER_URL = "https://staff-portal-sheets-api.techsupport-saipanvegas.workers.dev";
 
 const API_TIMEOUT_MS = 20000; // if the server doesn't respond in 20s, give up rather than hang forever
+// Archive list pages fetch every column of an entire archive sheet in
+// one request — a noticeably larger payload than most calls, so they
+// get their own longer timeouts here rather than raising the global
+// default (which would also affect every unrelated, normal-sized
+// request). Disciplinary's archive gets the longest of the two: its
+// records carry the most and longest text fields (incident
+// descriptions, management findings, full timeline history, etc.) of
+// any archived module.
+const ARCHIVE_TIMEOUT_MS = 30000;
+const DISCIPLINARY_ARCHIVE_TIMEOUT_MS = 40000;
 const FAST_PATH_TIMEOUT_MS = 8000; // shorter timeout for the pilot Worker specifically — if it's not back well within this, falling back to the proven path beats waiting it out
 
 async function fetchWithTimeout(url, options, timeoutMs){
@@ -798,8 +808,8 @@ async function parseApiResponse_(res){
     throw new Error("The server sent back an unexpected response. This is usually temporary — please try again in a moment.");
   }
 }
-async function apiGet(action){
-  const res = await fetchWithTimeout(`${SHEET_API_URL}?action=${action}`);
+async function apiGet(action, timeoutMs){
+  const res = await fetchWithTimeout(`${SHEET_API_URL}?action=${action}`, undefined, timeoutMs);
   return parseApiResponse_(res);
 }
 /* Forces a fresh fetch instead of a possibly-stale cached one — use
@@ -2532,11 +2542,11 @@ async function restoreSession(){
 // callers know the load was incomplete instead of pretending it
 // wasn't.
 let lastLoadFailedActions = [];
-async function safeApiGet(action, fallback, _attempt, maxRetries){
+async function safeApiGet(action, fallback, _attempt, maxRetries, timeoutMs){
   _attempt = _attempt || 0;
   maxRetries = maxRetries != null ? maxRetries : 1;
   try{
-    const result = await apiGet(action);
+    const result = await apiGet(action, timeoutMs);
     if(Array.isArray(fallback) && !Array.isArray(result)){
       // The backend responded, but not in the shape we expected —
       // most likely an outdated Apps Script deployment that doesn't
@@ -2565,7 +2575,7 @@ async function safeApiGet(action, fallback, _attempt, maxRetries){
       // after a save) can pass a higher maxRetries — they aren't
       // blocking anything as time-sensitive as first login.
       await new Promise(r => setTimeout(r, 1000));
-      return safeApiGet(action, fallback, _attempt + 1, maxRetries);
+      return safeApiGet(action, fallback, _attempt + 1, maxRetries, timeoutMs);
     }
     console.warn(`safeApiGet('${action}') failed after retries:`, e);
     lastLoadFailedActions.push(action);
@@ -5000,7 +5010,7 @@ async function openConcernsArchivedPage(){
     if(concernsArchiveData === null){
       concernsArchiveLoading = true;
       renderView('mgmt-concerns-archived');
-      const raw = await apiGet('concernsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''));
+      const raw = await safeApiGet('concernsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), null, undefined, undefined, ARCHIVE_TIMEOUT_MS);
       if(!Array.isArray(raw)){
         // Backend returned {error:"..."} instead of a list — surface it
         // instead of silently treating it as "genuinely empty", which
@@ -5032,7 +5042,7 @@ async function openRequestsArchivedPage(){
     if(requestsArchiveData === null){
       requestsArchiveLoading = true;
       renderView('mgmt-requests-archived');
-      const raw = await apiGet('requestsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''));
+      const raw = await safeApiGet('requestsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), null, undefined, undefined, ARCHIVE_TIMEOUT_MS);
       if(!Array.isArray(raw)){
         console.error('requestsArchive did not return a list:', raw);
         alert((raw && raw.error) || "Couldn't load Archived Requests — unexpected response from the server.");
@@ -5104,7 +5114,7 @@ async function openSuggestionsArchivedPage(){
     if(suggestionsArchiveData === null){
       suggestionsArchiveLoading = true;
       renderView('mgmt-suggestions-archived');
-      const raw = await apiGet('suggestionsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''));
+      const raw = await safeApiGet('suggestionsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), null, undefined, undefined, ARCHIVE_TIMEOUT_MS);
       if(!Array.isArray(raw)){
         console.error('suggestionsArchive did not return a list:', raw);
         alert((raw && raw.error) || "Couldn't load Archived Suggestions — unexpected response from the server.");
@@ -5134,7 +5144,7 @@ async function ensureDisciplinaryArchiveDataLoaded(){
   if(disciplinaryArchiveData !== null || disciplinaryArchiveDataLoading) return;
   disciplinaryArchiveDataLoading = true;
   try{
-    const raw = await apiGet('disciplinaryArchive&username=' + encodeURIComponent(CURRENT_USER.username||''));
+    const raw = await safeApiGet('disciplinaryArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), null, undefined, undefined, DISCIPLINARY_ARCHIVE_TIMEOUT_MS);
     disciplinaryArchiveData = Array.isArray(raw)
       ? raw.map(d => Object.assign({}, d, {archived:true})).sort((a,b)=> new Date(b.DateReported) - new Date(a.DateReported))
       : [];
@@ -5158,7 +5168,7 @@ async function openDisciplinaryArchivedPage(){
     if(disciplinaryArchiveData === null){
       disciplinaryArchiveLoading = true;
       renderView('mgmt-disciplinary-archived');
-      const raw = await apiGet('disciplinaryArchive&username=' + encodeURIComponent(CURRENT_USER.username||''));
+      const raw = await safeApiGet('disciplinaryArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), null, undefined, undefined, DISCIPLINARY_ARCHIVE_TIMEOUT_MS);
       if(!Array.isArray(raw)){
         console.error('disciplinaryArchive did not return a list:', raw);
         alert((raw && raw.error) || "Couldn't load Archived Cases — unexpected response from the server.");
@@ -5192,7 +5202,7 @@ async function ensureAnnouncementArchiveDataLoaded(){
   if(announcementArchiveData !== null || announcementArchiveDataLoading) return;
   announcementArchiveDataLoading = true;
   try{
-    const raw = await apiGet('announcementArchive&username=' + encodeURIComponent(CURRENT_USER.username||''));
+    const raw = await safeApiGet('announcementArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), null, undefined, undefined, ARCHIVE_TIMEOUT_MS);
     announcementArchiveData = Array.isArray(raw)
       ? raw.map(a => Object.assign({}, a, {archived:true})).sort((a,b)=> new Date(b.Date) - new Date(a.Date))
       : [];
@@ -5209,7 +5219,7 @@ async function openAnnouncementsArchivedPage(){
     if(announcementArchiveData === null){
       announcementArchiveLoading = true;
       renderView('mgmt-announcements-archived');
-      const raw = await apiGet('announcementArchive&username=' + encodeURIComponent(CURRENT_USER.username||''));
+      const raw = await safeApiGet('announcementArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), null, undefined, undefined, ARCHIVE_TIMEOUT_MS);
       if(!Array.isArray(raw)){
         console.error('announcementArchive did not return a list:', raw);
         alert((raw && raw.error) || "Couldn't load Archived Announcements — unexpected response from the server.");
