@@ -6072,7 +6072,9 @@ let attendancePrintPrefillValue = null; // "Name — Position", set right before
 function openDetailedAttendanceRecords(name, position){
   attendancePrintPrefillValue = `${name} — ${position}`;
   renderView('mgmt-attendance');
-  window.scrollTo(0, 0); // always land at the top of Attendance/Log Absence, not wherever the profile happened to be scrolled to
+  window.scrollTo(0, 0); // land at the top first, in case the target section below isn't found for any reason
+  const printLogSection = document.getElementById('attendancePrintLogSection');
+  if(printLogSection) printLogSection.scrollIntoView({behavior:'auto', block:'start'}); // then scroll straight to the Print Log — the actual destination the admin is coming here for
 }
 let empProfileFullAttendanceFor = null; // which employee's full (active+archived) history is currently expanded inline on their Profile → Attendance tab, or null if still showing the recent-only view
 let empProfileFullAttendanceData = null; // {year, records} once loaded
@@ -8385,7 +8387,7 @@ const BUILDERS = {
         </table>
       </div>
     </div>
-    <div class="card no-print" style="margin-bottom:16px;">
+    <div id="attendancePrintLogSection" class="card no-print" style="margin-bottom:16px;">
       <h3><span class="ic">🖨️</span> Individual Employee Print Log</h3>
       <p class="muted" style="margin-bottom:12px;">Select an employee and year, then search to view their record — or print directly once both are selected.</p>
       <div class="grid grid-2">
