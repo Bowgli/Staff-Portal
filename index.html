@@ -183,15 +183,16 @@
        — this rule only exists inside this max-width:600px block. */
     .search-row{ flex-direction:column; align-items:stretch; }
     .search-row .btn{ width:100%; }
-    /* All Employees — mobile only: gives the employee-name button a
-       subtle link-like look (existing --blue, the same color already
-       used for View/info actions elsewhere) instead of its default
-       bordered button appearance, so it reads as a clickable name
-       rather than a full button in the stacked mobile card. Desktop
-       keeps the original .btn.ghost look untouched; the onclick and
-       openEmployeeProfile() call are not touched at all. */
-    .emp-name-link{ background:none; border:none; padding:0; color:var(--blue); text-decoration:underline; font-weight:600; }
   }
+  /* All Employees — gives the employee-name button a subtle link-like
+     look (existing --blue, the same color already used for View/info
+     actions elsewhere) instead of its default bordered button
+     appearance, so it reads clearly as a clickable name — like the
+     visual distinction the Delete button already has. Applies on both
+     desktop and mobile since that distinction is just as useful on a
+     full-width table row as in a stacked mobile card; the onclick and
+     openEmployeeProfile() call are not touched at all. */
+  .emp-name-link{ background:none; border:none; padding:0; color:var(--blue); text-decoration:underline; font-weight:600; }
   /* Desktop-only — Announcement History's Actions column (View, Edit,
      Delete) was wrapping the third button to its own row once the
      "Sent to" column ate most of the row's width (long employee-name
@@ -218,6 +219,15 @@
   .status-select.declined{background:var(--red-soft); color:var(--red); border-color:rgba(197,88,74,.4);}
   .status-select.acknowledged{background:var(--blue-soft); color:var(--blue); border-color:rgba(91,143,199,.4);}
   .status-select.needs-clarification{background:var(--red-soft); color:var(--red); border-color:rgba(197,88,74,.4);}
+  /* All Employees — Employee Status dropdown: reuses the same
+     status-based coloring pattern already used for Leave Request's
+     status dropdown above (class name = the status value), so an
+     Active employee's dropdown reads as clearly as an Approved
+     request's does — same teal, since both represent a healthy/
+     good-standing state. Only "Active" is covered here per the
+     approved scope; the other Employee Status values (On Leave,
+     Furlough, Resigned, Terminated) keep their current plain look. */
+  .status-select.Active{background:var(--teal-soft); color:var(--teal); border-color:rgba(79,167,124,.4);}
   .pill.info{background:var(--blue-soft); color:var(--blue);}
   .pill::before{content:''; width:6px; height:6px; border-radius:50%; background:currentColor;}
 
@@ -5493,6 +5503,7 @@ function openEmployeeProfile(name, sourceView, sourceLabel){
   empProfileFullAttendanceFor = null; // don't carry over a previously-viewed employee's expanded attendance history
   empProfileFullAttendanceData = null;
   renderView('mgmt-employee-profile');
+  window.scrollTo(0, 0); // always land at the top of the profile, not wherever the list happened to be scrolled to
 }
 
 function setEmployeeProfileTab(tab){
@@ -7981,7 +7992,7 @@ const BUILDERS = {
           <td data-label="Position">${e.position}</td>
           <td data-label="Employment Status">${employmentStatusPill(e.employmentStatus, e.dateHired)}</td>
           <td data-label="Employee Status">
-            <select class="status-select" onchange="updateEmployeeStatus('${e.name.replace(/'/g,"\\'")}', this.value, this)">
+            <select class="status-select ${e.status}" onchange="updateEmployeeStatus('${e.name.replace(/'/g,"\\'")}', this.value, this)">
               <option ${e.status==='Active'?'selected':''}>Active</option>
               <option ${e.status==='On Leave'?'selected':''}>On Leave</option>
               <option ${e.status==='Furlough'?'selected':''}>Furlough</option>
