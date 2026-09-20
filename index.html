@@ -7956,13 +7956,14 @@ const BUILDERS = {
         <input type="text" placeholder="🔍 Search by name or position…" value="${employeesSearchQuery}" oninput="setEmployeesSearch(this.value)" style="flex:1; margin-bottom:0;">
         <button class="btn reset auto" onclick="clearEmployeesSearch()">↻ Clear / Reset</button>
       </div>
-      <table>
-        <tr><th>Name</th><th>Position</th><th>Employment Status</th><th>Employee Status</th><th>Contact Number</th><th>Email</th><th>Date Hired</th><th></th></tr>
+      <table class="mobile-card-table">
+        <thead><tr><th>Name</th><th>Position</th><th>Employment Status</th><th>Employee Status</th><th>Contact Number</th><th>Email</th><th>Date Hired</th><th></th></tr></thead>
+        <tbody>
         ${rows.map(e=>`<tr>
-          <td><button class="btn ghost auto" style="padding:3px 10px; font-weight:600;" onclick="openEmployeeProfile('${e.name.replace(/'/g,"\\'")}')">${e.name}</button></td>
-          <td>${e.position}</td>
-          <td>${employmentStatusPill(e.employmentStatus, e.dateHired)}</td>
-          <td>
+          <td data-label="Name"><button class="btn ghost auto" style="padding:3px 10px; font-weight:600;" onclick="openEmployeeProfile('${e.name.replace(/'/g,"\\'")}')">${e.name}</button></td>
+          <td data-label="Position">${e.position}</td>
+          <td data-label="Employment Status">${employmentStatusPill(e.employmentStatus, e.dateHired)}</td>
+          <td data-label="Employee Status">
             <select class="status-select" onchange="updateEmployeeStatus('${e.name.replace(/'/g,"\\'")}', this.value, this)">
               <option ${e.status==='Active'?'selected':''}>Active</option>
               <option ${e.status==='On Leave'?'selected':''}>On Leave</option>
@@ -7971,14 +7972,15 @@ const BUILDERS = {
               <option ${e.status==='Terminated'?'selected':''}>Terminated</option>
             </select>
           </td>
-          <td class="muted">${e.phone || '—'}</td>
-          <td class="muted">${e.email || '—'}</td>
-          <td class="muted">${e.dateHired ? fmtDiscDate(e.dateHired) : '—'}</td>
-          <td style="white-space:nowrap;">
+          <td class="muted" data-label="Contact Number">${e.phone || '—'}</td>
+          <td class="muted" data-label="Email">${e.email || '—'}</td>
+          <td class="muted" data-label="Date Hired">${e.dateHired ? fmtDiscDate(e.dateHired) : '—'}</td>
+          <td data-label="Actions">
             ${(isFullAdmin() && EMPLOYEE_ARCHIVABLE_STATUSES.has(e.status)) ? `<button class="btn ghost auto" style="padding:4px 10px; margin-right:4px;" onclick="archiveEmployeeNow('${e.name.replace(/'/g,"\\'")}', this)">📦 Archive</button>` : ''}
             <button class="btn danger auto" style="padding:4px 10px;" onclick="deleteEmployeeConfirm('${e.name.replace(/'/g,"\\'")}', this)">🗑️ Delete</button>
           </td>
         </tr>`).join('') || `<tr><td colspan="8" class="muted">No matches.</td></tr>`}
+        </tbody>
       </table>
     </div>`;
   },
@@ -8180,17 +8182,18 @@ const BUILDERS = {
         <input type="text" placeholder="🔍 Search by name, position, or username…" value="${accountsSearchQuery}" oninput="setAccountsSearch(this.value)" style="flex:1; margin-bottom:0;">
         <button class="btn reset auto" onclick="clearAccountsSearch()">↻ Clear / Reset</button>
       </div>
-      <table>
-        <tr><th>Employee</th><th>Position</th><th>Username</th><th>Account Status</th><th></th><th>Photo</th></tr>
+      <table class="mobile-card-table">
+        <thead><tr><th>Employee</th><th>Position</th><th>Username</th><th>Account Status</th><th></th><th>Photo</th></tr></thead>
+        <tbody>
         ${rows.map(e=>{
           const acct = findAccountByEmployeeName(e.name);
           return `<tr>
-            <td>${acct && acct.fullName ? acct.fullName : e.name}</td>
-            <td class="muted">${e.position}</td>
-            <td class="mono">${acct ? acct.username : '—'}</td>
-            <td>${acct ? `<span class="pill ok">Registered</span>` : `<span class="pill warn">Not registered</span>`}</td>
-            <td><button class="btn ghost auto" style="padding:5px 10px;" onclick="openResetModal('${e.name}')">${acct ? 'Reset Password' : 'Assign Account'}</button></td>
-            <td>
+            <td data-label="Employee">${acct && acct.fullName ? acct.fullName : e.name}</td>
+            <td class="muted" data-label="Position">${e.position}</td>
+            <td class="mono" data-label="Username">${acct ? acct.username : '—'}</td>
+            <td data-label="Account Status">${acct ? `<span class="pill ok">Registered</span>` : `<span class="pill warn">Not registered</span>`}</td>
+            <td data-label="Actions"><button class="btn ghost auto" style="padding:5px 10px;" onclick="openResetModal('${e.name}')">${acct ? 'Reset Password' : 'Assign Account'}</button></td>
+            <td data-label="Photo">
               ${e.photoFileId ? `
                 <div style="display:flex; align-items:center; gap:8px;">
                   <span onclick="loadPhotoThumbnail('${e.photoFileId}','photoThumb_mgmt_${e.name.replace(/[^a-zA-Z0-9]/g,'')}'); previewPhotoModal(document.getElementById('photoThumb_mgmt_${e.name.replace(/[^a-zA-Z0-9]/g,'')}').src)" style="cursor:pointer;">
@@ -8208,6 +8211,7 @@ const BUILDERS = {
             </td>
           </tr>`;
         }).join('') || `<tr><td colspan="6" class="muted">No matches.</td></tr>`}
+        </tbody>
       </table>
     </div>`;
   },
@@ -9349,7 +9353,7 @@ const BUILDERS = {
           <td data-label="Title">${a.Title}</td>
           <td class="muted" data-label="Sent to">${a.TargetType==='All'?'All Staff':a.TargetValue}</td>
           <td data-label="Date">${fmtDateTime(a.Date)}</td>
-          <td data-label="Actions"><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="viewAnnouncementDetail('${a.ID}')">👁️ View</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="restoreRecordNow('announcement','${a.ID}', this)">↩️ Restore</button></td>
+          <td data-label="Actions"><button class="btn info auto" style="padding:5px 10px; margin-right:6px;" onclick="viewAnnouncementDetail('${a.ID}')">👁️ View</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="restoreRecordNow('announcement','${a.ID}', this)">↩️ Restore</button></td>
         </tr>`).join('') || `<tr><td colspan="4" class="muted">No archived announcements${announcementArchiveSearch?' match that search':' yet'}.</td></tr>`}
         </tbody>
       </table>`}
@@ -9498,9 +9502,9 @@ const BUILDERS = {
         <tbody>
         ${ALL_ANNOUNCEMENTS.map(a=>`<tr><td data-label="Title">${a.Title}</td><td class="muted" data-label="Sent to">${a.TargetType==='All'?'All Staff':a.TargetType==='Position'?a.TargetValue:a.TargetValue}</td><td data-label="Date">${fmtDateTime(a.Date)}</td>
           <td data-label="Actions">
-            <button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="viewAnnouncementDetail('${a.ID}')">👁️ View</button>
+            <button class="btn info auto" style="padding:5px 10px; margin-right:6px;" onclick="viewAnnouncementDetail('${a.ID}')">👁️ View</button>
             <button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditAnnouncement('${a.ID}')">✏️ Edit</button>
-            ${isFullAdmin() ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="archiveRecordNow('announcement','${a.ID}', this)">📦 Archive</button>` : ''}
+            ${isFullAdmin() ? `<button class="btn reset auto" style="padding:5px 10px; margin-right:6px;" onclick="archiveRecordNow('announcement','${a.ID}', this)">📦 Archive</button>` : ''}
             <button class="btn danger auto" style="padding:5px 10px;" onclick="deleteAnnouncementEntry('${a.ID}', this)">🗑️ Delete</button>
           </td></tr>`).join('') || `<tr><td colspan="4" class="muted">No announcements posted yet.</td></tr>`}
         </tbody>
