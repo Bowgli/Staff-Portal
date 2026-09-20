@@ -5060,6 +5060,39 @@ function setDisciplinaryArchiveSearch(v){
   disciplinaryArchiveSearch = v;
   renderView('mgmt-disciplinary-archived');
 }
+// Just the table rows, as their own function — lets the search box
+// update these in place (see filterDisciplinaryArchiveLive below)
+// without a full renderView() rebuilding the <input> itself and
+// losing focus/cursor position on every keystroke, the same pattern
+// already used for the Attendance log's rows.
+function renderDisciplinaryArchiveRows(query){
+  const q = (query||'').toLowerCase();
+  const filtered = (disciplinaryArchiveData || []).filter(d => !q || (d.EmployeeName||'').toLowerCase().includes(q) || (d.CaseNumber||'').toLowerCase().includes(q));
+  return filtered.map(d=>`<tr>
+    <td class="mono" data-label="Case #">${d.CaseNumber||''}</td>
+    <td data-label="Employee">${d.EmployeeName}</td>
+    <td data-label="Date Reported">${fmtDateTime(d.DateReported)}</td>
+    <td data-label="Status">${discStatusPill(d.Status)}</td>
+    <td data-label="Actions"><button class="btn info auto" style="padding:5px 10px; margin-right:6px;" onclick="openDisciplinaryCase('${d.ID}', 'mgmt-disciplinary-archived', 'Archived Cases')">View Case</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="restoreRecordNow('disciplinary','${d.ID}', this)">↩️ Restore</button></td>
+  </tr>`).join('') || `<tr><td colspan="5" class="muted">No archived cases${query?' match that search':' yet'}.</td></tr>`;
+}
+// Updates only the rows and the search state — never calls
+// renderView(), so the <input> element itself is never replaced and
+// keeps focus and cursor position across every keystroke. The Clear
+// (✕) button only appears once there's text to clear, so a full
+// renderView() there IS needed to show/hide it — but that only
+// happens on the Clear click itself, not on every keystroke.
+function filterDisciplinaryArchiveLive(v){
+  disciplinaryArchiveSearch = v;
+  const rowsEl = document.getElementById('discArchiveRows');
+  if(rowsEl) rowsEl.innerHTML = renderDisciplinaryArchiveRows(v);
+}
+function clearDisciplinaryArchiveSearch(){
+  disciplinaryArchiveSearch = '';
+  renderView('mgmt-disciplinary-archived');
+  const input = document.getElementById('discArchiveSearchInput');
+  if(input) input.focus();
+}
 let announcementArchiveSearch = ''; // search box on the dedicated Archived Announcements page
 function setAnnouncementArchiveSearch(v){
   announcementArchiveSearch = v;
@@ -9267,8 +9300,6 @@ const BUILDERS = {
     // in openDisciplinaryArchivedPage()'s click handler. Re-uses that
     // exact same cached fetch here instead of a separate one.
     if(disciplinaryArchiveData === null) ensureDisciplinaryArchiveDataLoaded();
-    const q = disciplinaryArchiveSearch.toLowerCase();
-    const filtered = (disciplinaryArchiveData || []).filter(d => !q || (d.EmployeeName||'').toLowerCase().includes(q) || (d.CaseNumber||'').toLowerCase().includes(q));
     return `
     <div class="no-print" style="margin-bottom:16px;">
       <button class="btn ghost auto" onclick="renderView('mgmt-disciplinary')">← Back to Disciplinary Reports</button>
@@ -9276,19 +9307,14 @@ const BUILDERS = {
     <div class="card">
       <h3><span class="ic">📁</span> All Archived Cases</h3>
       <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Closed cases moved out of the active list — still fully viewable, searchable, and printable, and still counted in the employee's profile history and Disciplinary Summary totals.</p>
-      <input type="text" placeholder="🔍 Search by employee or case #..." value="${disciplinaryArchiveSearch}" oninput="setDisciplinaryArchiveSearch(this.value)" style="margin-bottom:12px;">
+      <div class="no-print" style="position:relative; margin-bottom:12px;">
+        <input type="text" id="discArchiveSearchInput" placeholder="🔍 Search by employee or case #..." value="${disciplinaryArchiveSearch}" oninput="filterDisciplinaryArchiveLive(this.value)" style="padding-right:34px;">
+        ${disciplinaryArchiveSearch ? `<button type="button" class="no-print" onclick="clearDisciplinaryArchiveSearch()" title="Clear search" style="position:absolute; right:8px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--text-faint); font-size:16px; line-height:1; cursor:pointer; padding:4px;">✕</button>` : ''}
+      </div>
       ${(disciplinaryArchiveLoading || disciplinaryArchiveDataLoading) ? `<p class="muted">Loading archived cases…</p>` : `
       <table class="mobile-card-table">
         <thead><tr><th>Case #</th><th>Employee</th><th>Date Reported</th><th>Status</th><th></th></tr></thead>
-        <tbody>
-        ${filtered.map(d=>`<tr>
-          <td class="mono" data-label="Case #">${d.CaseNumber||''}</td>
-          <td data-label="Employee">${d.EmployeeName}</td>
-          <td data-label="Date Reported">${fmtDateTime(d.DateReported)}</td>
-          <td data-label="Status">${discStatusPill(d.Status)}</td>
-          <td data-label="Actions"><button class="btn info auto" style="padding:5px 10px; margin-right:6px;" onclick="openDisciplinaryCase('${d.ID}', 'mgmt-disciplinary-archived', 'Archived Cases')">View Case</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="restoreRecordNow('disciplinary','${d.ID}', this)">↩️ Restore</button></td>
-        </tr>`).join('') || `<tr><td colspan="5" class="muted">No archived cases${disciplinaryArchiveSearch?' match that search':' yet'}.</td></tr>`}
-        </tbody>
+        <tbody id="discArchiveRows">${renderDisciplinaryArchiveRows(disciplinaryArchiveSearch)}</tbody>
       </table>`}
     </div>`;
   },
