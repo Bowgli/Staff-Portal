@@ -174,6 +174,23 @@
     .mobile-card-table td{ display:block; width:100%; padding:5px 0; border:none; text-align:left; }
     .mobile-card-table td[data-label]::before{ content: attr(data-label); display:block; font-size:10px; text-transform:uppercase; letter-spacing:0.4px; color:var(--text-faint); margin-bottom:2px; }
     .mobile-card-table td:empty{ display:none; }
+    /* All Employees / Manage Accounts — mobile only: stacks the
+       Search field above the Clear/Reset button instead of the two
+       sitting side by side, which left the button too cramped on
+       narrow screens. Scoped to this one class, applied only to
+       those two pages' search rows, so it can't affect any other
+       inline flex row elsewhere in the portal. Desktop is untouched
+       — this rule only exists inside this max-width:600px block. */
+    .search-row{ flex-direction:column; align-items:stretch; }
+    .search-row .btn{ width:100%; }
+    /* All Employees — mobile only: gives the employee-name button a
+       subtle link-like look (existing --blue, the same color already
+       used for View/info actions elsewhere) instead of its default
+       bordered button appearance, so it reads as a clickable name
+       rather than a full button in the stacked mobile card. Desktop
+       keeps the original .btn.ghost look untouched; the onclick and
+       openEmployeeProfile() call are not touched at all. */
+    .emp-name-link{ background:none; border:none; padding:0; color:var(--blue); text-decoration:underline; font-weight:600; }
   }
   /* Desktop-only — Announcement History's Actions column (View, Edit,
      Delete) was wrapping the third button to its own row once the
@@ -7952,7 +7969,7 @@ const BUILDERS = {
     <div class="card table-scroll">
       <h3><span class="ic">👥</span> Staff Directory</h3>
       <p class="muted" style="margin-bottom:12px;">Click a name to open their full Employee Profile — employment info, contact details, performance, attendance, disciplinary, and recognition records all in one place.</p>
-      <div style="display:flex; gap:8px; margin-bottom:12px;">
+      <div class="search-row" style="display:flex; gap:8px; margin-bottom:12px;">
         <input type="text" placeholder="🔍 Search by name or position…" value="${employeesSearchQuery}" oninput="setEmployeesSearch(this.value)" style="flex:1; margin-bottom:0;">
         <button class="btn reset auto" onclick="clearEmployeesSearch()">↻ Clear / Reset</button>
       </div>
@@ -7960,7 +7977,7 @@ const BUILDERS = {
         <thead><tr><th>Name</th><th>Position</th><th>Employment Status</th><th>Employee Status</th><th>Contact Number</th><th>Email</th><th>Date Hired</th><th></th></tr></thead>
         <tbody>
         ${rows.map(e=>`<tr>
-          <td data-label="Name"><button class="btn ghost auto" style="padding:3px 10px; font-weight:600;" onclick="openEmployeeProfile('${e.name.replace(/'/g,"\\'")}')">${e.name}</button></td>
+          <td data-label="Name"><button class="btn ghost auto emp-name-link" style="padding:3px 10px; font-weight:600;" onclick="openEmployeeProfile('${e.name.replace(/'/g,"\\'")}')">${e.name}</button></td>
           <td data-label="Position">${e.position}</td>
           <td data-label="Employment Status">${employmentStatusPill(e.employmentStatus, e.dateHired)}</td>
           <td data-label="Employee Status">
@@ -8178,7 +8195,7 @@ const BUILDERS = {
     <div class="banner note"><b>Note:</b> only management can create or reset an employee's login — there's no self-registration. Photos are also assigned by management, not uploaded by employees themselves.</div>
     <div class="card table-scroll">
       <h3><span class="ic">🔑</span> Account Status by Employee</h3>
-      <div style="display:flex; gap:8px; margin-bottom:12px;">
+      <div class="search-row" style="display:flex; gap:8px; margin-bottom:12px;">
         <input type="text" placeholder="🔍 Search by name, position, or username…" value="${accountsSearchQuery}" oninput="setAccountsSearch(this.value)" style="flex:1; margin-bottom:0;">
         <button class="btn reset auto" onclick="clearAccountsSearch()">↻ Clear / Reset</button>
       </div>
