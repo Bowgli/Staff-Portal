@@ -1121,6 +1121,7 @@ function openRecognitionDetail(id, sourceView, sourceLabel){
   recognitionDetailId = id;
   recognitionDetailSource = sourceView ? {view: sourceView, label: sourceLabel || 'Back'} : null;
   renderView('recognition-detail');
+  window.scrollTo(0, 0); // always land at the top of the detail page, not wherever the list happened to be scrolled to
 }
 let viewingEmployeeName = null; // which employee mgmt-employee-profile is showing
 let employeeProfileTab = 'performance'; // 'performance' | 'attendance' | 'disciplinary' | 'recognition'
@@ -5016,10 +5017,12 @@ let archivedSuggestionDetailIdx = null; // which entry in suggestionsArchiveData
 function viewArchivedRequestDetail(idx){
   archivedRequestDetailIdx = idx;
   renderView('archived-request-detail');
+  window.scrollTo(0, 0); // always land at the top of the record, not wherever the list happened to be scrolled to
 }
 function viewArchivedSuggestionDetail(idx){
   archivedSuggestionDetailIdx = idx;
   renderView('archived-suggestion-detail');
+  window.scrollTo(0, 0); // always land at the top of the record, not wherever the list happened to be scrolled to
 }
 let concernsArchiveSearch = ''; // search box on the dedicated Archived Concerns page
 function setConcernsArchiveSearch(v){
@@ -5492,6 +5495,7 @@ function disciplinaryCasesAdvancedSection(rows, title){
 function viewEmployeeDisciplinaryHistory(employeeName){
   discFilter.search = employeeName;
   renderView('mgmt-disciplinary');
+  window.scrollTo(0, 0); // always land at the top of Disciplinary Reports, not wherever the profile happened to be scrolled to
 }
 
 let employeeProfileSource = null; // {view, label} of the page the user opened this profile FROM — read by the Back button on mgmt-employee-profile below. Reset to null (→ defaults to Staff Directory) on every fresh call so a stale source from a previous visit is never carried over by mistake.
@@ -6068,6 +6072,7 @@ let attendancePrintPrefillValue = null; // "Name — Position", set right before
 function openDetailedAttendanceRecords(name, position){
   attendancePrintPrefillValue = `${name} — ${position}`;
   renderView('mgmt-attendance');
+  window.scrollTo(0, 0); // always land at the top of Attendance/Log Absence, not wherever the profile happened to be scrolled to
 }
 let empProfileFullAttendanceFor = null; // which employee's full (active+archived) history is currently expanded inline on their Profile → Attendance tab, or null if still showing the recent-only view
 let empProfileFullAttendanceData = null; // {year, records} once loaded
@@ -6787,6 +6792,7 @@ function openPerfDetail(id){
       ${history.map(h=>`<tr><td>${h.Month} ${h.Year}</td><td class="mono">${h.AverageScore}</td><td>${h.RatingLabel}</td></tr>`).join('')}
     </table>`;
   document.getElementById('perfDetailModal').classList.add('active');
+  document.getElementById('perfDetailBody').scrollTop = 0; // always land at the top of this scrollable modal body, not wherever it was left scrolled to from a previous open
 }
 function closePerfDetailModal(){
   document.getElementById('perfDetailModal').classList.remove('active');
@@ -9547,6 +9553,7 @@ let requestDetailRetriedFor = null; // guards the one-time auto-retry-refresh in
 function viewMyRequestDetail(id){
   viewingRequestDetailId = id;
   renderView('request-detail');
+  window.scrollTo(0, 0); // always land at the top of the request, not wherever the list happened to be scrolled to
 }
 function closeMyRequestDetail(){
   viewingRequestDetailId = null;
@@ -10078,6 +10085,7 @@ function viewMyConcernDetail(id){
       ${history.map(h=>`<tr><td class="mono">${fmtDiscDate(h.date)}</td><td class="muted">${(h.changed||[]).join(', ')}</td></tr>`).join('')}
     </table>` : ''}`;
   document.getElementById('myConcernDetailModal').classList.add('active');
+  document.getElementById('myConcernDetailBody').scrollTop = 0; // always land at the top of this scrollable modal body, not wherever it was left scrolled to from a previous open
 }
 function closeMyConcernDetailModal(){
   document.getElementById('myConcernDetailModal').classList.remove('active');
