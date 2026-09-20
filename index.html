@@ -5110,7 +5110,14 @@ async function ensureDisciplinaryArchiveDataLoaded(){
   } finally {
     disciplinaryArchiveDataLoading = false;
   }
-  if(activeView === 'mgmt-disciplinary-detail') renderView(activeView);
+  // Covers both callers of this function: the View Case detail page
+  // (opened on an archived case whose data wasn't cached yet) and the
+  // Archived Cases list page itself (opened directly, or restored
+  // after a refresh) — without this second check, a fetch triggered
+  // from the list page would finish successfully in the background
+  // but never re-render to show it, leaving "Loading archived
+  // cases…" on screen indefinitely even though the data had arrived.
+  if(activeView === 'mgmt-disciplinary-detail' || activeView === 'mgmt-disciplinary-archived') renderView(activeView);
 }
 async function openDisciplinaryArchivedPage(){
   if(!isFullAdmin()){ alert("Archive access is limited to Admin accounts."); return; }
