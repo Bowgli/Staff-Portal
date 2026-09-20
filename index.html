@@ -5141,6 +5141,28 @@ async function openDisciplinaryArchivedPage(){
     renderView('mgmt-disciplinary-archived');
   }
 }
+let announcementArchiveDataLoading = false;
+// Same reasoning as ensureDisciplinaryArchiveDataLoaded() above —
+// fetches and caches the full announcement archive WITHOUT
+// navigating, for restoring straight into "mgmt-announcements-
+// archived" after a full page refresh (LAST_VIEW_KEY restores the
+// view name, but nothing until now re-triggered the actual fetch that
+// openAnnouncementsArchivedPage()'s click handler normally does).
+async function ensureAnnouncementArchiveDataLoaded(){
+  if(announcementArchiveData !== null || announcementArchiveDataLoading) return;
+  announcementArchiveDataLoading = true;
+  try{
+    const raw = await apiGet('announcementArchive&username=' + encodeURIComponent(CURRENT_USER.username||''));
+    announcementArchiveData = Array.isArray(raw)
+      ? raw.map(a => Object.assign({}, a, {archived:true})).sort((a,b)=> new Date(b.Date) - new Date(a.Date))
+      : [];
+  } catch(e){
+    console.warn('ensureAnnouncementArchiveDataLoaded failed:', e.message || e);
+  } finally {
+    announcementArchiveDataLoading = false;
+  }
+  if(activeView === 'mgmt-announcements-archived') renderView(activeView);
+}
 async function openAnnouncementsArchivedPage(){
   if(!isFullAdmin()){ alert("Archive access is limited to Admin accounts."); return; }
   try{
@@ -6746,7 +6768,7 @@ async function ensureDisciplinaryArchiveForEmployee(name){
   if(DISCIPLINARY_ARCHIVE_BY_EMPLOYEE_CACHE[name] || disciplinaryArchiveByEmployeeLoading[name]) return;
   disciplinaryArchiveByEmployeeLoading[name] = true;
   try{
-    const rows = await safeApiGet('disciplinaryArchiveByEmployee&employeeName=' + encodeURIComponent(name), []);
+    const rows = await safeApiGet('disciplinaryArchiveByEmployee&employeeName=' + encodeURIComponent(name) + '&username=' + encodeURIComponent(CURRENT_USER.username||''), []);
     DISCIPLINARY_ARCHIVE_BY_EMPLOYEE_CACHE[name] = rows;
   } catch(e){
     console.warn('ensureDisciplinaryArchiveForEmployee failed for', name, ':', e.message || e);
@@ -6769,7 +6791,7 @@ async function ensureDisciplinaryArchiveForYear(year){
   if(DISCIPLINARY_ARCHIVE_BY_YEAR_CACHE[year] || disciplinaryArchiveByYearLoading[year]) return;
   disciplinaryArchiveByYearLoading[year] = true;
   try{
-    const rows = await safeApiGet('disciplinaryArchiveByYear&year=' + encodeURIComponent(year), []);
+    const rows = await safeApiGet('disciplinaryArchiveByYear&year=' + encodeURIComponent(year) + '&username=' + encodeURIComponent(CURRENT_USER.username||''), []);
     DISCIPLINARY_ARCHIVE_BY_YEAR_CACHE[year] = rows;
   } catch(e){
     console.warn('ensureDisciplinaryArchiveForYear failed for', year, ':', e.message || e);
@@ -9230,6 +9252,14 @@ const BUILDERS = {
   },
   "mgmt-disciplinary-archived": ()=>{
     if(!isFullAdmin()) return `<div class="card"><p class="muted">🔒 Archive access is limited to Admin accounts.</p></div>`;
+    // Same reasoning as ensureDisciplinaryArchiveDataLoaded()'s use in
+    // mgmt-disciplinary-detail — a full page refresh while already on
+    // this list page restores the VIEW correctly (LAST_VIEW_KEY), but
+    // never re-triggers the actual data fetch the way clicking here
+    // from Disciplinary Reports does, since that fetch normally lives
+    // in openDisciplinaryArchivedPage()'s click handler. Re-uses that
+    // exact same cached fetch here instead of a separate one.
+    if(disciplinaryArchiveData === null) ensureDisciplinaryArchiveDataLoaded();
     const q = disciplinaryArchiveSearch.toLowerCase();
     const filtered = (disciplinaryArchiveData || []).filter(d => !q || (d.EmployeeName||'').toLowerCase().includes(q) || (d.CaseNumber||'').toLowerCase().includes(q));
     return `
@@ -9240,7 +9270,7 @@ const BUILDERS = {
       <h3><span class="ic">📁</span> All Archived Cases</h3>
       <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Closed cases moved out of the active list — still fully viewable, searchable, and printable, and still counted in the employee's profile history and Disciplinary Summary totals.</p>
       <input type="text" placeholder="🔍 Search by employee or case #..." value="${disciplinaryArchiveSearch}" oninput="setDisciplinaryArchiveSearch(this.value)" style="margin-bottom:12px;">
-      ${disciplinaryArchiveLoading ? `<p class="muted">Loading archived cases…</p>` : `
+      ${(disciplinaryArchiveLoading || disciplinaryArchiveDataLoading) ? `<p class="muted">Loading archived cases…</p>` : `
       <table class="mobile-card-table">
         <thead><tr><th>Case #</th><th>Employee</th><th>Date Reported</th><th>Status</th><th></th></tr></thead>
         <tbody>
@@ -9257,6 +9287,7 @@ const BUILDERS = {
   },
   "mgmt-announcements-archived": ()=>{
     if(!isFullAdmin()) return `<div class="card"><p class="muted">🔒 Archive access is limited to Admin accounts.</p></div>`;
+    if(announcementArchiveData === null) ensureAnnouncementArchiveDataLoaded();
     const q = announcementArchiveSearch.toLowerCase();
     const filtered = (announcementArchiveData || []).filter(a => !q || (a.Title||'').toLowerCase().includes(q));
     return `
@@ -9267,7 +9298,7 @@ const BUILDERS = {
       <h3><span class="ic">📁</span> All Archived Announcements</h3>
       <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Announcements moved out of the active History list — still fully viewable.</p>
       <input type="text" placeholder="🔍 Search by title..." value="${announcementArchiveSearch}" oninput="setAnnouncementArchiveSearch(this.value)" style="margin-bottom:12px;">
-      ${announcementArchiveLoading ? `<p class="muted">Loading archived announcements…</p>` : `
+      ${(announcementArchiveLoading || announcementArchiveDataLoading) ? `<p class="muted">Loading archived announcements…</p>` : `
       <table class="mobile-card-table">
         <thead><tr><th>Title</th><th>Sent to</th><th>Date</th><th></th></tr></thead>
         <tbody>
@@ -10812,7 +10843,7 @@ async function postAnnouncement(){
 // "View" — read-only lookup in a modal, same modal-overlay pattern
 // used elsewhere (e.g. Edit Week), separate from Edit mode.
 function viewAnnouncementDetail(id){
-  const a = ALL_ANNOUNCEMENTS.find(x=>x.ID===id);
+  const a = ALL_ANNOUNCEMENTS.find(x=>x.ID===id) || (announcementArchiveData||[]).find(x=>x.ID===id);
   if(!a) return;
   const sentTo = a.TargetType==='All' ? 'All Staff' : (a.TargetValue || '—');
   document.getElementById('annViewModalBody').innerHTML = `
