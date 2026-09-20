@@ -6385,6 +6385,16 @@ function renderView(id, fromHistory){
   if(viewChanged){
     const contentEl = document.getElementById('content');
     if(contentEl) contentEl.scrollTop = 0;
+    // On desktop (>860px, the same breakpoint the sidebar itself
+    // switches on), #content has no constrained height — it's a flex
+    // child that just grows with its own content, so the scrollTop
+    // reset above is a no-op there; the window/document is what's
+    // actually scrolled. Below 860px the sidebar becomes a fixed
+    // overlay instead of a sticky flex sibling, and that layout
+    // already lands new views at the top correctly on its own — this
+    // is scoped to desktop only so that mobile behavior is left
+    // completely untouched.
+    if(window.innerWidth > 860) window.scrollTo(0, 0);
   }
   closeMobileSidebar();
 
