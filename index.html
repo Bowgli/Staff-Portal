@@ -6600,9 +6600,69 @@ function attendancePill(status){
   const map = {"Present":"ok","Late":"warn","Undertime":"warn","Absent":"bad","Excused":"info","Day Off":"bad","Not Scheduled":"bad","Over Breaktime":"warn"};
   return `<span class="pill ${map[status]||'ok'}">${status}</span>`;
 }
+// Groups every submitted evaluation by Employee + Month + Year and
+// averages the AverageScore of however many raters submitted one for
+// that month — so an employee rated by 3 different people in the
+// same month gets ONE monthly figure (the average of the three),
+// never treated as 3 separate, chronologically-comparable entries.
+// Pure read-only computation over ALL_EVALUATIONS — never writes
+// back to it, Code.gs, or the sheet. Returns {[employeeName]: [monthly
+// summary, ...]}, each employee's list sorted newest-month-first.
+const EVAL_MONTH_ORDER_ = {"January":1,"February":2,"March":3,"April":4,"May":5,"June":6,"July":7,"August":8,"September":9,"October":10,"November":11,"December":12};
+function ratingLabelForScore_(avg){
+  // Same thresholds evalScorePreviewHtml() and Code.gs's ratingLabelFor_() already use, so a monthly-average label always matches what a single-rater label would say at the same score.
+  return avg >= 4.5 ? "Excellent" : avg >= 3.5 ? "Very Good" : avg >= 2.5 ? "Good" : avg >= 1.5 ? "Needs Improvement" : "Unsatisfactory";
+}
+function computeMonthlyEvaluationsByEmployee(){
+  const groups = {};
+  ALL_EVALUATIONS.forEach(e=>{
+    const key = e.EmployeeName + '|||' + e.Year + '|||' + e.Month;
+    (groups[key] = groups[key] || []).push(e);
+  });
+  const byEmployee = {};
+  Object.values(groups).forEach(records=>{
+    const first = records[0];
+    const avg = records.reduce((sum,r)=>sum+Number(r.AverageScore),0) / records.length;
+    // Rounded to 1 decimal place, matching the precision every raw
+    // AverageScore already uses (e.g. "4.2", "4.5") — 4.2+4.5+4.4 → 4.3667 → 4.4.
+    const rounded = Math.round(avg*10)/10;
+    // The most recently-submitted record in this month stands in as
+    // the representative for "View Details" (which still shows ONE
+    // rater's own Q1-Q10/comments, unchanged) — the monthly score/
+    // trend shown elsewhere is the average above, independent of this.
+    const representative = records.slice().sort((a,b)=>new Date(b.Date)-new Date(a.Date))[0];
+    const summary = {
+      EmployeeName: first.EmployeeName, Month: first.Month, Year: first.Year,
+      AverageScore: rounded, RatingLabel: ratingLabelForScore_(rounded),
+      ID: representative.ID, EvaluatedBy: representative.EvaluatedBy,
+      monthKey: Number(first.Year) * 12 + (EVAL_MONTH_ORDER_[first.Month] || 0),
+      raterCount: records.length,
+    };
+    (byEmployee[first.EmployeeName] = byEmployee[first.EmployeeName] || []).push(summary);
+  });
+  Object.keys(byEmployee).forEach(name => byEmployee[name].sort((a,b)=>b.monthKey - a.monthKey));
+  return byEmployee;
+}
+// Finds the monthly summary for the month immediately before
+// `current`'s — never an older, non-consecutive month. Three possible
+// results: the actual previous-month summary; null if `current` is
+// the employee's very first evaluation month ever (→ "Baseline/First
+// Evaluation"); or the string 'NO_PREVIOUS_MONTH' if the employee DOES
+// have earlier history, just not in the month right before this one
+// (→ "No Previous Month", never silently compared against an older
+// month).
+function getPreviousMonthEvaluation(current, monthliesForEmployee){
+  if(!current) return null;
+  const list = monthliesForEmployee || (computeMonthlyEvaluationsByEmployee()[current.EmployeeName] || []);
+  const olderExists = list.some(m => m.monthKey < current.monthKey);
+  if(!olderExists) return null; // this IS their first evaluation month, ever
+  const immediatePrev = list.find(m => m.monthKey === current.monthKey - 1);
+  return immediatePrev || 'NO_PREVIOUS_MONTH';
+}
 function computeLatestEvaluationByEmployee(){
+  const monthlyByEmployee = computeMonthlyEvaluationsByEmployee();
   const latestByEmployee = {};
-  ALL_EVALUATIONS.forEach(e=>{ if(!latestByEmployee[e.EmployeeName]) latestByEmployee[e.EmployeeName] = e; }); // ALL_EVALUATIONS is newest-first
+  Object.keys(monthlyByEmployee).forEach(name => { latestByEmployee[name] = monthlyByEmployee[name][0]; }); // already newest-first
   return latestByEmployee;
 }
 function renderRankedEvalCard(icon, title, ranked, barColor, emptyMsg, linkTo){
@@ -6688,7 +6748,8 @@ function getPreviousEvaluation(current){
 // so the trend shown in both places is always computed the same way.
 function evalTrendHtml(current, previous){
   if(!current) return `<span class="muted">—</span>`;
-  if(!previous) return `<span class="muted">— First Evaluation</span>`;
+  if(previous === 'NO_PREVIOUS_MONTH') return `<span class="muted">— No Previous Month</span>`;
+  if(!previous) return `<span class="muted">— Baseline / First Evaluation</span>`;
   const diff = Math.round((Number(current.AverageScore) - Number(previous.AverageScore)) * 100) / 100;
   if(diff > 0) return `<span style="color:var(--teal);">📈 Improved +${diff.toFixed(1)}</span>`;
   if(diff < 0) return `<span style="color:var(--red);">📉 Declined ${diff.toFixed(1)}</span>`;
@@ -6762,6 +6823,7 @@ function probationMonitoringSection(){
 }
 
 function staffForImprovementSection(rows){
+  const monthlyByEmployee_ = computeMonthlyEvaluationsByEmployee(); // computed once, reused per row below instead of re-deriving inside the loop
   const needing = rows.filter(r => r.e && Number(r.e.AverageScore) >= 1 && Number(r.e.AverageScore) <= 2.49)
     .sort((a,b) => Number(a.e.AverageScore) - Number(b.e.AverageScore));
   return `
@@ -6770,11 +6832,11 @@ function staffForImprovementSection(rows){
       ${needing.length ? `<table>
         <tr><th>Employee</th><th>Current Score</th><th>Previous Score</th><th>Trend</th></tr>
         ${needing.map(r=>{
-          const prev = getPreviousEvaluation(r.e);
+          const prev = getPreviousMonthEvaluation(r.e, monthlyByEmployee_[r.name]);
           return `<tr>
             <td>${r.name}</td>
             <td class="mono">${r.e.AverageScore}</td>
-            <td class="mono">${prev ? prev.AverageScore : '<span class="muted">—</span>'}</td>
+            <td class="mono">${(prev && prev !== 'NO_PREVIOUS_MONTH') ? prev.AverageScore : '<span class="muted">—</span>'}</td>
             <td>${evalTrendHtml(r.e, prev)}</td>
           </tr>`;
         }).join('')}
@@ -6785,14 +6847,21 @@ function staffForImprovementSection(rows){
 function openPerfDetail(id){
   const e = ALL_EVALUATIONS.find(x=>x.ID===id);
   if(!e) return;
-  const prev = getPreviousEvaluation(e);
+  // The trend shown here uses the same monthly-average comparison as
+  // everywhere else (so it never disagrees with the Performance Report
+  // table for the same employee/month) — found by matching e's own
+  // Month+Year to its monthly summary. The Question Scores/Comments
+  // below remain this ONE rater's own submission, unchanged.
+  const monthlyForThisEmployee = computeMonthlyEvaluationsByEmployee()[e.EmployeeName] || [];
+  const currentMonthly = monthlyForThisEmployee.find(m => m.Month === e.Month && String(m.Year) === String(e.Year));
+  const prev = currentMonthly ? getPreviousMonthEvaluation(currentMonthly, monthlyForThisEmployee) : null;
   const history = ALL_EVALUATIONS.filter(x=>x.EmployeeName===e.EmployeeName).sort((a,b)=>new Date(b.Date)-new Date(a.Date));
   document.getElementById('perfDetailSub').textContent = `${e.EmployeeName} — ${e.Month} ${e.Year} · Evaluated by ${e.EvaluatedBy || 'Anonymous'}`;
   document.getElementById('perfDetailBody').innerHTML = `
     <div class="card stat-card" style="background:var(--panel-2); margin-bottom:14px;">
       <div class="num">${e.AverageScore} / 5.0</div>
       <div class="label">${ratingStars(e.AverageScore)} ${e.RatingLabel}</div>
-      <div class="trend" style="margin-top:6px;">${evalTrendHtml(e, prev)}</div>
+      <div class="trend" style="margin-top:6px;">${currentMonthly ? evalTrendHtml(currentMonthly, prev) : ''}</div>
     </div>
     <p style="font-weight:600; margin-bottom:8px;">Question Scores</p>
     <table style="margin-bottom:14px;">
@@ -8434,12 +8503,16 @@ const BUILDERS = {
   },
 
   "mgmt-performance": ()=>{
+    // Every score/trend on this page is now a MONTHLY figure — see
+    // computeMonthlyEvaluationsByEmployee() above: multiple raters in
+    // the same month are averaged into one number, never shown or
+    // compared as separate entries.
+    const monthlyByEmployee_ = computeMonthlyEvaluationsByEmployee();
     const filtered = perfFilterMonth==='All' && perfFilterYear==='All'
       ? null
-      : ALL_EVALUATIONS.filter(e => (perfFilterMonth==='All' || e.Month===perfFilterMonth) && (perfFilterYear==='All' || String(e.Year)===String(perfFilterYear)));
+      : Object.values(monthlyByEmployee_).flat().filter(m => (perfFilterMonth==='All' || m.Month===perfFilterMonth) && (perfFilterYear==='All' || String(m.Year)===String(perfFilterYear)));
 
-    const latestByEmployee = {};
-    ALL_EVALUATIONS.forEach(e=>{ if(!latestByEmployee[e.EmployeeName]) latestByEmployee[e.EmployeeName] = e; }); // ALL_EVALUATIONS is newest-first
+    const latestByEmployee = computeLatestEvaluationByEmployee(); // already monthly-averaged
 
     const countByEmployee = {};
     ALL_EVALUATIONS.forEach(e=>{ countByEmployee[e.EmployeeName] = (countByEmployee[e.EmployeeName]||0) + 1; });
@@ -8455,7 +8528,7 @@ const BUILDERS = {
     // table-scrolling convenience and shouldn't shrink the Progress/
     // Summary numbers, which should reflect the full filtered group.
     let baseRows = (filtered
-      ? filtered.map(e => ({name:e.EmployeeName, position:(rosterByName[e.EmployeeName]||{}).position||'', e}))
+      ? filtered.map(m => ({name:m.EmployeeName, position:(rosterByName[m.EmployeeName]||{}).position||'', e:m}))
       : EMPLOYEE_ROSTER.filter(emp=>emp.status==='Active').map(emp => ({name:emp.name, position:emp.position, e:latestByEmployee[emp.name]})));
 
     if(perfFilterPosition !== 'All'){
@@ -8544,7 +8617,7 @@ const BUILDERS = {
           <td>${r.e ? r.e.Month+' '+r.e.Year : '—'}</td>
           <td class="mono">${r.e ? r.e.AverageScore : '—'}</td>
           <td>${r.e ? ratingStars(r.e.AverageScore)+' '+r.e.RatingLabel : '<span class="muted">Not yet evaluated</span>'}</td>
-          <td>${r.e ? evalTrendHtml(r.e, getPreviousEvaluation(r.e)) : '<span class="muted">—</span>'}</td>
+          <td>${r.e ? evalTrendHtml(r.e, getPreviousMonthEvaluation(r.e, monthlyByEmployee_[r.name])) : '<span class="muted">—</span>'}</td>
           <td class="mono">${countByEmployee[r.name] || 0}</td>
           <td>${r.e ? `<button class="btn info auto" style="padding:5px 10px;" onclick="openPerfDetail('${r.e.ID}')">View Details</button>` : ''}</td>
         </tr>`).join('') || `<tr><td colspan="8" class="muted">No evaluations found.</td></tr>`}
@@ -11443,6 +11516,7 @@ safePushState({vh:0}); // base entry so we always have somewhere to land
 exitBaseState = 1;
 
 window.addEventListener('popstate', function(){
+  TEMP_diagLog('popstate FIRED — state BEFORE any handling'); // ⚠️ TEMPORARY — see block above
   if(exitConfirmed) return; // user already confirmed — let this navigation proceed
 
   if(viewStack.length > 1){
@@ -11451,12 +11525,14 @@ window.addEventListener('popstate', function(){
     if(leaving === 'handbook') popHandbookState(); // sync the Assistant's internal sub-state (search results / full section / contacts) to match this step back
     const prev = viewStack[viewStack.length-1];
     renderView(prev, true); // fromHistory=true — don't push a new state for this
+    TEMP_diagLog('popstate HANDLED — resulting state, view "' + prev + '" rendered'); // ⚠️ TEMPORARY
     return;
   }
 
   // nothing left in our own view history — this is a real "leave the portal" attempt
   safePushState({vh:0}); // neutralize this pop, then ask
   document.getElementById('exitConfirmModal').classList.add('active');
+  TEMP_diagLog('popstate HANDLED — viewStack was already at its floor, showing exit-confirm instead'); // ⚠️ TEMPORARY
 });
 
 function cancelExitPortal(){
@@ -11488,10 +11564,40 @@ issueRecognitionNow = guardAgainstDoubleSubmit(issueRecognitionNow);
 postAnnouncement = guardAgainstDoubleSubmit(postAnnouncement);
 submitAttendanceLog = guardAgainstDoubleSubmit(submitAttendanceLog);
 
+/* ============================================================
+   ⚠️ TEMPORARY DIAGNOSTIC — HANDBOOK BACK BUTTON INVESTIGATION
+   Added ONLY to trace the Android physical-Back issue reported for
+   the Handbook & Policy Assistant. Does not read, call, or change
+   pushState, popstate's own handling, history.back(), viewStack/
+   handbookNavStack contents, or any menu/navigation behavior — it
+   only DISPLAYS a snapshot of that state on screen, before and after
+   the existing popstate handler runs. Safe to delete entirely: remove
+   this block, the TEMP_diagLog(...) calls inside the popstate
+   handler below, and the #tempHandbookDiag div near </body>.
+   ============================================================ */
+function TEMP_diagLog(label){
+  // Only shows anything when Handbook is actually involved (either
+  // the page currently sitting there, or the entry popstate is about
+  // to remove is a "handbook" one) — per the "only active for
+  // Handbook" requirement. Everything it reads (activeView, viewStack,
+  // handbookNavStack, handbookQuery) already exists; nothing new is
+  // computed or stored.
+  const involvesHandbook = activeView === 'handbook' || (viewStack.length && viewStack[viewStack.length-1] === 'handbook');
+  if(!involvesHandbook) return;
+  const el = document.getElementById('tempHandbookDiag');
+  if(!el) return;
+  const snapshot = `[${label}] activeView=${activeView} | viewStack=[${viewStack.join(',')}] | handbookNavStack.length=${handbookNavStack.length} | handbookQuery="${handbookQuery}" | handbookFullSectionId=${handbookFullSectionId} | history.length=${history.length}`;
+  el.style.display = 'block';
+  el.textContent = (el.textContent ? el.textContent + '\n\n' : '') + snapshot;
+  el.scrollTop = el.scrollHeight;
+  console.log('[TEMP_diagLog]', snapshot);
+}
+
 /* wire up enter-key login without relying on DOMContentLoaded race */
 document.getElementById('loginUser').addEventListener('keydown', e=>{ if(e.key==='Enter') attemptLogin(); });
 document.getElementById('loginPass').addEventListener('keydown', e=>{ if(e.key==='Enter') attemptLogin(); });
 restoreSession();
 </script>
+<div id="tempHandbookDiag" style="display:none; position:fixed; left:8px; right:8px; bottom:8px; max-height:40vh; overflow-y:auto; background:#000; color:#0f0; font:11px/1.4 monospace; padding:10px; border:2px solid #0f0; z-index:99999; white-space:pre-wrap; border-radius:8px;"></div>
 </body>
 </html>
