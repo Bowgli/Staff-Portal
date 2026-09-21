@@ -82,6 +82,8 @@
     .sidebar{
       position:fixed; top:0; left:0; z-index:40;
       width:min(264px, 82vw);
+      height:100vh; /* fallback for older mobile browsers without dvh support */
+      height:100dvh; /* the mobile-specific fix: tracks the TRUE visible viewport, excluding space the browser's own address/nav bars are covering, so .sidebar-footer (the Logout button) is never pushed below the visible screen */
       transform:translateX(-100%);
       transition:transform .22s ease;
       box-shadow:0 0 0 1px var(--line);
