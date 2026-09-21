@@ -504,6 +504,7 @@
     </div>
     <div class="modal-body-scroll" id="perfDetailBody"></div>
     <div class="modal-btns">
+      <span id="perfDetailActions"></span>
       <button class="btn ghost" onclick="closePerfDetailModal()">Close</button>
     </div>
   </div>
@@ -1059,7 +1060,15 @@ async function archiveRecordNow(module, id, el){
       // evaluation on their next open instead of showing a monthly
       // average that's temporarily missing this rater's score.
       if(rec) delete EVALUATION_ARCHIVE_BY_EMPLOYEE_CACHE[rec.EmployeeName];
-      renderView('evaluate');
+      // The Archive button now only lives inside perfDetailModal
+      // (Admin-only), which can be reached from either the Admin's
+      // Main Performance Report or (in principle) "Evaluations You've
+      // Given" — re-rendering whichever page is actually still open
+      // (activeView) instead of a single hard-coded destination keeps
+      // this correct for both, and closing the modal avoids leaving it
+      // open over a page that just changed underneath it.
+      closePerfDetailModal();
+      renderView(activeView);
     }
   });
 }
@@ -6951,7 +6960,12 @@ function staffForImprovementSection(rows){
 }
 
 function openPerfDetail(id){
-  const e = ALL_EVALUATIONS.find(x=>x.ID===id) || (evaluationArchiveData||[]).find(x=>x.ID===id);
+  // Lookup order: ALL_EVALUATIONS (Admin's full dataset) → MY_GIVEN_EVALUATIONS
+  // (the Employee Account fallback — ALL_EVALUATIONS is intentionally
+  // never loaded for a non-Admin account, so this is what makes View
+  // work from "Evaluations You've Given") → evaluationArchiveData
+  // (archived records, Admin-only view).
+  const e = ALL_EVALUATIONS.find(x=>x.ID===id) || MY_GIVEN_EVALUATIONS.find(x=>x.ID===id) || (evaluationArchiveData||[]).find(x=>x.ID===id);
   if(!e) return;
   // The trend shown here uses the same monthly-average comparison as
   // everywhere else (so it never disagrees with the Performance Report
@@ -6981,6 +6995,16 @@ function openPerfDetail(id){
       ${history.map(h=>`<tr><td>${h.Month} ${h.Year}</td><td class="mono">${h.AverageScore}</td><td>${h.RatingLabel}</td></tr>`).join('')}
     </table>`;
   document.getElementById('perfDetailModal').classList.add('active');
+  // Archive: Admin-only (mirrors every other module's archive button
+  // guard), and only offered for a still-active record — an already-
+  // archived one (e.archived, set when this came from
+  // evaluationArchiveData) shows nothing here instead, since
+  // restoreRecordNow() is what reverses that, not another archive.
+  // This replaces the button that used to live in "Evaluations You've
+  // Given" (an Employee-facing section, where Archive never belongs).
+  document.getElementById('perfDetailActions').innerHTML = (isFullAdmin() && !e.archived)
+    ? `<button class="btn ghost" style="margin-right:8px;" onclick="archiveRecordNow('evaluation','${e.ID}', this)">📦 Archive</button>`
+    : '';
   document.getElementById('perfDetailBody').scrollTop = 0; // always land at the top of this scrollable modal body, not wherever it was left scrolled to from a previous open
 }
 function closePerfDetailModal(){
@@ -7767,7 +7791,7 @@ const BUILDERS = {
       <table>
         <tr><th>Employee</th><th>Period</th><th>Score</th><th>Rating</th><th></th></tr>
         ${MY_GIVEN_EVALUATIONS.map(e=>`<tr><td>${e.EmployeeName}</td><td>${e.Month} ${e.Year}</td><td class="mono">${e.AverageScore}</td><td>${ratingStars(e.AverageScore)} ${e.RatingLabel}</td>
-          <td><button class="btn info auto" style="padding:5px 10px; margin-right:6px;" onclick="openPerfDetail('${e.ID}')">👁️ View</button><button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditEvaluation('${e.ID}')">✏️ Edit</button>${isFullAdmin() ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="archiveRecordNow('evaluation','${e.ID}', this)">📦 Archive</button>` : ''}<button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyEvaluation('${e.ID}', this)">🗑️ Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">You haven't evaluated anyone yet.</td></tr>`}
+          <td><button class="btn info auto" style="padding:5px 10px; margin-right:6px;" onclick="openPerfDetail('${e.ID}')">👁️ View</button><button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditEvaluation('${e.ID}')">✏️ Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyEvaluation('${e.ID}', this)">🗑️ Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">You haven't evaluated anyone yet.</td></tr>`}
       </table>
     </div>`,
 
