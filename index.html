@@ -11516,7 +11516,6 @@ safePushState({vh:0}); // base entry so we always have somewhere to land
 exitBaseState = 1;
 
 window.addEventListener('popstate', function(){
-  TEMP_diagLog('popstate FIRED — state BEFORE any handling'); // ⚠️ TEMPORARY — see block above
   if(exitConfirmed) return; // user already confirmed — let this navigation proceed
 
   if(viewStack.length > 1){
@@ -11525,14 +11524,12 @@ window.addEventListener('popstate', function(){
     if(leaving === 'handbook') popHandbookState(); // sync the Assistant's internal sub-state (search results / full section / contacts) to match this step back
     const prev = viewStack[viewStack.length-1];
     renderView(prev, true); // fromHistory=true — don't push a new state for this
-    TEMP_diagLog('popstate HANDLED — resulting state, view "' + prev + '" rendered'); // ⚠️ TEMPORARY
     return;
   }
 
   // nothing left in our own view history — this is a real "leave the portal" attempt
   safePushState({vh:0}); // neutralize this pop, then ask
   document.getElementById('exitConfirmModal').classList.add('active');
-  TEMP_diagLog('popstate HANDLED — viewStack was already at its floor, showing exit-confirm instead'); // ⚠️ TEMPORARY
 });
 
 function cancelExitPortal(){
@@ -11564,40 +11561,10 @@ issueRecognitionNow = guardAgainstDoubleSubmit(issueRecognitionNow);
 postAnnouncement = guardAgainstDoubleSubmit(postAnnouncement);
 submitAttendanceLog = guardAgainstDoubleSubmit(submitAttendanceLog);
 
-/* ============================================================
-   ⚠️ TEMPORARY DIAGNOSTIC — HANDBOOK BACK BUTTON INVESTIGATION
-   Added ONLY to trace the Android physical-Back issue reported for
-   the Handbook & Policy Assistant. Does not read, call, or change
-   pushState, popstate's own handling, history.back(), viewStack/
-   handbookNavStack contents, or any menu/navigation behavior — it
-   only DISPLAYS a snapshot of that state on screen, before and after
-   the existing popstate handler runs. Safe to delete entirely: remove
-   this block, the TEMP_diagLog(...) calls inside the popstate
-   handler below, and the #tempHandbookDiag div near </body>.
-   ============================================================ */
-function TEMP_diagLog(label){
-  // Only shows anything when Handbook is actually involved (either
-  // the page currently sitting there, or the entry popstate is about
-  // to remove is a "handbook" one) — per the "only active for
-  // Handbook" requirement. Everything it reads (activeView, viewStack,
-  // handbookNavStack, handbookQuery) already exists; nothing new is
-  // computed or stored.
-  const involvesHandbook = activeView === 'handbook' || (viewStack.length && viewStack[viewStack.length-1] === 'handbook');
-  if(!involvesHandbook) return;
-  const el = document.getElementById('tempHandbookDiag');
-  if(!el) return;
-  const snapshot = `[${label}] activeView=${activeView} | viewStack=[${viewStack.join(',')}] | handbookNavStack.length=${handbookNavStack.length} | handbookQuery="${handbookQuery}" | handbookFullSectionId=${handbookFullSectionId} | history.length=${history.length}`;
-  el.style.display = 'block';
-  el.textContent = (el.textContent ? el.textContent + '\n\n' : '') + snapshot;
-  el.scrollTop = el.scrollHeight;
-  console.log('[TEMP_diagLog]', snapshot);
-}
-
 /* wire up enter-key login without relying on DOMContentLoaded race */
 document.getElementById('loginUser').addEventListener('keydown', e=>{ if(e.key==='Enter') attemptLogin(); });
 document.getElementById('loginPass').addEventListener('keydown', e=>{ if(e.key==='Enter') attemptLogin(); });
 restoreSession();
 </script>
-<div id="tempHandbookDiag" style="display:none; position:fixed; left:8px; right:8px; bottom:8px; max-height:40vh; overflow-y:auto; background:#000; color:#0f0; font:11px/1.4 monospace; padding:10px; border:2px solid #0f0; z-index:99999; white-space:pre-wrap; border-radius:8px;"></div>
 </body>
 </html>
