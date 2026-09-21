@@ -4450,11 +4450,11 @@ function isHandbookPersonalBalanceQuestion_(query){
   return HANDBOOK_PERSONAL_BALANCE_MARKERS_.some(re => re.test(query));
 }
 function runHandbookQuery(q){
+  pushHandbookState(); // must run BEFORE any Handbook state below changes, so it captures the state being LEFT (not a duplicate of the state being entered)
   handbookQuery = q;
   handbookFullSectionId = null;
   handbookPersonalBalanceFlag = HANDBOOK_INDEX ? isHandbookPersonalBalanceQuestion_(q) : false;
   handbookResults = (HANDBOOK_INDEX && !handbookPersonalBalanceFlag) ? searchHandbook_(q) : [];
-  pushHandbookState();
   renderView('handbook');
 }
 function askHandbookSuggested(q){
@@ -4477,6 +4477,7 @@ function askHandbookTopicQuestion(topicIndex, questionIndex){
   askHandbookCuratedQuestion(item.q, item.sections);
 }
 function askHandbookCuratedQuestion(q, sectionNumbers){
+  pushHandbookState(); // see runHandbookQuery() above — captures the state being LEFT
   handbookQuery = q;
   handbookFullSectionId = null;
   handbookPersonalBalanceFlag = false;
@@ -4485,7 +4486,6 @@ function askHandbookCuratedQuestion(q, sectionNumbers){
     .filter(Boolean)
     .map(section => ({section, score:99, distinct:99, bestQA:null, confident:true}));
   handbookResults = matched.length ? matched : null;
-  pushHandbookState();
   renderView('handbook');
 }
 function toggleHandbookTopic(label){
@@ -4493,37 +4493,37 @@ function toggleHandbookTopic(label){
   renderView('handbook');
 }
 function viewFullHandbookSection(number){
+  pushHandbookState(); // see runHandbookQuery() above — captures the state being LEFT
   handbookFullSectionId = String(number);
   handbookShowContacts = false;
-  pushHandbookState();
   renderView('handbook');
 }
 function closeFullHandbookSection(){
+  pushHandbookState(); // see runHandbookQuery() above — captures the state being LEFT
   handbookFullSectionId = null;
-  pushHandbookState();
   renderView('handbook');
 }
 // Dedicated contact panel — a fixed, curated list rather than pulling
 // from a handbook section, so it's never affected by handbook
 // re-indexing/renumbering and always shows exactly these numbers.
 function viewHandbookContacts(){
+  pushHandbookState(); // see runHandbookQuery() above — captures the state being LEFT
   handbookFullSectionId = null;
   handbookShowContacts = true;
-  pushHandbookState();
   renderView('handbook');
 }
 function closeHandbookContacts(){
+  pushHandbookState(); // see runHandbookQuery() above — captures the state being LEFT
   handbookShowContacts = false;
-  pushHandbookState();
   renderView('handbook');
 }
 function clearHandbookSearch(){
+  pushHandbookState(); // see runHandbookQuery() above — captures the state being LEFT
   handbookQuery = '';
   handbookResults = null;
   handbookFullSectionId = null;
   handbookShowContacts = false;
   handbookPersonalBalanceFlag = false;
-  pushHandbookState();
   renderView('handbook');
 }
 
