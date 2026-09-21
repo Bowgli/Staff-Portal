@@ -509,6 +509,23 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="mgmtPerfSummaryModal">
+  <div class="modal-box modal-box-tall" style="max-width:600px;">
+    <div class="modal-header-row">
+      <div>
+        <h3>Performance Evaluation Summary</h3>
+        <p class="muted" id="mgmtPerfSummarySub" style="margin:2px 0 0; font-size:12.5px;"></p>
+      </div>
+      <button class="modal-close-x" onclick="closeMgmtPerfSummaryModal()" aria-label="Close">×</button>
+    </div>
+    <div class="modal-body-scroll" id="mgmtPerfSummaryBody"></div>
+    <div class="modal-btns">
+      <button class="btn ghost" onclick="printMgmtPerfSummary()">🖨️ Print</button>
+      <button class="btn ghost" onclick="closeMgmtPerfSummaryModal()">Close</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="myConcernDetailModal">
   <div class="modal-box modal-box-tall" style="max-width:520px;">
     <div class="modal-header-row">
@@ -1005,6 +1022,7 @@ async function archiveRecordNow(module, id, el){
     suggestion: "Archive Record?\n\nThis suggestion has been marked as reviewed.\n\nArchiving will remove it from the active list, but the record will remain safely stored in Archived Records for authorized Admin viewing, searching, and printing.",
     disciplinary: "Archive Case?\n\nThis disciplinary case has been marked as Closed.\n\nArchiving will remove it from the active list, but the record will remain safely stored in Archived Cases — and will still appear in the employee's full profile history and in Disciplinary Summary totals.",
     announcement: "Archive Announcement?\n\nArchiving will remove it from the active History list, but the record will remain safely stored in Archived Announcements for authorized Admin viewing.",
+    evaluation: "Archive Evaluation?\n\nArchiving will remove this evaluation from the active list, but it will remain safely stored in Archived Evaluations — and will still count toward the employee's monthly Performance Report average.",
   };
   await confirmAndDelete(el, messages[module] || "Archive this record?", async ()=>{
     const r = await apiPostRetrying('archiveRecord', {module, id, username: CURRENT_USER.username});
@@ -1030,6 +1048,19 @@ async function archiveRecordNow(module, id, el){
       renderView('mgmt-disciplinary');
     }
     if(module === 'announcement'){ ALL_ANNOUNCEMENTS = ALL_ANNOUNCEMENTS.filter(a=>a.ID!==id); announcementArchiveData = null; renderView('mgmt-announcements'); }
+    if(module === 'evaluation'){
+      const rec = ALL_EVALUATIONS.find(ev=>ev.ID===id);
+      ALL_EVALUATIONS = ALL_EVALUATIONS.filter(ev=>ev.ID!==id);
+      MY_GIVEN_EVALUATIONS = MY_GIVEN_EVALUATIONS.filter(ev=>ev.ID!==id);
+      evaluationArchiveData = null;
+      // Same reasoning as disciplinary above — drop this employee's
+      // cached archive slice (if ever loaded), so Employee Profile
+      // and the Management Summary pick up the newly-archived
+      // evaluation on their next open instead of showing a monthly
+      // average that's temporarily missing this rater's score.
+      if(rec) delete EVALUATION_ARCHIVE_BY_EMPLOYEE_CACHE[rec.EmployeeName];
+      renderView('evaluate');
+    }
   });
 }
 async function restoreRecordNow(module, id, el){
@@ -1056,8 +1087,17 @@ async function restoreRecordNow(module, id, el){
       }
     }
     if(module === 'announcement'){ announcementArchiveData = null; }
+    if(module === 'evaluation'){
+      const restoredRec = (evaluationArchiveData || []).find(ev=>ev.ID===id);
+      evaluationArchiveData = null;
+      if(restoredRec){
+        delete EVALUATION_ARCHIVE_BY_EMPLOYEE_CACHE[restoredRec.EmployeeName];
+      } else {
+        EVALUATION_ARCHIVE_BY_EMPLOYEE_CACHE = {};
+      }
+    }
     await loadRemoteData(); // the restored record needs to come back through the normal live-data load to reappear correctly
-    renderView(module === 'concern' ? 'mgmt-concerns' : module === 'request' ? 'mgmt-requests' : module === 'disciplinary' ? 'mgmt-disciplinary' : module === 'announcement' ? 'mgmt-announcements' : 'mgmt-suggestions');
+    renderView(module === 'concern' ? 'mgmt-concerns' : module === 'request' ? 'mgmt-requests' : module === 'disciplinary' ? 'mgmt-disciplinary' : module === 'announcement' ? 'mgmt-announcements' : module === 'evaluation' ? 'mgmt-evaluations-archived' : 'mgmt-suggestions');
   });
 }
 
@@ -5005,6 +5045,8 @@ let requestsArchiveShown = false, requestsArchiveData = null, requestsArchiveLoa
 let suggestionsArchiveShown = false, suggestionsArchiveData = null, suggestionsArchiveLoading = false;
 let disciplinaryArchiveShown = false, disciplinaryArchiveData = null, disciplinaryArchiveLoading = false;
 let announcementArchiveShown = false, announcementArchiveData = null, announcementArchiveLoading = false;
+let evaluationArchiveShown = false, evaluationArchiveData = null, evaluationArchiveLoading = false;
+let evaluationArchiveSearch = ''; // search box on the dedicated Archived Evaluations page
 // Employee Profile and Disciplinary Summary each need only a SLICE
 // of the disciplinary archive (one employee's cases, or one year's
 // cases) rather than the whole thing — kept as separate, smaller
@@ -5013,6 +5055,7 @@ let announcementArchiveShown = false, announcementArchiveData = null, announceme
 // a summary period never transfers more than that one employee's or
 // year's own records, however large the full archive grows.
 let DISCIPLINARY_ARCHIVE_BY_EMPLOYEE_CACHE = {}; // {[employeeName]: rows}
+let EVALUATION_ARCHIVE_BY_EMPLOYEE_CACHE = {}; // {[employeeName]: rows} — same per-employee, server-filtered pattern as disciplinary's cache above
 let DISCIPLINARY_ARCHIVE_BY_YEAR_CACHE = {};      // {[year]: rows}
 let archivedRequestDetailIdx = null; // which entry in requestsArchiveData is being viewed
 let archivedSuggestionDetailIdx = null; // which entry in suggestionsArchiveData is being viewed
@@ -5140,6 +5183,10 @@ function setAnnouncementArchiveSearch(v){
   announcementArchiveSearch = v;
   renderView('mgmt-announcements-archived');
 }
+function setEvaluationArchiveSearch(v){
+  evaluationArchiveSearch = v;
+  renderView('mgmt-evaluations-archived');
+}
 async function openSuggestionsArchivedPage(){
   if(!isFullAdmin()){ alert("Archive access is limited to Admin accounts."); return; }
   try{
@@ -5223,7 +5270,53 @@ async function openDisciplinaryArchivedPage(){
     renderView('mgmt-disciplinary-archived');
   }
 }
+async function openEvaluationArchivedPage(){
+  if(!isFullAdmin()){ alert("Archive access is limited to Admin accounts."); return; }
+  try{
+    if(evaluationArchiveData === null){
+      evaluationArchiveLoading = true;
+      renderView('mgmt-evaluations-archived');
+      const raw = await safeApiGet('evaluationArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), null, undefined, undefined, ARCHIVE_TIMEOUT_MS);
+      if(!Array.isArray(raw)){
+        console.error('evaluationArchive did not return a list:', raw);
+        alert((raw && raw.error) || "Couldn't load Archived Evaluations — unexpected response from the server.");
+        evaluationArchiveData = [];
+      } else {
+        evaluationArchiveData = raw.map(d => Object.assign({}, d, {archived:true}))
+          .sort((a,b)=> new Date(b.Date) - new Date(a.Date)); // newest first
+      }
+    }
+  } catch(e){
+    console.error('openEvaluationArchivedPage failed:', e);
+    alert("Couldn't load Archived Evaluations — please try again.");
+  } finally {
+    evaluationArchiveLoading = false;
+    renderView('mgmt-evaluations-archived');
+  }
+}
 let announcementArchiveDataLoading = false;
+let evaluationArchiveDataLoading = false;
+// Same "auto re-fetch if the list page is opened/refreshed directly"
+// fix already applied to the disciplinary/announcement archives above
+// — without this, a direct refresh on the Archived Evaluations page
+// would restore the correct VIEW (via LAST_VIEW_KEY) but never
+// re-trigger the actual data fetch, leaving "Loading…" on screen
+// indefinitely even though nothing failed.
+async function ensureEvaluationArchiveDataLoaded(){
+  if(evaluationArchiveData !== null || evaluationArchiveDataLoading) return;
+  evaluationArchiveDataLoading = true;
+  try{
+    const raw = await safeApiGet('evaluationArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), null, undefined, undefined, ARCHIVE_TIMEOUT_MS);
+    evaluationArchiveData = Array.isArray(raw)
+      ? raw.map(a => Object.assign({}, a, {archived:true})).sort((a,b)=> new Date(b.Date) - new Date(a.Date))
+      : [];
+  } catch(e){
+    console.warn('ensureEvaluationArchiveDataLoaded failed:', e.message || e);
+  } finally {
+    evaluationArchiveDataLoading = false;
+  }
+  if(activeView === 'mgmt-evaluations-archived') renderView(activeView);
+}
 // Same reasoning as ensureDisciplinaryArchiveDataLoaded() above —
 // fetches and caches the full announcement archive WITHOUT
 // navigating, for restoring straight into "mgmt-announcements-
@@ -6335,6 +6428,7 @@ const TITLES = {
   "mgmt-suggestions":["Suggestions Log","All submitted suggestions"],
   "mgmt-suggestions-archived":["Archived Suggestions","Reviewed suggestions moved out of the active list"],
   "mgmt-disciplinary-archived":["Archived Cases","Closed disciplinary cases moved out of the active list"],
+  "mgmt-evaluations-archived":["Archived Evaluations","Older evaluation records moved out of the active list"],
   "mgmt-announcements-archived":["Archived Announcements","Announcements moved out of the active History list"],
   "archived-suggestion-detail":["Archived Suggestion","Full details — read-only"],
   "mgmt-recognition":["Recognition Management","Issue awards and recognitions"],
@@ -6613,9 +6707,17 @@ function ratingLabelForScore_(avg){
   // Same thresholds evalScorePreviewHtml() and Code.gs's ratingLabelFor_() already use, so a monthly-average label always matches what a single-rater label would say at the same score.
   return avg >= 4.5 ? "Excellent" : avg >= 3.5 ? "Very Good" : avg >= 2.5 ? "Good" : avg >= 1.5 ? "Needs Improvement" : "Unsatisfactory";
 }
-function computeMonthlyEvaluationsByEmployee(){
+// Optional 2nd param (archiveRecords): additional evaluation records —
+// from this employee's archive, already fetched by
+// ensureEvaluationArchiveForEmployee() — to fold into the SAME monthly
+// groups as the live ones, so an archived September rating still
+// counts toward September's average. Existing callers that don't pass
+// this keep working exactly as before (nothing archived is silently
+// included where it wasn't asked for).
+function computeMonthlyEvaluationsByEmployee(archiveRecords){
   const groups = {};
-  ALL_EVALUATIONS.forEach(e=>{
+  const allRecords = archiveRecords && archiveRecords.length ? ALL_EVALUATIONS.concat(archiveRecords) : ALL_EVALUATIONS;
+  allRecords.forEach(e=>{
     const key = e.EmployeeName + '|||' + e.Year + '|||' + e.Month;
     (groups[key] = groups[key] || []).push(e);
   });
@@ -6637,6 +6739,10 @@ function computeMonthlyEvaluationsByEmployee(){
       ID: representative.ID, EvaluatedBy: representative.EvaluatedBy,
       monthKey: Number(first.Year) * 12 + (EVAL_MONTH_ORDER_[first.Month] || 0),
       raterCount: records.length,
+      // Comments only — deliberately NOT including EvaluatedBy/SubmittedBy
+      // here, since this array is what the Management Summary modal's
+      // anonymous comment list reads from directly.
+      comments: records.map(r => r.Comments).filter(c => c && String(c).trim()),
     };
     (byEmployee[first.EmployeeName] = byEmployee[first.EmployeeName] || []).push(summary);
   });
@@ -6845,7 +6951,7 @@ function staffForImprovementSection(rows){
 }
 
 function openPerfDetail(id){
-  const e = ALL_EVALUATIONS.find(x=>x.ID===id);
+  const e = ALL_EVALUATIONS.find(x=>x.ID===id) || (evaluationArchiveData||[]).find(x=>x.ID===id);
   if(!e) return;
   // The trend shown here uses the same monthly-average comparison as
   // everywhere else (so it never disagrees with the Performance Report
@@ -6879,6 +6985,100 @@ function openPerfDetail(id){
 }
 function closePerfDetailModal(){
   document.getElementById('perfDetailModal').classList.remove('active');
+}
+
+// State for the currently-open Management Performance Summary — set
+// by openMgmtPerfSummary(), read by printMgmtPerfSummary() so the
+// print button doesn't need its own copy of the lookup logic.
+let mgmtPerfSummaryCurrent = null;
+// Employee-facing / Management-facing performance summary for ONE
+// employee's ONE month — the aggregate layer described in the audit.
+// Deliberately reads ONLY the "comments" array a monthly summary
+// object carries (see computeMonthlyEvaluationsByEmployee() above),
+// never EvaluatedBy/SubmittedBy from the underlying raw records, so
+// there is no code path here that could leak an evaluator's identity
+// into this view. Individual evaluator View Details (openPerfDetail)
+// is untouched and still shows that separately, for authorized users.
+function openMgmtPerfSummary(employeeName, month, year){
+  const archived = EVALUATION_ARCHIVE_BY_EMPLOYEE_CACHE[employeeName];
+  if(archived === undefined) ensureEvaluationArchiveForEmployee(employeeName); // fire-and-forget; re-renders this modal once loaded if still open on this employee
+  const monthly = computeMonthlyEvaluationsByEmployee(archived)[employeeName] || [];
+  const summary = monthly.find(m => m.Month === month && String(m.Year) === String(year));
+  mgmtPerfSummaryCurrent = summary ? {employeeName, month, year} : null;
+  const roster = EMPLOYEE_ROSTER.find(e=>e.name===employeeName);
+  document.getElementById('mgmtPerfSummarySub').textContent = `${employeeName} — ${month} ${year}`;
+  document.getElementById('mgmtPerfSummaryBody').innerHTML = !summary ? `
+    <p class="muted">${archived === undefined ? 'Loading…' : 'No evaluation record found for this employee/month.'}</p>
+  ` : `
+    <div class="card stat-card" style="background:var(--panel-2); margin-bottom:14px;">
+      <div class="num">${summary.AverageScore} / 5.0</div>
+      <div class="label">${ratingStars(summary.AverageScore)} ${summary.RatingLabel}</div>
+    </div>
+    <table style="margin-bottom:14px;">
+      <tr><td class="muted">Employee</td><td>${employeeName}</td></tr>
+      <tr><td class="muted">Position</td><td>${roster ? roster.position : '—'}</td></tr>
+      <tr><td class="muted">Evaluation Period</td><td>${month} ${year}</td></tr>
+      <tr><td class="muted">Number of Evaluators</td><td>${summary.raterCount}</td></tr>
+    </table>
+    <p style="font-weight:600; margin-bottom:8px;">Anonymous Evaluator Comments</p>
+    ${summary.comments.length ? `<ul style="margin:0 0 4px; padding-left:20px;">${summary.comments.map(c=>`<li class="muted" style="margin-bottom:8px;">${c}</li>`).join('')}</ul>` : `<p class="muted">No comments were submitted this month.</p>`}
+  `;
+  document.getElementById('mgmtPerfSummaryModal').classList.add('active');
+  document.getElementById('mgmtPerfSummaryBody').scrollTop = 0; // always land at the top of this scrollable modal body, not wherever it was left scrolled to from a previous open
+}
+function closeMgmtPerfSummaryModal(){
+  document.getElementById('mgmtPerfSummaryModal').classList.remove('active');
+}
+// Same dynamic-container + @media print pattern as
+// printLeaveRequestForm() elsewhere in this file — never shows
+// evaluator identity, same as the modal it prints from.
+function printMgmtPerfSummary(){
+  if(!mgmtPerfSummaryCurrent){ alert("Nothing to print yet — please wait for the summary to finish loading."); return; }
+  const {employeeName, month, year} = mgmtPerfSummaryCurrent;
+  const archived = EVALUATION_ARCHIVE_BY_EMPLOYEE_CACHE[employeeName];
+  const monthly = computeMonthlyEvaluationsByEmployee(archived)[employeeName] || [];
+  const summary = monthly.find(m => m.Month === month && String(m.Year) === String(year));
+  if(!summary) return;
+  const roster = EMPLOYEE_ROSTER.find(e=>e.name===employeeName);
+
+  const formHtml = `
+    <div style="font-family:Georgia,serif; color:#000; line-height:1.5 !important;">
+      <p style="text-align:center; font-style:italic; font-size:19px !important; font-weight:700; margin:0 0 22px;">PERFORMANCE EVALUATION SUMMARY</p>
+      <div style="border:1.5px solid #000 !important; padding:16px 20px !important; margin-bottom:16px;">
+        <table style="width:100%; border:none !important; font-size:12px !important; border-collapse:collapse;">
+          <tr><td style="padding:4px 0;"><b>Employee:</b> ${employeeName}</td><td style="padding:4px 0;"><b>Position:</b> ${roster ? roster.position : '—'}</td></tr>
+          <tr><td style="padding:4px 0;"><b>Evaluation Period:</b> ${month} ${year}</td><td style="padding:4px 0;"><b>Number of Evaluators:</b> ${summary.raterCount}</td></tr>
+          <tr><td style="padding:4px 0;"><b>Monthly Average:</b> ${summary.AverageScore} / 5.0</td><td style="padding:4px 0;"><b>Rating:</b> ${summary.RatingLabel}</td></tr>
+        </table>
+      </div>
+      <p style="font-weight:700; margin:0 0 10px;">Evaluator Comments (Anonymous)</p>
+      ${summary.comments.length ? summary.comments.map((c,i)=>`<p style="margin:0 0 10px; font-size:12.5px;">${i+1}. "${c}"</p>`).join('') : `<p style="font-size:12.5px;">No comments were submitted this month.</p>`}
+    </div>`;
+
+  const container = document.createElement('div');
+  container.id = 'perfSummaryPrintContainer';
+  container.innerHTML = formHtml;
+  document.body.appendChild(container);
+
+  const pageStyle = document.createElement('style');
+  pageStyle.id = 'perfSummaryPrintStyle';
+  pageStyle.textContent = `
+    @page { size: A4 portrait; margin: 18mm 16mm; }
+    @media print {
+      body > *:not(#perfSummaryPrintContainer) { display: none !important; }
+      #perfSummaryPrintContainer { display: block !important; }
+    }
+    @media screen { #perfSummaryPrintContainer { display: none; } }
+  `;
+  document.head.appendChild(pageStyle);
+
+  const cleanup = () => {
+    container.remove();
+    pageStyle.remove();
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  window.print();
 }
 
 function topStatusChart(log, icon, status, title, limit, barColor, linkTo){
@@ -6941,6 +7141,24 @@ async function ensureDisciplinaryArchiveForEmployee(name){
     console.warn('ensureDisciplinaryArchiveForEmployee failed for', name, ':', e.message || e);
   } finally {
     delete disciplinaryArchiveByEmployeeLoading[name];
+  }
+  if(activeView === 'mgmt-employee-profile' && viewingEmployeeName === name) renderView(activeView);
+}
+let evaluationArchiveByEmployeeLoading = {}; // {[employeeName]: true} while a fetch for that employee is in flight
+// Same per-employee, server-filtered archive pattern as disciplinary's
+// above — fetched once per employee per session, cached, and re-used
+// by both Employee Profile's monthly rows and (if opened) the
+// Management Summary modal for that same employee.
+async function ensureEvaluationArchiveForEmployee(name){
+  if(EVALUATION_ARCHIVE_BY_EMPLOYEE_CACHE[name] || evaluationArchiveByEmployeeLoading[name]) return;
+  evaluationArchiveByEmployeeLoading[name] = true;
+  try{
+    const rows = await safeApiGet('evaluationArchiveByEmployee&employeeName=' + encodeURIComponent(name) + '&username=' + encodeURIComponent(CURRENT_USER.username||''), []);
+    EVALUATION_ARCHIVE_BY_EMPLOYEE_CACHE[name] = rows;
+  } catch(e){
+    console.warn('ensureEvaluationArchiveForEmployee failed for', name, ':', e.message || e);
+  } finally {
+    delete evaluationArchiveByEmployeeLoading[name];
   }
   if(activeView === 'mgmt-employee-profile' && viewingEmployeeName === name) renderView(activeView);
 }
@@ -7549,7 +7767,7 @@ const BUILDERS = {
       <table>
         <tr><th>Employee</th><th>Period</th><th>Score</th><th>Rating</th><th></th></tr>
         ${MY_GIVEN_EVALUATIONS.map(e=>`<tr><td>${e.EmployeeName}</td><td>${e.Month} ${e.Year}</td><td class="mono">${e.AverageScore}</td><td>${ratingStars(e.AverageScore)} ${e.RatingLabel}</td>
-          <td><button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditEvaluation('${e.ID}')">✏️ Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyEvaluation('${e.ID}', this)">🗑️ Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">You haven't evaluated anyone yet.</td></tr>`}
+          <td><button class="btn info auto" style="padding:5px 10px; margin-right:6px;" onclick="openPerfDetail('${e.ID}')">👁️ View</button><button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditEvaluation('${e.ID}')">✏️ Edit</button>${isFullAdmin() ? `<button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="archiveRecordNow('evaluation','${e.ID}', this)">📦 Archive</button>` : ''}<button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyEvaluation('${e.ID}', this)">🗑️ Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">You haven't evaluated anyone yet.</td></tr>`}
       </table>
     </div>`,
 
@@ -8135,7 +8353,14 @@ const BUILDERS = {
     const e = EMPLOYEE_ROSTER.find(r=>r.name===name);
     if(!e) return `<div class="empty"><div class="ic">🚧</div>Employee not found. <button class="btn ghost auto" onclick="renderView('${employeeProfileSource ? employeeProfileSource.view : 'mgmt-employees'}')">Back to ${employeeProfileSource ? employeeProfileSource.label : 'Staff Directory'}</button></div>`;
 
-    const myEvaluations = ALL_EVALUATIONS.filter(ev=>ev.EmployeeName===name);
+    // Employee Profile shows ONE row per Employee+Month+Year (the
+    // monthly average across every rater that month), never the raw
+    // per-rater records — see computeMonthlyEvaluationsByEmployee()
+    // above. Folds in this employee's archived evaluations too (same
+    // fire-and-forget, per-employee cached fetch pattern as
+    // disciplinary's above) so an archived month still counts.
+    ensureEvaluationArchiveForEmployee(name); // fire-and-forget; re-renders this page once loaded if still here
+    const myMonthlyEvaluations = computeMonthlyEvaluationsByEmployee(EVALUATION_ARCHIVE_BY_EMPLOYEE_CACHE[name])[name] || [];
     // Complete disciplinary history = live (non-archived) cases plus
     // this employee's own archived cases, fetched (and cached) only
     // for them — see ensureDisciplinaryArchiveForEmployee() above.
@@ -8226,10 +8451,10 @@ const BUILDERS = {
     <div class="card table-scroll" style="margin-top:0;">
       ${employeeProfileTab==='performance' ? `
         <h3><span class="ic">📊</span> Performance Report</h3>
-        ${myEvaluations.length ? `
+        ${myMonthlyEvaluations.length ? `
         <table>
-          <tr><th>Month</th><th>Year</th><th>Score</th><th>Rating</th></tr>
-          ${myEvaluations.map(ev=>`<tr><td>${ev.Month}</td><td>${ev.Year}</td><td class="mono">${ev.AverageScore}</td><td>${ratingStars(ev.AverageScore)} ${ev.RatingLabel}</td></tr>`).join('')}
+          <tr><th>Month</th><th>Year</th><th>Score</th><th>Rating</th><th>Trend</th></tr>
+          ${myMonthlyEvaluations.map((ev,i)=>`<tr><td>${ev.Month}</td><td>${ev.Year}</td><td class="mono">${ev.AverageScore}</td><td>${ratingStars(ev.AverageScore)} ${ev.RatingLabel}</td><td>${evalTrendHtml(ev, getPreviousMonthEvaluation(ev, myMonthlyEvaluations))}</td></tr>`).join('')}
         </table>` : `<p class="muted">No records available</p>`}
       ` : ''}
       ${employeeProfileTab==='attendance' ? `
@@ -8559,6 +8784,9 @@ const BUILDERS = {
     const positions = getUniqueEmployeePositions();
 
     return `
+    ${isFullAdmin() ? `<div class="no-print" style="margin-bottom:16px;">
+      <button class="btn ghost auto" onclick="openEvaluationArchivedPage()">📁 Archived Evaluations</button>
+    </div>` : ''}
     <div class="card" style="margin-bottom:16px; padding:14px 16px;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
         <span style="font-weight:600;">Evaluation Progress: ${evaluatedCount} / ${totalCount} Employees Evaluated (${evalPct}%)</span>
@@ -8619,7 +8847,7 @@ const BUILDERS = {
           <td>${r.e ? ratingStars(r.e.AverageScore)+' '+r.e.RatingLabel : '<span class="muted">Not yet evaluated</span>'}</td>
           <td>${r.e ? evalTrendHtml(r.e, getPreviousMonthEvaluation(r.e, monthlyByEmployee_[r.name])) : '<span class="muted">—</span>'}</td>
           <td class="mono">${countByEmployee[r.name] || 0}</td>
-          <td>${r.e ? `<button class="btn info auto" style="padding:5px 10px;" onclick="openPerfDetail('${r.e.ID}')">View Details</button>` : ''}</td>
+          <td>${r.e ? `<button class="btn info auto" style="padding:5px 10px; margin-right:6px;" onclick="openPerfDetail('${r.e.ID}')">View Details</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="openMgmtPerfSummary('${r.e.EmployeeName.replace(/'/g,"\\'")}', '${r.e.Month}', '${r.e.Year}')">📋 View Summary</button>` : ''}</td>
         </tr>`).join('') || `<tr><td colspan="8" class="muted">No evaluations found.</td></tr>`}
       </table>
     </div>`;
@@ -9450,6 +9678,34 @@ const BUILDERS = {
       <table class="mobile-card-table">
         <thead><tr><th>Case #</th><th>Employee</th><th>Date Reported</th><th>Status</th><th></th></tr></thead>
         <tbody id="discArchiveRows">${renderDisciplinaryArchiveRows(disciplinaryArchiveSearch)}</tbody>
+      </table>`}
+    </div>`;
+  },
+  "mgmt-evaluations-archived": ()=>{
+    if(!isFullAdmin()) return `<div class="card"><p class="muted">🔒 Archive access is limited to Admin accounts.</p></div>`;
+    if(evaluationArchiveData === null) ensureEvaluationArchiveDataLoaded();
+    const q = evaluationArchiveSearch.toLowerCase();
+    const filtered = (evaluationArchiveData || []).filter(ev => !q || (ev.EmployeeName||'').toLowerCase().includes(q));
+    return `
+    <div class="no-print" style="margin-bottom:16px;">
+      <button class="btn ghost auto" onclick="renderView('mgmt-performance')">← Back to Performance Report</button>
+    </div>
+    <div class="card">
+      <h3><span class="ic">📁</span> All Archived Evaluations</h3>
+      <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Older evaluation records moved out of the active list — still fully viewable, searchable, and printable, and still counted in the employee's monthly Performance Report totals.</p>
+      <input type="text" placeholder="🔍 Search by employee..." value="${evaluationArchiveSearch}" oninput="setEvaluationArchiveSearch(this.value)" style="margin-bottom:12px;">
+      ${(evaluationArchiveLoading || evaluationArchiveDataLoading) ? `<p class="muted">Loading archived evaluations…</p>` : `
+      <table class="mobile-card-table">
+        <thead><tr><th>Employee</th><th>Period</th><th>Score</th><th>Rating</th><th></th></tr></thead>
+        <tbody>
+        ${filtered.map(ev=>`<tr>
+          <td data-label="Employee">${ev.EmployeeName}</td>
+          <td data-label="Period">${ev.Month} ${ev.Year}</td>
+          <td class="mono" data-label="Score">${ev.AverageScore}</td>
+          <td data-label="Rating">${ev.RatingLabel}</td>
+          <td data-label="Actions"><button class="btn info auto" style="padding:5px 10px; margin-right:6px;" onclick="openPerfDetail('${ev.ID}')">👁️ View</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="restoreRecordNow('evaluation','${ev.ID}', this)">↩️ Restore</button></td>
+        </tr>`).join('') || `<tr><td colspan="5" class="muted">No archived evaluations${evaluationArchiveSearch?' match that search':' yet'}.</td></tr>`}
+        </tbody>
       </table>`}
     </div>`;
   },
