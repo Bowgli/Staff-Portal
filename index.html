@@ -8077,7 +8077,7 @@ const BUILDERS = {
         <thead><tr><th>Name</th><th>Position</th><th>Employment Status</th><th>Employee Status</th><th>Contact Number</th><th>Email</th><th>Date Hired</th><th></th></tr></thead>
         <tbody>
         ${rows.map(e=>`<tr>
-          <td data-label="Name"><button class="btn ghost auto emp-name-link" style="padding:3px 10px; font-weight:600;" onclick="openEmployeeProfile('${e.name.replace(/'/g,"\\'")}')">${e.name}</button></td>
+          <td data-label="Name"><button class="btn info auto" style="padding:3px 10px; font-weight:600;" onclick="openEmployeeProfile('${e.name.replace(/'/g,"\\'")}')">${e.name}</button></td>
           <td data-label="Position">${e.position}</td>
           <td data-label="Employment Status">${employmentStatusPill(e.employmentStatus, e.dateHired)}</td>
           <td data-label="Employee Status">
