@@ -9852,7 +9852,23 @@ const BUILDERS = {
   "mgmt-nominations": ()=>{
     const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
     const years = Array.from(new Set(ALL_NOMINATIONS.map(n=>n.Year).filter(Boolean))).sort().reverse();
-    const categories = Array.from(new Set(ALL_NOMINATIONS.map(n=>n.AwardCategory))).sort();
+    // Phase 1 — Award Category Consistency (see the companion audit doc
+    // for the full safety assessment). Previously this was built purely
+    // from whatever AwardCategory values happened to already exist in
+    // ALL_NOMINATIONS, so a category with zero nominations so far simply
+    // never appeared as a filter option. Now it starts from the SAME
+    // authoritative list the employee-side "Nominate for Award" dropdown
+    // and the Edit Nomination form already use (NOMINATION_STANDARD_CATEGORIES_),
+    // in that same official order, plus "Other" to match that same form —
+    // then appends any category actually found in real nomination data
+    // that isn't part of that official set, so a historical/custom
+    // category (e.g. an old free-text "Other" entry) can never become
+    // unfindable here. Filtering logic itself, below, is unchanged.
+    const officialCategoriesPlusOther = NOMINATION_STANDARD_CATEGORIES_.concat(['Other']);
+    const knownCategorySet = new Set(officialCategoriesPlusOther);
+    const historicalExtraCategories = Array.from(new Set(ALL_NOMINATIONS.map(n=>n.AwardCategory)))
+      .filter(c => c && !knownCategorySet.has(c)).sort();
+    const categories = officialCategoriesPlusOther.concat(historicalExtraCategories);
 
     const filtered = ALL_NOMINATIONS.filter(n=>{
       if(nomFilterCategory !== 'All' && n.AwardCategory !== nomFilterCategory) return false;
