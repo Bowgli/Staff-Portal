@@ -9877,7 +9877,34 @@ const BUILDERS = {
       return true;
     });
 
+    // Phase 2A — Recognition Overview (see the Phase 2 audit doc for the
+    // full safety assessment). Five factual counts over the SAME
+    // Category/Month/Year-filtered array the chart and table below
+    // already use — so, per the audit's recommendation (matching how
+    // Performance Report's own stat cards respond to its Period/Position
+    // filters), these numbers narrow along with whatever filter is
+    // currently applied, rather than always reflecting the full
+    // unfiltered dataset. This is display-only: no write, no new fetch,
+    // no winner/ranking implication of any kind — Total Nominations and
+    // Employees Nominated are plain counts, nothing here selects or
+    // implies an official recipient.
+    const now = new Date();
+    const currentMonthName = months[now.getMonth()];
+    const currentYear = now.getFullYear();
+    const totalNominations = filtered.length;
+    const employeesNominatedCount = new Set(filtered.map(n=>n.NomineeName)).size;
+    const thisMonthCount = filtered.filter(n=>n.Month===currentMonthName && String(n.Year)===String(currentYear)).length;
+    const awardCategoriesCount = new Set(filtered.map(n=>n.AwardCategory)).size;
+    const thisYearCount = filtered.filter(n=>String(n.Year)===String(currentYear)).length;
+
     return `
+    <div class="grid grid-5" style="margin-bottom:16px;">
+      <div class="card stat-card"><div class="num">${totalNominations}</div><div class="label">Total Nominations</div></div>
+      <div class="card stat-card"><div class="num">${employeesNominatedCount}</div><div class="label">Employees Nominated</div></div>
+      <div class="card stat-card"><div class="num">${thisMonthCount}</div><div class="label">This Month</div></div>
+      <div class="card stat-card"><div class="num">${awardCategoriesCount}</div><div class="label">Award Categories</div></div>
+      <div class="card stat-card"><div class="num">${thisYearCount}</div><div class="label">This Year</div></div>
+    </div>
     ${topNominatedChart(filtered)}
     <div class="card" style="margin-bottom:16px;">
       <h3>Filter by Category &amp; Period</h3>
