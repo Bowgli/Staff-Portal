@@ -3377,6 +3377,27 @@ function stopMgmtPolling(){
 let empPollInterval = null;
 let empRequestsBaseline = null;
 let empSwapPartnerBaseline = null; // Map: request ID -> status, for Schedule Swap requests where I'm the OTHER employee (not the one who filed it)
+// Cheap-check gate for employee polling — one combined signature
+// string built from empChangeCheck_()'s response (Code.gs). When a
+// poll cycle's fresh signature matches this baseline exactly, NOTHING
+// relevant to this employee changed anywhere, so the full 7-9-call
+// fetch + all the existing per-item diffing below it is skipped
+// entirely for that cycle. This mirrors startMgmtPolling()'s
+// counts-based gate, just scoped to one employee instead of
+// company-wide. Every existing baseline/diff below (empRequestsBaseline,
+// empConcernsBaseline, etc.) is untouched — this is purely an extra
+// short-circuit in front of them, never a replacement for them.
+let empCombinedSigBaseline = '';
+function buildEmpCombinedSig_(check){
+  return [check.requestsSig, check.othersPendingIds, check.discSig, check.concernsSig, check.othersConcernIds,
+          check.suggestionsSig, check.othersSuggestionIds, check.recognitionIds, check.announcementIds, check.scheduleVersion].join('|');
+}
+async function fetchEmpChangeCheck_(needsFullRequests, needsFullConcerns, needsFullSuggestions){
+  const qs = 'empChangeCheck&name=' + encodeURIComponent(CURRENT_EMPLOYEE.name)
+    + '&fullName=' + encodeURIComponent(CURRENT_EMPLOYEE.fullName)
+    + '&needsFullRequests=' + needsFullRequests + '&needsFullConcerns=' + needsFullConcerns + '&needsFullSuggestions=' + needsFullSuggestions;
+  try{ return await safeApiGet(qs, null); } catch(e){ return null; } // null = check failed; caller falls through to the full cycle rather than silently skipping
+}
 
 function myRequestsSnapshot(){
   const map = new Map();
@@ -3487,6 +3508,13 @@ async function seedEmpPollingBaseline(){
   if(hasMgmtSuggestionsAccess()){
     empOthersSuggestionsBaseline = new Set(MOCK.suggestionsLog.filter(s => s.status === 'new' && s.from !== CURRENT_EMPLOYEE.fullName).map(s=>s.id));
   }
+  // Seed the cheap-check gate itself — one extra lightweight call,
+  // same idea as the myRequestsScoped seed fetch above. If it fails,
+  // leave the baseline at its default '' so the very first poll
+  // cycle just treats everything as "possibly changed" and falls
+  // through to the existing full cycle once, which is always safe.
+  const initialCheck = await fetchEmpChangeCheck_(hasMgmtRequestsAccess(), hasMgmtConcernsAccess(), hasMgmtSuggestionsAccess());
+  if(initialCheck) empCombinedSigBaseline = buildEmpCombinedSig_(initialCheck);
 }
 async function startEmpPolling(){
   if(empPollInterval || !USE_REMOTE()) return;
@@ -3496,6 +3524,20 @@ async function startEmpPolling(){
     const needsFullRequests = hasMgmtRequestsAccess(); // hybrid roles also watch for new requests from OTHER employees — a plain employee only ever needs her own, via the scoped endpoint below
     const needsFullConcerns = hasMgmtConcernsAccess();
     const needsFullSuggestions = hasMgmtSuggestionsAccess();
+
+    // Cheap-check gate — one lightweight call instead of the 7-9
+    // below, every cycle. Mirrors startMgmtPolling()'s counts-based
+    // gate. A failed check (network hiccup, etc.) falls through to
+    // the full cycle below rather than silently skipping a real
+    // change — same "fail safe, not silent" choice as everywhere
+    // else this file treats a failed fetch.
+    const empCheck = await fetchEmpChangeCheck_(needsFullRequests, needsFullConcerns, needsFullSuggestions);
+    if(empCheck){
+      const freshSig = buildEmpCombinedSig_(empCheck);
+      if(freshSig === empCombinedSigBaseline) return; // nothing relevant changed anywhere — skip the full cycle entirely this round
+      empCombinedSigBaseline = freshSig;
+    }
+
     const [requests, nextSchedule, myDisc, announcements, myConcerns, mySuggestions, myRecognition, concernsAll, suggestionsAll] = await Promise.all([
       needsFullRequests ? safeApiGet('requests', null) : safeApiGet('myRequestsScoped&name=' + encodeURIComponent(CURRENT_EMPLOYEE.name), null),
       safeApiGet('nextSchedule', null),
