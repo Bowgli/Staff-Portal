@@ -1208,6 +1208,8 @@ let accountsSearchQuery = '';
 let nomFilterMonth = 'All';
 let nomFilterYear = 'All';
 let nomFilterCategory = 'All';
+let nomFilterEmployee = 'All'; // Phase 2C — Nominee/Employee filter, same shape as Category/Month/Year
+let nomSearchQuery = ''; // Phase 2C — searches Nominee + Award Category only (approved scope; Reason deliberately excluded)
 function setPerfFilter(type, val){
   if(type==='month') perfFilterMonth = val;
   else if(type==='year') perfFilterYear = val;
@@ -1224,13 +1226,33 @@ function resetPerfFilter(){
 function setNomFilter(type, val){
   if(type==='month') nomFilterMonth = val;
   else if(type==='year') nomFilterYear = val;
+  else if(type==='employee') nomFilterEmployee = val;
   else nomFilterCategory = val;
   renderView('mgmt-nominations');
+}
+// Phase 2C — Search (Nominee + Award Category only, per the approved
+// scope). Reuses the EXACT same debounce + cursor-position-restore
+// pattern already proven by setReqFilter/setConcernFilter's own
+// employee-name search boxes, rather than the plain oninput->renderView
+// pattern the original performance audit flagged as a keystroke-lag
+// risk elsewhere in this app. renderView() replaces the whole page, so
+// without this, the search input would lose focus and cursor position
+// on every keystroke.
+function setNomSearch(val){
+  nomSearchQuery = val;
+  debounce('nomSearchQuery', ()=>{
+    const cursorPos = document.activeElement && document.activeElement.selectionStart;
+    renderView('mgmt-nominations');
+    const input = document.querySelector('#content input[data-filter="nomSearch"]');
+    if(input){ input.focus(); if(cursorPos != null) input.setSelectionRange(cursorPos, cursorPos); }
+  });
 }
 function resetNomFilter(){
   nomFilterCategory = 'All';
   nomFilterMonth = 'All';
   nomFilterYear = 'All';
+  nomFilterEmployee = 'All';
+  nomSearchQuery = '';
   renderView('mgmt-nominations');
 }
 
@@ -9852,6 +9874,9 @@ const BUILDERS = {
   "mgmt-nominations": ()=>{
     const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
     const years = Array.from(new Set(ALL_NOMINATIONS.map(n=>n.Year).filter(Boolean))).sort().reverse();
+    // Phase 2C — Employee/Nominee filter list, same derive-from-data +
+    // alphabetical-sort pattern already used for `years` above.
+    const employees = Array.from(new Set(ALL_NOMINATIONS.map(n=>n.NomineeName).filter(Boolean))).sort();
     // Phase 1 — Award Category Consistency (see the companion audit doc
     // for the full safety assessment). Previously this was built purely
     // from whatever AwardCategory values happened to already exist in
@@ -9874,6 +9899,18 @@ const BUILDERS = {
       if(nomFilterCategory !== 'All' && n.AwardCategory !== nomFilterCategory) return false;
       if(nomFilterMonth !== 'All' && n.Month !== nomFilterMonth) return false;
       if(nomFilterYear !== 'All' && String(n.Year) !== String(nomFilterYear)) return false;
+      // Phase 2C — Employee/Nominee filter, same shape as the three
+      // checks above (not a separate filtering system).
+      if(nomFilterEmployee !== 'All' && n.NomineeName !== nomFilterEmployee) return false;
+      // Phase 2C — Search, approved scope: Nominee + Award Category
+      // only (Reason deliberately excluded per approval). Case-
+      // insensitive, partial-text.
+      if(nomSearchQuery.trim()){
+        const q = nomSearchQuery.trim().toLowerCase();
+        const matchesNominee = (n.NomineeName||'').toLowerCase().includes(q);
+        const matchesCategory = (n.AwardCategory||'').toLowerCase().includes(q);
+        if(!matchesNominee && !matchesCategory) return false;
+      }
       return true;
     });
 
@@ -9938,8 +9975,15 @@ const BUILDERS = {
     </div>
     ${topNominatedChart(filtered)}
     <div class="card" style="margin-bottom:16px;">
-      <h3>Filter by Category &amp; Period</h3>
-      <div class="grid grid-4">
+      <h3>Filter by Employee, Category &amp; Period</h3>
+      <div class="grid grid-5">
+        <div>
+          <label>Employee / Nominee</label>
+          <select onchange="setNomFilter('employee', this.value)">
+            <option value="All" ${nomFilterEmployee==='All'?'selected':''}>All Employees</option>
+            ${employees.map(e=>`<option ${nomFilterEmployee===e?'selected':''}>${e}</option>`).join('')}
+          </select>
+        </div>
         <div>
           <label>Award Category</label>
           <select onchange="setNomFilter('category', this.value)">
@@ -9965,7 +10009,12 @@ const BUILDERS = {
           <button class="btn reset auto" style="margin-top:16px;" onclick="resetNomFilter()">↻ Clear / Reset Filters</button>
         </div>
       </div>
+      <div style="margin-top:12px;">
+        <label>Search (Nominee or Category)</label>
+        <input type="text" data-filter="nomSearch" placeholder="🔍 Search by nominee or award category…" value="${nomSearchQuery}" oninput="setNomSearch(this.value)">
+      </div>
     </div>
+
     <div class="card table-scroll">
       <h3><span class="ic">🌟</span> Award Nominations</h3>
       <p class="muted" style="margin-bottom:12px;">Employee-submitted nominations for recognition awards.</p>
