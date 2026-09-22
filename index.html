@@ -9897,6 +9897,27 @@ const BUILDERS = {
     const awardCategoriesCount = new Set(filtered.map(n=>n.AwardCategory)).size;
     const thisYearCount = filtered.filter(n=>String(n.Year)===String(currentYear)).length;
 
+    // Phase 2B — Recognition Summary by Category (see the Phase 2B audit
+    // doc for the full safety assessment). Reuses Phase 1's own
+    // `categories` array as the row list — no second category union is
+    // computed. When nomFilterCategory is 'All', every official category
+    // is shown (zero-nomination ones included, at 0/0), plus any real
+    // historical/custom category found in the data — same as Phase 1's
+    // dropdown. When a specific category IS selected, `filtered` is
+    // already narrowed to just that category (see the filtered array
+    // above), so the row list is narrowed the SAME way here — showing
+    // the other categories at 0 would misrepresent them as genuinely
+    // zero company-wide, when they're actually just filtered out. This
+    // is the exact nomFilterCategory check already used to build
+    // `filtered`, applied to the row list too — not a second, separate
+    // filtering system.
+    const categoryBreakdownRows = categories
+      .filter(c => nomFilterCategory === 'All' || c === nomFilterCategory)
+      .map(c => {
+        const inCategory = filtered.filter(n => n.AwardCategory === c);
+        return { category: c, nominations: inCategory.length, employeesNominated: new Set(inCategory.map(n=>n.NomineeName)).size };
+      });
+
     return `
     <div class="grid grid-5" style="margin-bottom:16px;">
       <div class="card stat-card"><div class="num">${totalNominations}</div><div class="label">Total Nominations</div></div>
@@ -9904,6 +9925,16 @@ const BUILDERS = {
       <div class="card stat-card"><div class="num">${thisMonthCount}</div><div class="label">This Month</div></div>
       <div class="card stat-card"><div class="num">${awardCategoriesCount}</div><div class="label">Award Categories</div></div>
       <div class="card stat-card"><div class="num">${thisYearCount}</div><div class="label">This Year</div></div>
+    </div>
+    <div class="card table-scroll" style="margin-bottom:16px;">
+      <h3><span class="ic">📊</span> Recognition Summary by Category</h3>
+      <p class="muted" style="margin-bottom:12px;">Nomination statistics only — not an award result or ranking.</p>
+      <table class="mobile-card-table">
+        <thead><tr><th>Category</th><th>Nominations</th><th>Employees Nominated</th></tr></thead>
+        <tbody>
+        ${categoryBreakdownRows.map(r=>`<tr><td data-label="Category">${r.category}</td><td class="mono" data-label="Nominations">${r.nominations}</td><td class="mono" data-label="Employees Nominated">${r.employeesNominated}</td></tr>`).join('') || `<tr><td colspan="3" class="muted">No categories to display.</td></tr>`}
+        </tbody>
+      </table>
     </div>
     ${topNominatedChart(filtered)}
     <div class="card" style="margin-bottom:16px;">
