@@ -1856,12 +1856,71 @@ const EMPLOYEE_POSITIONS = ["Shift Manager","Supervisor","Technical Manager","Gr
 // months are involved), which was the reported bug. Day 1 is the
 // start date itself, so Day 90 falls 89 days after it.
 const PROBATION_TOTAL_DAYS = 90;
+// Saipan/Guam is UTC+10 year-round (no daylight saving time observed),
+// so a fixed offset is always correct — no timezone-database lookup
+// needed, and no DST edge cases to worry about, unlike many other
+// timezones where a fixed offset would occasionally drift.
+const SAIPAN_UTC_OFFSET_MS = 10 * 60 * 60 * 1000;
+
+// A hire date (or any probation-related date) is a pure CALENDAR date
+// with no inherent time-of-day or timezone — "the day someone was
+// hired" is the same fact everywhere in the world. Parsing it this way
+// (manually reading the Y/M/D digits into Date.UTC) avoids the classic
+// `new Date(dateStr + 'T00:00:00')` bug, which parses at LOCAL
+// midnight — i.e. the DEVICE/BROWSER's own timezone, not Saipan's —
+// so two admins opening the same portal from two different timezones
+// could otherwise compute two different probation day-counts for the
+// exact same employee.
+function parseCalendarDateUTC_(dateStr){
+  if(!dateStr) return null;
+  const m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(!m) return null;
+  return new Date(Date.UTC(Number(m[1]), Number(m[2])-1, Number(m[3])));
+}
+// "Today," fixed to the Saipan/Guam calendar date — deliberately NOT
+// `new Date()` (which reflects the calling device's own timezone).
+// Date.now() is an absolute instant, identical everywhere; shifting it
+// by Saipan's own fixed UTC+10 offset and then reading its UTC
+// calendar fields yields Saipan's actual current date, regardless of
+// where the Staff Portal happens to be opened from.
+function saipanTodayUTC_(){
+  const shifted = new Date(Date.now() + SAIPAN_UTC_OFFSET_MS);
+  return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()));
+}
+// Single source of truth for probation day-count math — Day 1 = hire
+// date (inclusive), capped at PROBATION_TOTAL_DAYS (90). A future hire
+// date (not yet started) correctly returns 0, not 1 — the previous
+// inline version's Math.max(1, ...) incorrectly floored a negative
+// (future-date) difference up to 1.
+function probationDaysCompleted(dateHired){
+  const hired = parseCalendarDateUTC_(dateHired);
+  if(!hired) return 0;
+  const diffDays = Math.round((saipanTodayUTC_() - hired) / 86400000);
+  if(diffDays < 0) return 0;
+  return Math.min(PROBATION_TOTAL_DAYS, diffDays + 1);
+}
+// Derived from the day-count above — 30-day blocks of the 90-day
+// probation period, NOT calendar months. This replaces
+// monthsSinceHired() (still defined elsewhere, but no longer used for
+// probation) for both the dashboard display and the milestone
+// notification, so both can never drift out of sync with each other
+// again.
+function probationMilestonesCompleted(dateHired){
+  return Math.min(3, Math.floor(probationDaysCompleted(dateHired) / 30));
+}
 function computeProbationEndDate(dateHired){
-  if(!dateHired) return '';
-  const d = new Date(dateHired + 'T00:00:00');
-  if(isNaN(d.getTime())) return '';
-  d.setDate(d.getDate() + PROBATION_TOTAL_DAYS - 1);
-  return d.toISOString().slice(0,10);
+  const hired = parseCalendarDateUTC_(dateHired);
+  if(!hired) return '';
+  // Entirely UTC-internal arithmetic — no device-timezone involvement
+  // at any step, which is what fixes the reported "one day early" bug
+  // (the old version built a LOCAL-time Date, then serialized it via
+  // .toISOString(), which converts to UTC and silently rolls the date
+  // back one day for any timezone ahead of UTC — Saipan/Guam included).
+  const end = new Date(hired.getTime() + (PROBATION_TOTAL_DAYS - 1) * 86400000);
+  const yyyy = end.getUTCFullYear();
+  const mm = String(end.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(end.getUTCDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 }
 function employmentStatusPill(employmentStatus, dateHired){
   if(!employmentStatus) return '<span class="muted">—</span>';
@@ -3240,7 +3299,11 @@ async function checkProbationMilestones(){
     if(e.status !== 'Active' || e.employmentStatus !== 'Probationary' || !e.dateHired) return;
     let sent = [];
     try{ sent = JSON.parse(e.probationMilestonesSent || '[]'); }catch(err){ sent = []; }
-    const months = monthsSinceHired(e.dateHired);
+    // Same shared function probationMonitoringSection() uses — the
+    // notification and the display can never disagree again, and this
+    // now correctly triggers on real 30/60/90-day boundaries (Saipan
+    // calendar date) instead of calendar-month anniversaries.
+    const months = probationMilestonesCompleted(e.dateHired);
     [1,2,3].forEach(m=>{
       if(months >= m && sent.indexOf(String(m)) === -1) due.push({employee:e, milestone:m});
     });
@@ -7099,22 +7162,21 @@ function probationMonitoringSection(){
         <thead><tr><th>Employee</th><th>Position</th><th>Probation Period</th><th>Progress</th><th></th></tr></thead>
         <tbody>
         ${probationary.map(e=>{
-          const months = Math.max(0, monthsSinceHired(e.dateHired));
+          const months = probationMilestonesCompleted(e.dateHired);
           const monthsLabel = months >= 3 ? '3 Months Completed' : `${months} Month${months===1?'':'s'} Completed`;
           const actionLabel = months >= 3 ? 'Action Required' : (months >= 2 ? 'Review' : 'View');
           const actionClass = months >= 3 ? 'btn danger auto' : (months >= 2 ? 'btn reset auto' : 'btn info auto');
 
           // Everything below is derived purely from Date Hired (already
           // loaded with the roster) — no extra fields, no extra
-          // queries, just date arithmetic against today. Standardized
-          // to a fixed 90-day total for every employee (see
-          // PROBATION_TOTAL_DAYS), with the start date counting as
-          // Day 1 — so completed = (today − start) + 1, capped at 90.
+          // queries, just date arithmetic against today (Saipan/Guam
+          // calendar date, fixed regardless of device timezone — see
+          // probationDaysCompleted()). Standardized to a fixed 90-day
+          // total for every employee (see PROBATION_TOTAL_DAYS), with
+          // the start date counting as Day 1.
           const endDateStr = computeProbationEndDate(e.dateHired);
-          const hired = new Date(e.dateHired + 'T00:00:00');
-          const today = new Date(); today.setHours(0,0,0,0);
           const totalDays = PROBATION_TOTAL_DAYS;
-          const daysCompleted = Math.min(totalDays, Math.max(1, Math.round((today - hired) / 86400000) + 1));
+          const daysCompleted = probationDaysCompleted(e.dateHired);
           const daysRemaining = Math.max(0, totalDays - daysCompleted);
           const pct = Math.min(100, Math.round((daysCompleted / totalDays) * 100));
           const filledBars = Math.round(pct / 5); // 20-segment bar
