@@ -2509,9 +2509,21 @@ async function doLoginWithCredentials(u, p){
     const r = await fastLogin(u, p);
     if(!r.ok) return {success:false, error: r.error || "Incorrect username or password."};
     if(r.role === 'management'){
-      CURRENT_USER = {role:'management', displayName:r.displayName, username:r.username, accessLevel: r.accessLevel || 'full', mgmtRole: r.mgmtRole || 'full'};
+      CURRENT_USER = {role:'management', displayName:r.displayName, username:r.username, accessLevel: r.accessLevel || 'full', mgmtRole: r.mgmtRole || 'full',
+        // Per-admin, per-record "viewed" tracking (Award Nominations /
+        // Evaluate a Staff badges) — a Set for O(1) lookup, parsed
+        // once here rather than re-parsing the raw string on every
+        // renderNav() call.
+        viewedNominationIds: new Set((r.viewedNominationIds||'').split(',').filter(Boolean)),
+        viewedEvaluationIds: new Set((r.viewedEvaluationIds||'').split(',').filter(Boolean))
+      };
     } else {
-      CURRENT_USER = {role:'employee', employeeName:r.employeeName, mgmtRole: r.mgmtRole || null, displayName: r.fullName, username: r.username || '', lastNotifSeenAt: r.lastNotifSeenAt || ''};
+      CURRENT_USER = {role:'employee', employeeName:r.employeeName, mgmtRole: r.mgmtRole || null, displayName: r.fullName, username: r.username || '', lastNotifSeenAt: r.lastNotifSeenAt || '',
+        // Only ever populated for a shift-manager hybrid account (see
+        // doLogin_) — an empty Set for everyone else, harmless since
+        // renderNav()'s badge check is gated on mgmtRole anyway.
+        viewedEvaluationIds: new Set((r.viewedEvaluationIds||'').split(',').filter(Boolean))
+      };
       CURRENT_EMPLOYEE = {
         name: r.employeeName, fullName: r.fullName,
         initials: r.fullName.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(),
@@ -4914,6 +4926,26 @@ function markNotificationsSeenNow(){
   }
 }
 
+// Marks ONE record as viewed for the CURRENT account only — the Award
+// Nominations / Evaluate a Staff sidebar badges (renderNav()). Called
+// only from openNominationDetail/openPerfDetail, i.e. only when that
+// account actually opens that specific record's detail — never on
+// table load, filter, or search. Sidebar badge only: no toast, no
+// sound, and this never touches showMgmtToast/playAlertTone or any of
+// the myNewX/newXRecords polling variables.
+function markRecordViewedNow(module, id){
+  if(!CURRENT_USER || !id) return;
+  const setKey = module === 'nomination' ? 'viewedNominationIds' : 'viewedEvaluationIds';
+  if(!CURRENT_USER[setKey]) return; // this account type doesn't track this module (e.g. a Supervisor account and evaluations)
+  if(CURRENT_USER[setKey].has(id)) return; // already viewed — nothing to update, no redundant write
+  CURRENT_USER[setKey].add(id); // update immediately so the badge reflects this click without waiting on the network
+  renderNav();
+  if(USE_REMOTE() && CURRENT_USER.username){
+    apiPost('markRecordViewed', {module, id, username: CURRENT_USER.username})
+      .catch(e => console.warn('Could not save viewed state for', module, id, ':', e.message));
+  }
+}
+
 // Routes a clicked notification to its related existing content —
 // reuses the same tabs/views and (for announcements) the same
 // click-to-view expand already used elsewhere, per the "reuse
@@ -6537,6 +6569,20 @@ function renderNav(){
         const fresh = MOCK.suggestionsLog.filter(s=>s.status==='new').length;
         badge = fresh > 0 ? fresh : null;
       }
+      // Per-admin, per-record "viewed" badges (see the Badge Count
+      // Rule audit doc) — deliberately NOT count-based like the three
+      // above (which track record STATUS); this tracks whether THIS
+      // account has personally opened each record's detail. No toast,
+      // no sound — sidebar badge only, updated by markRecordViewedNow()
+      // inside openNominationDetail/openPerfDetail.
+      if(item.id === 'mgmt-nominations' && CURRENT_USER && CURRENT_USER.viewedNominationIds){
+        const unviewed = ALL_NOMINATIONS.filter(n=>!CURRENT_USER.viewedNominationIds.has(n.ID)).length;
+        badge = unviewed > 0 ? unviewed : null;
+      }
+      if(item.id === 'mgmt-performance' && CURRENT_USER && CURRENT_USER.viewedEvaluationIds){
+        const unviewed = ALL_EVALUATIONS.filter(e=>!CURRENT_USER.viewedEvaluationIds.has(e.ID)).length;
+        badge = unviewed > 0 ? unviewed : null;
+      }
       if(item.id === 'notifications' && CURRENT_EMPLOYEE){
         // Timestamp-based, not count-based — an item is unread if its
         // own date is after the last time this account looked at
@@ -6569,6 +6615,10 @@ function renderNav(){
       if(item.id === 'mgmt-concerns'){
         const open = MOCK.concernsLog.filter(c=>c.status==='Open').length;
         badge = open > 0 ? open : null;
+      }
+      if(item.id === 'mgmt-performance' && CURRENT_USER && CURRENT_USER.viewedEvaluationIds){
+        const unviewed = ALL_EVALUATIONS.filter(e=>!CURRENT_USER.viewedEvaluationIds.has(e.ID)).length;
+        badge = unviewed > 0 ? unviewed : null;
       }
       html += `<div class="nav-item ${item.id===activeView?'active':''}" onclick="renderView('${item.id}')">
         <span class="ic">${item.ic}</span><span>${item.label}</span>
@@ -7152,6 +7202,7 @@ function openPerfDetail(id){
   // (archived records, Admin-only view).
   const e = ALL_EVALUATIONS.find(x=>x.ID===id) || MY_GIVEN_EVALUATIONS.find(x=>x.ID===id) || (evaluationArchiveData||[]).find(x=>x.ID===id);
   if(!e) return;
+  markRecordViewedNow('evaluation', id);
   // The trend shown here uses the same monthly-average comparison as
   // everywhere else (so it never disagrees with the Performance Report
   // table for the same employee/month) — found by matching e's own
@@ -7214,6 +7265,7 @@ function openNominationDetail(id){
   // live table and the Archived Nominations page.
   const n = ALL_NOMINATIONS.find(x=>x.ID===id) || (nominationArchiveData||[]).find(x=>x.ID===id);
   if(!n) return;
+  markRecordViewedNow('nomination', id);
   document.getElementById('nomDetailSub').textContent = `${n.NomineeName} — ${n.AwardCategory}`;
   document.getElementById('nomDetailBody').innerHTML = `
     <p style="font-weight:600; margin-bottom:2px;">Nominee</p>
