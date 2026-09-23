@@ -32,6 +32,7 @@
   .login-gate.active{display:flex;}
   .loading-text{color:var(--text-mute); font-size:13px; letter-spacing:0.3px;}
   .login-card{width:100%; max-width:360px; background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:34px 30px;}
+  .login-card label{color:#fff;} /* Username/Password labels — white, scoped to the login page only */
   .login-chip{width:64px; height:64px; margin:0 auto 16px; display:flex; align-items:center; justify-content:center;}
   .login-chip img{width:100%; height:auto; object-fit:contain;}
   .login-card h1{font-family:'Fraunces',serif; font-size:20px; font-weight:600; text-align:center;}
@@ -617,7 +618,7 @@
     <input type="password" id="loginPass" placeholder="Password" autocomplete="off">
     <button class="btn" id="loginBtn" onclick="attemptLogin()">Log In</button>
     <p class="login-err" id="loginErr">Incorrect username or password.</p>
-    <p class="login-hint">Don't have a login yet, or forgot your password? Ask your Shift Manager — accounts and password resets are set up from the Management dashboard.</p>
+    <p class="login-hint">Don't have a login or forgot your password? Please contact your GGM or AGGM for account setup or password reset.</p>
   </div>
 </div>
 
