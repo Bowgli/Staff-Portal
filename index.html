@@ -3390,8 +3390,23 @@ async function startMgmtPolling(){
     const myNewConcerns = newConcerns.filter(c => shouldNotifyMeAboutSubmission(c.from, c.from === 'Anonymous'));
     const myNewSuggestions = newSuggestionsList.filter(s => shouldNotifyMeAboutSubmission(s.from, s.from === 'Anonymous'));
     const myWithdrawnConcerns = withdrawnConcerns.filter(c => shouldNotifyMeAboutSubmission(c.from, c.from === 'Anonymous'));
+    // Stage 1 fix — Award Nomination self-notification correction (see
+    // the "Archive, Print & Notification Audit" doc). Unlike
+    // Requests/Concerns/Suggestions above, Nominations has no on-duty
+    // recipient concept to route to (any Admin should see any new
+    // nomination), so this doesn't reuse shouldNotifyMeAboutSubmission
+    // wholesale — it only adds the one piece that function's exclusion
+    // logic was doing for the others: don't notify the account that IS
+    // the submitter about its own submission. NominatorName is stored
+    // as CURRENT_EMPLOYEE.fullName at submission time (confirmed by
+    // tracing doSubmitNomination_'s caller), so the comparison must use
+    // CURRENT_USER.displayName (also the full name) — CURRENT_USER.employeeName
+    // (the short name shouldNotifyMeAboutSubmission itself compares
+    // against for its own, different purpose) would never match and
+    // would silently fail to exclude anything.
+    const myNewNominationRecords = newNominationRecords.filter(n => n.NominatorName !== CURRENT_USER.displayName);
 
-    const anythingToNotify = myNewRequests.length || myNewConcerns.length || myNewSuggestions.length || myWithdrawnConcerns.length || newEvaluationRecords.length || newDiscResponseRecords.length || newNominationRecords.length || contentEditedRequests.length || contentEditedConcerns.length;
+    const anythingToNotify = myNewRequests.length || myNewConcerns.length || myNewSuggestions.length || myWithdrawnConcerns.length || newEvaluationRecords.length || newDiscResponseRecords.length || myNewNominationRecords.length || contentEditedRequests.length || contentEditedConcerns.length;
     if(anythingToNotify){
       if(soundAlertsEnabled()) playAlertTone();
       if(myNewRequests.length){
@@ -3422,9 +3437,9 @@ async function startMgmtPolling(){
         const detail = newDiscResponseRecords.length===1 ? `${newDiscResponseRecords[0].EmployeeName} — ${newDiscResponseRecords[0].CaseNumber||'case'}` : newDiscResponseRecords.map(d=>d.EmployeeName).join(', ');
         showMgmtToast('📁', newDiscResponseRecords.length===1?'New Employee Response':`${newDiscResponseRecords.length} New Employee Responses`, `${detail} — tap to view`, 'mgmt-disciplinary');
       }
-      if(newNominationRecords.length){
-        const detail = newNominationRecords.length===1 ? `${newNominationRecords[0].NomineeName} — ${newNominationRecords[0].AwardCategory}` : newNominationRecords.map(n=>n.NomineeName).join(', ');
-        showMgmtToast('🌟', newNominationRecords.length===1?'New Award Nomination':`${newNominationRecords.length} New Award Nominations`, `${detail} — tap to view`, 'mgmt-nominations');
+      if(myNewNominationRecords.length){
+        const detail = myNewNominationRecords.length===1 ? `${myNewNominationRecords[0].NomineeName} — ${myNewNominationRecords[0].AwardCategory}` : myNewNominationRecords.map(n=>n.NomineeName).join(', ');
+        showMgmtToast('🌟', myNewNominationRecords.length===1?'New Award Nomination':`${myNewNominationRecords.length} New Award Nominations`, `${detail} — tap to view`, 'mgmt-nominations');
       }
     }
     renderNav();
