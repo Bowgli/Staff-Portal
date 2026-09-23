@@ -3322,8 +3322,25 @@ async function checkProbationMilestones(){
   });
   // Persist AFTER toasting — if this fails partway, the worst case is
   // a milestone gets announced again next session, never silently lost.
+  //
+  // keepalive:true (not the normal apiPost() pipeline) for the same
+  // reason it was needed for the Award Nominations "viewed" tracking —
+  // finishLogin() runs this on BOTH a fresh manual login AND on
+  // restoreSession() (a page refresh while already logged in). If an
+  // admin refreshes shortly after seeing a milestone toast, the
+  // browser can cancel this write mid-flight before it reaches the
+  // server; the next check then still sees the milestone as
+  // "not yet sent" and re-announces it — exactly the duplicate-toast
+  // symptom this fixes. No response is read here (always fire-and-
+  // forget), so a raw fetch instead of apiPost() changes nothing else.
   for(const {employee, milestone} of due){
-    try{ await apiPost('markProbationMilestoneSent', {name: employee.name, milestone: String(milestone)}); }catch(err){}
+    try{
+      await fetch(SHEET_API_URL, {
+        method: "POST",
+        body: JSON.stringify({action: 'markProbationMilestoneSent', name: employee.name, milestone: String(milestone)}),
+        keepalive: true
+      });
+    } catch(err){}
     let sentArr = [];
     try{ sentArr = JSON.parse(employee.probationMilestonesSent || '[]'); }catch(err){ sentArr = []; }
     if(sentArr.indexOf(String(milestone)) === -1) sentArr.push(String(milestone));
