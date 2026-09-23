@@ -510,6 +510,26 @@
   </div>
 </div>
 
+<!-- Phase 2D — View Nomination. Read-only detail modal, copied from
+     perfDetailModal's structure (see the Phase 2D audit doc). No
+     Actions span — this modal has no admin actions of any kind. -->
+<div class="modal-overlay" id="nomDetailModal">
+  <div class="modal-box modal-box-tall" style="max-width:600px;">
+    <div class="modal-header-row">
+      <div>
+        <h3>View Nomination</h3>
+        <p class="muted" id="nomDetailSub" style="margin:2px 0 0; font-size:12.5px;"></p>
+      </div>
+      <button class="modal-close-x" onclick="closeNominationDetailModal()" aria-label="Close">×</button>
+    </div>
+    <div class="modal-body-scroll" id="nomDetailBody"></div>
+    <div class="modal-btns">
+      <button class="btn ghost" onclick="closeNominationDetailModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+
 <div class="modal-overlay" id="mgmtPerfSummaryModal">
   <div class="modal-box modal-box-tall" style="max-width:600px;">
     <div class="modal-header-row">
@@ -7075,6 +7095,40 @@ function closePerfDetailModal(){
   document.getElementById('perfDetailModal').classList.remove('active');
 }
 
+// Phase 2D — View Nomination (see the Phase 2D audit doc). Read-only —
+// no edit, no delete, no archive, no finalize/winner logic of any kind.
+// ALL_NOMINATIONS is already the complete dataset for whoever can reach
+// this page (unlike Evaluations, there's no employee-facing fallback
+// dataset to also check), so this is a single lookup, not a fallback
+// chain — and it's looked up by the nomination's own server-generated
+// ID (never a filtered-array position), so it always opens the exact
+// record the row belongs to, regardless of which Employee/Category/
+// Month/Year/Search filters produced that row.
+function openNominationDetail(id){
+  const n = ALL_NOMINATIONS.find(x=>x.ID===id);
+  if(!n) return;
+  document.getElementById('nomDetailSub').textContent = `${n.NomineeName} — ${n.AwardCategory}`;
+  document.getElementById('nomDetailBody').innerHTML = `
+    <p style="font-weight:600; margin-bottom:2px;">Nominee</p>
+    <p class="muted" style="margin-bottom:14px;">${n.NomineeName}</p>
+    <p style="font-weight:600; margin-bottom:2px;">Award Category</p>
+    <p class="muted" style="margin-bottom:14px;">${n.AwardCategory}</p>
+    <p style="font-weight:600; margin-bottom:2px;">Recognition Period</p>
+    <p class="muted" style="margin-bottom:14px;">${n.Month||''} ${n.Year||''}</p>
+    <p style="font-weight:600; margin-bottom:2px;">Nominated By</p>
+    <p class="muted" style="margin-bottom:14px;">${n.NominatorName}</p>
+    <p style="font-weight:600; margin-bottom:2px;">Date Submitted</p>
+    <p class="muted" style="margin-bottom:14px;">${fmtDateTime(n.DateSubmitted)}</p>
+    <p style="font-weight:600; margin-bottom:2px;">Reason</p>
+    <p class="muted" style="white-space:pre-wrap; margin-bottom:${n.SupportingDetails ? '14px' : '0'};">${n.Reason}</p>
+    ${n.SupportingDetails ? `<p style="font-weight:600; margin-bottom:2px;">Supporting Details</p><p class="muted" style="white-space:pre-wrap; margin-bottom:0;">${n.SupportingDetails}</p>` : ''}`;
+  document.getElementById('nomDetailModal').classList.add('active');
+  document.getElementById('nomDetailBody').scrollTop = 0; // always land at the top, not wherever it was left scrolled to from a previous open
+}
+function closeNominationDetailModal(){
+  document.getElementById('nomDetailModal').classList.remove('active');
+}
+
 // State for the currently-open Management Performance Summary — set
 // by openMgmtPerfSummary(), read by printMgmtPerfSummary() so the
 // print button doesn't need its own copy of the lookup logic.
@@ -10019,9 +10073,9 @@ const BUILDERS = {
       <h3><span class="ic">🌟</span> Award Nominations</h3>
       <p class="muted" style="margin-bottom:12px;">Employee-submitted nominations for recognition awards.</p>
       <table class="mobile-card-table">
-        <thead><tr><th>Nominee</th><th>Category</th><th>Period</th><th>Reason</th><th>Nominated By</th><th>Date Submitted</th></tr></thead>
+        <thead><tr><th>Nominee</th><th>Category</th><th>Period</th><th>Reason</th><th>Nominated By</th><th>Date Submitted</th><th></th></tr></thead>
         <tbody>
-        ${filtered.map(n=>`<tr><td data-label="Nominee">${n.NomineeName}</td><td data-label="Category">${n.AwardCategory}</td><td class="muted" data-label="Period">${n.Month||''} ${n.Year||''}</td><td class="muted" data-label="Reason" style="white-space:pre-wrap;">${n.Reason}${n.SupportingDetails ? `<br><span style="font-size:11px;">${n.SupportingDetails}</span>` : ''}</td><td data-label="Nominated By">${n.NominatorName}</td><td data-label="Date Submitted">${fmtDateTime(n.DateSubmitted)}</td></tr>`).join('') || `<tr><td colspan="6" class="muted">No matching nominations.</td></tr>`}
+        ${filtered.map(n=>`<tr><td data-label="Nominee">${n.NomineeName}</td><td data-label="Category">${n.AwardCategory}</td><td class="muted" data-label="Period">${n.Month||''} ${n.Year||''}</td><td class="muted" data-label="Reason" style="white-space:pre-wrap;">${n.Reason}${n.SupportingDetails ? `<br><span style="font-size:11px;">${n.SupportingDetails}</span>` : ''}</td><td data-label="Nominated By">${n.NominatorName}</td><td data-label="Date Submitted">${fmtDateTime(n.DateSubmitted)}</td><td data-label=""><button class="btn ghost auto" onclick="openNominationDetail('${n.ID}')">View</button></td></tr>`).join('') || `<tr><td colspan="7" class="muted">No matching nominations.</td></tr>`}
         </tbody>
       </table>
     </div>`;
