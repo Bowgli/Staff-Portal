@@ -1259,8 +1259,16 @@ let employeesSearchQuery = '';
 let reqFilter = { employee:'', type:'All', status:'All', dateFrom:'', dateTo:'' };
 let concernFilter = { employee:'', venue:'All', topic:'All', status:'All', dateFrom:'', dateTo:'' };
 let accountsSearchQuery = '';
-let nomFilterMonth = 'All';
-let nomFilterYear = 'All';
+// Defaults to the current month/year, so the page opens already
+// showing "what's happening now" rather than all-time data — matches
+// Phase 2A's own This Month/This Year definition of "current"
+// (new Date(), not a stored/cached value). Confirmed safe for this
+// page specifically (see the Filter Reorder + Defaults audit doc) —
+// Award Nominations' filtered computation has no branching based on
+// whether a period is selected, unlike Performance Report's, so this
+// just pre-narrows the same computation that would run anyway.
+let nomFilterMonth = new Date().toLocaleString('en-US', { month: 'long' });
+let nomFilterYear = String(new Date().getFullYear());
 let nomFilterCategory = 'All';
 let nomFilterEmployee = 'All'; // Phase 2C — Nominee/Employee filter, same shape as Category/Month/Year
 let nomSearchQuery = ''; // Phase 2C — searches Nominee + Award Category only (approved scope; Reason deliberately excluded)
@@ -8748,7 +8756,6 @@ const BUILDERS = {
     const myDisc = ALL_DISCIPLINARY_RECORDS.filter(d=>d.EmployeeName===name && d.Status !== 'Draft')
       .concat(DISCIPLINARY_ARCHIVE_BY_EMPLOYEE_CACHE[name] || []);
     const myRecognition = MOCK.recognition.filter(r=>r.employeeName===name);
-    const myNominations = ALL_NOMINATIONS.filter(n=>n.NomineeName===name);
 
     const tabs = [
       {id:'performance', ic:'📊', label:'Performance'},
@@ -8876,12 +8883,6 @@ const BUILDERS = {
             <button class="btn ghost auto" style="padding:5px 10px;" onclick="openRecognitionDetail('${r.id}', 'mgmt-employee-profile', 'Employee Profile')">👁 View Details</button>
           </div>`;
         }).join('') : `<p class="muted">No records available</p>`}
-        <h3 style="margin-top:20px;">Award Nominations</h3>
-        ${myNominations.length ? `
-        <table>
-          <tr><th>Category</th><th>Period</th><th>Reason</th><th>Nominated By</th></tr>
-          ${myNominations.map(n=>`<tr><td>${n.AwardCategory}</td><td class="muted">${n.Month||''} ${n.Year||''}</td><td class="muted">${n.Reason}</td><td>${n.NominatorName}</td></tr>`).join('')}
-        </table>` : `<p class="muted">No records available</p>`}
       ` : ''}
     </div>`;
   },
@@ -9180,8 +9181,6 @@ const BUILDERS = {
       <div class="card stat-card"><div class="num" style="color:var(--teal);">${excellentCount}</div><div class="label">Excellent Performers</div></div>
       <div class="card stat-card"><div class="num" style="color:var(--red);">${needsImprovementCount}</div><div class="label">Staff Needing Improvement</div></div>
     </div>
-    ${staffForImprovementSection(baseRows)}
-    <div style="margin-bottom:16px;">${renderRankedEvalCard('🏆', 'Performing Staff — All Evaluated', baseRows.filter(r=>r.e).map(r=>[r.name, Number(r.e.AverageScore)]).sort((a,b)=>b[1]-a[1]), 'var(--teal)')}</div>
     <div class="card" style="margin-bottom:16px;">
       <h3>Filter by Period &amp; Position</h3>
       <div class="grid grid-4">
@@ -9211,6 +9210,8 @@ const BUILDERS = {
         </div>
       </div>
     </div>
+    ${staffForImprovementSection(baseRows)}
+    <div style="margin-bottom:16px;">${renderRankedEvalCard('🏆', 'Performing Staff — All Evaluated', baseRows.filter(r=>r.e).map(r=>[r.name, Number(r.e.AverageScore)]).sort((a,b)=>b[1]-a[1]), 'var(--teal)')}</div>
     <div class="card table-scroll">
       <h3><span class="ic">📊</span> Evaluation Report — All Staff</h3>
       <p class="muted" style="margin-bottom:12px;">${filtered ? 'Showing evaluations for '+perfFilterMonth+' '+perfFilterYear+'.' : "Each employee's most recent monthly evaluation."}</p>
@@ -10293,7 +10294,6 @@ const BUILDERS = {
         </tbody>
       </table>
     </div>
-    ${topNominatedChart(filtered)}
     <div class="card" style="margin-bottom:16px;">
       <h3>Filter by Employee, Category &amp; Period</h3>
       <div class="grid grid-5">
@@ -10322,7 +10322,7 @@ const BUILDERS = {
           <label>Year</label>
           <select onchange="setNomFilter('year', this.value)">
             <option value="All" ${nomFilterYear==='All'?'selected':''}>All Years</option>
-            ${years.map(y=>`<option ${nomFilterYear===y?'selected':''}>${y}</option>`).join('')}
+            ${years.map(y=>`<option ${String(nomFilterYear)===String(y)?'selected':''}>${y}</option>`).join('')}
           </select>
         </div>
         <div style="display:flex; align-items:flex-end;">
@@ -10334,6 +10334,7 @@ const BUILDERS = {
         <input type="text" data-filter="nomSearch" placeholder="🔍 Search by nominee or award category…" value="${nomSearchQuery}" oninput="setNomSearch(this.value)">
       </div>
     </div>
+    ${topNominatedChart(filtered)}
 
     <div class="card table-scroll">
       <h3><span class="ic">🌟</span> Award Nominations</h3>
