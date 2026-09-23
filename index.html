@@ -524,6 +524,7 @@
     </div>
     <div class="modal-body-scroll" id="nomDetailBody"></div>
     <div class="modal-btns">
+      <span id="nomDetailActions"></span>
       <button class="btn ghost" onclick="closeNominationDetailModal()">Close</button>
     </div>
   </div>
@@ -544,6 +545,7 @@
     </div>
     <div class="modal-body-scroll" id="nomSummaryBody"></div>
     <div class="modal-btns">
+      <button class="btn ghost" onclick="printNominationSummary()">🖨️ Print</button>
       <button class="btn ghost" onclick="closeNominationSummaryModal()">Close</button>
     </div>
   </div>
@@ -1064,6 +1066,7 @@ async function archiveRecordNow(module, id, el){
     disciplinary: "Archive Case?\n\nThis disciplinary case has been marked as Closed.\n\nArchiving will remove it from the active list, but the record will remain safely stored in Archived Cases — and will still appear in the employee's full profile history and in Disciplinary Summary totals.",
     announcement: "Archive Announcement?\n\nArchiving will remove it from the active History list, but the record will remain safely stored in Archived Announcements for authorized Admin viewing.",
     evaluation: "Archive Evaluation?\n\nArchiving will remove this evaluation from the active list, but it will remain safely stored in Archived Evaluations — and will still count toward the employee's monthly Performance Report average.",
+    nomination: "Archive Nomination?\n\nArchiving will remove this nomination from the active list, but it will remain safely stored in Archived Nominations for authorized Admin viewing, searching, and restoring.",
   };
   await confirmAndDelete(el, messages[module] || "Archive this record?", async ()=>{
     const r = await apiPostRetrying('archiveRecord', {module, id, username: CURRENT_USER.username});
@@ -1089,6 +1092,16 @@ async function archiveRecordNow(module, id, el){
       renderView('mgmt-disciplinary');
     }
     if(module === 'announcement'){ ALL_ANNOUNCEMENTS = ALL_ANNOUNCEMENTS.filter(a=>a.ID!==id); announcementArchiveData = null; renderView('mgmt-announcements'); }
+    if(module === 'nomination'){
+      ALL_NOMINATIONS = ALL_NOMINATIONS.filter(n=>n.ID!==id);
+      nominationArchiveData = null;
+      // Same reason as evaluation below — nomDetailModal is the SAME
+      // shared modal opened from either the live table or (once
+      // archived) the Archived Nominations page, so re-render whatever
+      // page is actually open rather than a single hard-coded one.
+      closeNominationDetailModal();
+      renderView(activeView);
+    }
     if(module === 'evaluation'){
       const rec = ALL_EVALUATIONS.find(ev=>ev.ID===id);
       ALL_EVALUATIONS = ALL_EVALUATIONS.filter(ev=>ev.ID!==id);
@@ -1136,6 +1149,7 @@ async function restoreRecordNow(module, id, el){
       }
     }
     if(module === 'announcement'){ announcementArchiveData = null; }
+    if(module === 'nomination'){ nominationArchiveData = null; }
     if(module === 'evaluation'){
       const restoredRec = (evaluationArchiveData || []).find(ev=>ev.ID===id);
       evaluationArchiveData = null;
@@ -1146,7 +1160,7 @@ async function restoreRecordNow(module, id, el){
       }
     }
     await loadRemoteData(); // the restored record needs to come back through the normal live-data load to reappear correctly
-    renderView(module === 'concern' ? 'mgmt-concerns' : module === 'request' ? 'mgmt-requests' : module === 'disciplinary' ? 'mgmt-disciplinary' : module === 'announcement' ? 'mgmt-announcements' : module === 'evaluation' ? 'mgmt-evaluations-archived' : 'mgmt-suggestions');
+    renderView(module === 'concern' ? 'mgmt-concerns' : module === 'request' ? 'mgmt-requests' : module === 'disciplinary' ? 'mgmt-disciplinary' : module === 'announcement' ? 'mgmt-announcements' : module === 'evaluation' ? 'mgmt-evaluations-archived' : module === 'nomination' ? 'mgmt-nominations-archived' : 'mgmt-suggestions');
   });
 }
 
@@ -5175,6 +5189,8 @@ let disciplinaryArchiveShown = false, disciplinaryArchiveData = null, disciplina
 let announcementArchiveShown = false, announcementArchiveData = null, announcementArchiveLoading = false;
 let evaluationArchiveShown = false, evaluationArchiveData = null, evaluationArchiveLoading = false;
 let evaluationArchiveSearch = ''; // search box on the dedicated Archived Evaluations page
+let nominationArchiveShown = false, nominationArchiveData = null, nominationArchiveLoading = false;
+let nominationArchiveSearch = ''; // search box on the dedicated Archived Nominations page
 // Employee Profile and Disciplinary Summary each need only a SLICE
 // of the disciplinary archive (one employee's cases, or one year's
 // cases) rather than the whole thing — kept as separate, smaller
@@ -5315,6 +5331,10 @@ function setEvaluationArchiveSearch(v){
   evaluationArchiveSearch = v;
   renderView('mgmt-evaluations-archived');
 }
+function setNominationArchiveSearch(v){
+  nominationArchiveSearch = v;
+  renderView('mgmt-nominations-archived');
+}
 async function openSuggestionsArchivedPage(){
   if(!isFullAdmin()){ alert("Archive access is limited to Admin accounts."); return; }
   try{
@@ -5444,6 +5464,51 @@ async function ensureEvaluationArchiveDataLoaded(){
     evaluationArchiveDataLoading = false;
   }
   if(activeView === 'mgmt-evaluations-archived') renderView(activeView);
+}
+// Nomination Archive — same shape as openEvaluationArchivedPage/
+// ensureEvaluationArchiveDataLoaded above, sorted by DateSubmitted
+// (Nominations' actual date field — there is no plain "Date" field on
+// a nomination the way Evaluations has one).
+async function openNominationArchivedPage(){
+  if(!isFullAdmin()){ alert("Archive access is limited to Admin accounts."); return; }
+  try{
+    if(nominationArchiveData === null){
+      nominationArchiveLoading = true;
+      renderView('mgmt-nominations-archived');
+      const raw = await safeApiGet('nominationArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), null, undefined, undefined, ARCHIVE_TIMEOUT_MS);
+      if(!Array.isArray(raw)){
+        console.error('nominationArchive did not return a list:', raw);
+        alert((raw && raw.error) || "Couldn't load Archived Nominations — unexpected response from the server.");
+        nominationArchiveData = [];
+      } else {
+        nominationArchiveData = raw.map(d => Object.assign({}, d, {archived:true}))
+          .sort((a,b)=> new Date(b.DateSubmitted) - new Date(a.DateSubmitted)); // newest first
+      }
+    }
+  } catch(e){
+    console.error('openNominationArchivedPage failed:', e);
+    alert("Couldn't load Archived Nominations — please try again.");
+  } finally {
+    nominationArchiveLoading = false;
+    renderView('mgmt-nominations-archived');
+  }
+}
+let nominationArchiveDataLoading = false;
+// Same refresh-safety fix as ensureEvaluationArchiveDataLoaded above.
+async function ensureNominationArchiveDataLoaded(){
+  if(nominationArchiveData !== null || nominationArchiveDataLoading) return;
+  nominationArchiveDataLoading = true;
+  try{
+    const raw = await safeApiGet('nominationArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), null, undefined, undefined, ARCHIVE_TIMEOUT_MS);
+    nominationArchiveData = Array.isArray(raw)
+      ? raw.map(a => Object.assign({}, a, {archived:true})).sort((a,b)=> new Date(b.DateSubmitted) - new Date(a.DateSubmitted))
+      : [];
+  } catch(e){
+    console.warn('ensureNominationArchiveDataLoaded failed:', e.message || e);
+  } finally {
+    nominationArchiveDataLoading = false;
+  }
+  if(activeView === 'mgmt-nominations-archived') renderView(activeView);
 }
 // Same reasoning as ensureDisciplinaryArchiveDataLoaded() above —
 // fetches and caches the full announcement archive WITHOUT
@@ -6557,6 +6622,7 @@ const TITLES = {
   "mgmt-suggestions-archived":["Archived Suggestions","Reviewed suggestions moved out of the active list"],
   "mgmt-disciplinary-archived":["Archived Cases","Closed disciplinary cases moved out of the active list"],
   "mgmt-evaluations-archived":["Archived Evaluations","Older evaluation records moved out of the active list"],
+  "mgmt-nominations-archived":["Archived Nominations","Older nomination records moved out of the active list"],
   "mgmt-announcements-archived":["Archived Announcements","Announcements moved out of the active History list"],
   "archived-suggestion-detail":["Archived Suggestion","Full details — read-only"],
   "mgmt-recognition":["Recognition Management","Issue awards and recognitions"],
@@ -7140,7 +7206,13 @@ function closePerfDetailModal(){
 // record the row belongs to, regardless of which Employee/Category/
 // Month/Year/Search filters produced that row.
 function openNominationDetail(id){
-  const n = ALL_NOMINATIONS.find(x=>x.ID===id);
+  // Archive fallback — mirrors openPerfDetail's lookup chain (see the
+  // "Archive, Print & Notification Audit" doc, section D). ALL_NOMINATIONS
+  // is checked first since it's already the complete active dataset for
+  // whoever can reach this page; nominationArchiveData is only checked
+  // if not found there, i.e. this same function now serves BOTH the
+  // live table and the Archived Nominations page.
+  const n = ALL_NOMINATIONS.find(x=>x.ID===id) || (nominationArchiveData||[]).find(x=>x.ID===id);
   if(!n) return;
   document.getElementById('nomDetailSub').textContent = `${n.NomineeName} — ${n.AwardCategory}`;
   document.getElementById('nomDetailBody').innerHTML = `
@@ -7158,6 +7230,12 @@ function openNominationDetail(id){
     <p class="muted" style="white-space:pre-wrap; margin-bottom:${n.SupportingDetails ? '14px' : '0'};">${n.Reason}</p>
     ${n.SupportingDetails ? `<p style="font-weight:600; margin-bottom:2px;">Supporting Details</p><p class="muted" style="white-space:pre-wrap; margin-bottom:0;">${n.SupportingDetails}</p>` : ''}`;
   document.getElementById('nomDetailModal').classList.add('active');
+  // Archive/Restore — same conditional logic as perfDetailActions:
+  // Admin-only, and a record already archived shows Restore instead of
+  // Archive (never both, never neither for an eligible viewer).
+  document.getElementById('nomDetailActions').innerHTML = !isFullAdmin() ? '' : n.archived
+    ? `<button class="btn ghost" style="margin-right:8px;" onclick="restoreRecordNow('nomination','${n.ID}', this)">↩️ Restore</button>`
+    : `<button class="btn ghost" style="margin-right:8px;" onclick="archiveRecordNow('nomination','${n.ID}', this)">📦 Archive</button>`;
   document.getElementById('nomDetailBody').scrollTop = 0; // always land at the top, not wherever it was left scrolled to from a previous open
 }
 function closeNominationDetailModal(){
@@ -7188,6 +7266,7 @@ function openNominationSummary(id){
   const clicked = ALL_NOMINATIONS.find(x=>x.ID===id);
   if(!clicked) return;
   const { NomineeName: employeeName, Month: month, Year: year } = clicked;
+  nominationSummaryCurrent = {employeeName, month, year}; // read by printNominationSummary() below, so Print doesn't need its own copy of the lookup logic
   const group = ALL_NOMINATIONS.filter(n=>n.NomineeName===employeeName && n.Month===month && String(n.Year)===String(year));
   const totalNominations = group.length;
   const categoriesSeen = Array.from(new Set(group.map(n=>n.AwardCategory)));
@@ -7215,6 +7294,75 @@ function openNominationSummary(id){
 }
 function closeNominationSummaryModal(){
   document.getElementById('nomSummaryModal').classList.remove('active');
+}
+
+// State for the currently-open Nomination Summary — set by
+// openNominationSummary(), read by printNominationSummary() so the
+// print button doesn't need its own copy of the lookup/grouping logic.
+let nominationSummaryCurrent = null;
+// Same dynamic-container + @media print pattern as
+// printMgmtPerfSummary() above. Recomputes the complete Employee +
+// Recognition Month + Recognition Year group fresh from ALL_NOMINATIONS
+// using ONLY the three identifying values stored in
+// nominationSummaryCurrent — it never reads `filtered`/nomFilterEmployee/
+// nomFilterCategory/nomFilterMonth/nomFilterYear/nomSearchQuery, so the
+// printed summary is unaffected by whatever page filter was active when
+// the row was originally clicked, matching the same locked-in rule the
+// on-screen modal already follows. Nomination statistics only — no
+// winner, rank, placement, or award-result content of any kind.
+function printNominationSummary(){
+  if(!nominationSummaryCurrent){ alert("Nothing to print yet — please wait for the summary to finish loading."); return; }
+  const {employeeName, month, year} = nominationSummaryCurrent;
+  const group = ALL_NOMINATIONS.filter(n=>n.NomineeName===employeeName && n.Month===month && String(n.Year)===String(year));
+  const categoriesSeen = Array.from(new Set(group.map(n=>n.AwardCategory)));
+  const categoryBreakdown = categoriesSeen.map(c=>({ category:c, count: group.filter(n=>n.AwardCategory===c).length }));
+  const activity = group.slice().sort((a,b)=>new Date(b.DateSubmitted)-new Date(a.DateSubmitted));
+
+  const formHtml = `
+    <div style="font-family:Georgia,serif; color:#000; line-height:1.5 !important;">
+      <p style="text-align:center; font-style:italic; font-size:19px !important; font-weight:700; margin:0 0 22px;">NOMINATION SUMMARY</p>
+      <div style="border:1.5px solid #000 !important; padding:16px 20px !important; margin-bottom:16px;">
+        <table style="width:100%; border:none !important; font-size:12px !important; border-collapse:collapse;">
+          <tr><td style="padding:4px 0;"><b>Employee:</b> ${employeeName}</td><td style="padding:4px 0;"><b>Recognition Period:</b> ${month} ${year}</td></tr>
+          <tr><td style="padding:4px 0;"><b>Total Nominations:</b> ${group.length}</td><td style="padding:4px 0;"><b>Categories:</b> ${categoriesSeen.length}</td></tr>
+        </table>
+      </div>
+      <p style="font-weight:700; margin:0 0 10px;">Category Breakdown</p>
+      <table style="width:100%; border-collapse:collapse; font-size:12.5px; margin-bottom:16px;">
+        <tr><td style="padding:4px 0; border-bottom:1px solid #000;"><b>Category</b></td><td style="padding:4px 0; border-bottom:1px solid #000; text-align:right;"><b>Nominations</b></td></tr>
+        ${categoryBreakdown.map(c=>`<tr><td style="padding:4px 0;">${c.category}</td><td style="padding:4px 0; text-align:right;">${c.count}</td></tr>`).join('')}
+      </table>
+      <p style="font-weight:700; margin:0 0 10px;">Nomination Activity</p>
+      <table style="width:100%; border-collapse:collapse; font-size:12.5px;">
+        <tr><td style="padding:4px 0; border-bottom:1px solid #000;"><b>Date</b></td><td style="padding:4px 0; border-bottom:1px solid #000;"><b>Category</b></td><td style="padding:4px 0; border-bottom:1px solid #000;"><b>Nominated By</b></td></tr>
+        ${activity.map(n=>`<tr><td style="padding:4px 0;">${fmtDateTime(n.DateSubmitted)}</td><td style="padding:4px 0;">${n.AwardCategory}</td><td style="padding:4px 0;">${n.NominatorName}</td></tr>`).join('')}
+      </table>
+    </div>`;
+
+  const container = document.createElement('div');
+  container.id = 'nominationSummaryPrintContainer';
+  container.innerHTML = formHtml;
+  document.body.appendChild(container);
+
+  const pageStyle = document.createElement('style');
+  pageStyle.id = 'nominationSummaryPrintStyle';
+  pageStyle.textContent = `
+    @page { size: A4 portrait; margin: 18mm 16mm; }
+    @media print {
+      body > *:not(#nominationSummaryPrintContainer) { display: none !important; }
+      #nominationSummaryPrintContainer { display: block !important; }
+    }
+    @media screen { #nominationSummaryPrintContainer { display: none; } }
+  `;
+  document.head.appendChild(pageStyle);
+
+  const cleanup = () => {
+    container.remove();
+    pageStyle.remove();
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  window.print();
 }
 
 // State for the currently-open Management Performance Summary — set
@@ -9939,6 +10087,33 @@ const BUILDERS = {
       </table>`}
     </div>`;
   },
+  "mgmt-nominations-archived": ()=>{
+    if(!isFullAdmin()) return `<div class="card"><p class="muted">🔒 Archive access is limited to Admin accounts.</p></div>`;
+    if(nominationArchiveData === null) ensureNominationArchiveDataLoaded();
+    const q = nominationArchiveSearch.toLowerCase();
+    const filtered = (nominationArchiveData || []).filter(n => !q || (n.NomineeName||'').toLowerCase().includes(q) || (n.AwardCategory||'').toLowerCase().includes(q));
+    return `
+    <div class="no-print" style="margin-bottom:16px;">
+      <button class="btn ghost auto" onclick="renderView('mgmt-nominations')">← Back to Award Nominations</button>
+    </div>
+    <div class="card">
+      <h3><span class="ic">📁</span> All Archived Nominations</h3>
+      <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Older nomination records moved out of the active list — still fully viewable, searchable, and restorable.</p>
+      <input type="text" placeholder="🔍 Search by nominee or category..." value="${nominationArchiveSearch}" oninput="setNominationArchiveSearch(this.value)" style="margin-bottom:12px;">
+      ${(nominationArchiveLoading || nominationArchiveDataLoading) ? `<p class="muted">Loading archived nominations…</p>` : `
+      <table class="mobile-card-table">
+        <thead><tr><th>Nominee</th><th>Category</th><th>Period</th><th></th></tr></thead>
+        <tbody>
+        ${filtered.map(n=>`<tr>
+          <td data-label="Nominee">${n.NomineeName}</td>
+          <td data-label="Category">${n.AwardCategory}</td>
+          <td class="muted" data-label="Period">${n.Month||''} ${n.Year||''}</td>
+          <td data-label="Actions"><button class="btn info auto" style="padding:5px 10px; margin-right:6px;" onclick="openNominationDetail('${n.ID}')">👁️ View</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="restoreRecordNow('nomination','${n.ID}', this)">↩️ Restore</button></td>
+        </tr>`).join('') || `<tr><td colspan="4" class="muted">No archived nominations${nominationArchiveSearch?' match that search':' yet'}.</td></tr>`}
+        </tbody>
+      </table>`}
+    </div>`;
+  },
   "mgmt-announcements-archived": ()=>{
     if(!isFullAdmin()) return `<div class="card"><p class="muted">🔒 Archive access is limited to Admin accounts.</p></div>`;
     if(announcementArchiveData === null) ensureAnnouncementArchiveDataLoaded();
@@ -10098,6 +10273,9 @@ const BUILDERS = {
       });
 
     return `
+    ${isFullAdmin() ? `<div class="no-print" style="margin-bottom:16px;">
+      <button class="btn ghost auto" onclick="openNominationArchivedPage()">📁 Archived Nominations</button>
+    </div>` : ''}
     <div class="grid grid-5" style="margin-bottom:16px;">
       <div class="card stat-card"><div class="num">${totalNominations}</div><div class="label">Total Nominations</div></div>
       <div class="card stat-card"><div class="num">${employeesNominatedCount}</div><div class="label">Employees Nominated</div></div>
