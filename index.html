@@ -529,6 +529,26 @@
   </div>
 </div>
 
+<!-- View Summary — see "View Summary Enhancement Audit" doc. Read-only,
+     complete Employee + Recognition Month + Recognition Year summary,
+     deliberately independent of the page's active filters (locked-in
+     design decision — see openNominationSummary() below). -->
+<div class="modal-overlay" id="nomSummaryModal">
+  <div class="modal-box modal-box-tall" style="max-width:600px;">
+    <div class="modal-header-row">
+      <div>
+        <h3>Nomination Summary</h3>
+        <p class="muted" id="nomSummarySub" style="margin:2px 0 0; font-size:12.5px;"></p>
+      </div>
+      <button class="modal-close-x" onclick="closeNominationSummaryModal()" aria-label="Close">×</button>
+    </div>
+    <div class="modal-body-scroll" id="nomSummaryBody"></div>
+    <div class="modal-btns">
+      <button class="btn ghost" onclick="closeNominationSummaryModal()">Close</button>
+    </div>
+  </div>
+</div>
+
 
 <div class="modal-overlay" id="mgmtPerfSummaryModal">
   <div class="modal-box modal-box-tall" style="max-width:600px;">
@@ -7129,6 +7149,59 @@ function closeNominationDetailModal(){
   document.getElementById('nomDetailModal').classList.remove('active');
 }
 
+// View Summary — see the "View Summary Enhancement Audit" doc for the
+// full design reasoning. LOCKED-IN DECISION: this summary is the
+// COMPLETE Employee + Recognition Month + Recognition Year picture,
+// deliberately ignoring whatever Employee/Category/Month/Year/Search
+// filter is currently active on the page — the filter's only job is
+// helping the Admin locate a row to click; it plays no part in what
+// the resulting summary contains. This matches the existing
+// openMgmtPerfSummary() precedent (Performance Report), which computes
+// from the complete evaluation dataset the same way, not from that
+// page's own filtered rows.
+//
+// Identification is ID-first, not name-first: the clicked nomination's
+// own unique ID is looked up in ALL_NOMINATIONS (never a filtered-array
+// index or visible row position) to read off its NomineeName/Month/Year
+// — those three values, not the ID itself, are then used to gather
+// every nomination matching that employee+period from the complete
+// ALL_NOMINATIONS array. Passing the ID alone (rather than the
+// employee's name, as openMgmtPerfSummary's own signature does) also
+// avoids needing the apostrophe-escaping that pattern requires for a
+// name containing a quote.
+function openNominationSummary(id){
+  const clicked = ALL_NOMINATIONS.find(x=>x.ID===id);
+  if(!clicked) return;
+  const { NomineeName: employeeName, Month: month, Year: year } = clicked;
+  const group = ALL_NOMINATIONS.filter(n=>n.NomineeName===employeeName && n.Month===month && String(n.Year)===String(year));
+  const totalNominations = group.length;
+  const categoriesSeen = Array.from(new Set(group.map(n=>n.AwardCategory)));
+  const categoryBreakdown = categoriesSeen.map(c=>({ category:c, count: group.filter(n=>n.AwardCategory===c).length }));
+  const activity = group.slice().sort((a,b)=>new Date(b.DateSubmitted)-new Date(a.DateSubmitted));
+
+  document.getElementById('nomSummarySub').textContent = `${employeeName} — ${month} ${year}`;
+  document.getElementById('nomSummaryBody').innerHTML = `
+    <div class="grid grid-2" style="margin-bottom:14px;">
+      <div class="card stat-card"><div class="num">${totalNominations}</div><div class="label">Total Nominations</div></div>
+      <div class="card stat-card"><div class="num">${categoriesSeen.length}</div><div class="label">Categories</div></div>
+    </div>
+    <p style="font-weight:600; margin-bottom:8px;">Category Breakdown</p>
+    <table style="margin-bottom:14px;">
+      <tr><th>Category</th><th>Nominations</th></tr>
+      ${categoryBreakdown.map(c=>`<tr><td>${c.category}</td><td class="mono">${c.count}</td></tr>`).join('')}
+    </table>
+    <p style="font-weight:600; margin-bottom:8px;">Nomination Activity</p>
+    <table>
+      <tr><th>Date</th><th>Category</th><th>Nominated By</th></tr>
+      ${activity.map(n=>`<tr><td class="muted">${fmtDateTime(n.DateSubmitted)}</td><td>${n.AwardCategory}</td><td>${n.NominatorName}</td></tr>`).join('')}
+    </table>`;
+  document.getElementById('nomSummaryModal').classList.add('active');
+  document.getElementById('nomSummaryBody').scrollTop = 0; // always land at the top, not wherever it was left scrolled to from a previous open
+}
+function closeNominationSummaryModal(){
+  document.getElementById('nomSummaryModal').classList.remove('active');
+}
+
 // State for the currently-open Management Performance Summary — set
 // by openMgmtPerfSummary(), read by printMgmtPerfSummary() so the
 // print button doesn't need its own copy of the lookup logic.
@@ -10075,7 +10148,7 @@ const BUILDERS = {
       <table class="mobile-card-table">
         <thead><tr><th>Nominee</th><th>Category</th><th>Period</th><th>Reason</th><th>Nominated By</th><th>Date Submitted</th><th></th></tr></thead>
         <tbody>
-        ${filtered.map(n=>`<tr><td data-label="Nominee">${n.NomineeName}</td><td data-label="Category">${n.AwardCategory}</td><td class="muted" data-label="Period">${n.Month||''} ${n.Year||''}</td><td class="muted" data-label="Reason" style="white-space:pre-wrap;">${n.Reason}${n.SupportingDetails ? `<br><span style="font-size:11px;">${n.SupportingDetails}</span>` : ''}</td><td data-label="Nominated By">${n.NominatorName}</td><td data-label="Date Submitted">${fmtDateTime(n.DateSubmitted)}</td><td data-label=""><button class="btn ghost auto" onclick="openNominationDetail('${n.ID}')">View</button></td></tr>`).join('') || `<tr><td colspan="7" class="muted">No matching nominations.</td></tr>`}
+        ${filtered.map(n=>`<tr><td data-label="Nominee">${n.NomineeName}</td><td data-label="Category">${n.AwardCategory}</td><td class="muted" data-label="Period">${n.Month||''} ${n.Year||''}</td><td class="muted" data-label="Reason" style="white-space:pre-wrap;">${n.Reason}${n.SupportingDetails ? `<br><span style="font-size:11px;">${n.SupportingDetails}</span>` : ''}</td><td data-label="Nominated By">${n.NominatorName}</td><td data-label="Date Submitted">${fmtDateTime(n.DateSubmitted)}</td><td data-label=""><button class="btn ghost auto" style="margin-right:6px;" onclick="openNominationDetail('${n.ID}')">View</button><button class="btn ghost auto" onclick="openNominationSummary('${n.ID}')">📋 View Summary</button></td></tr>`).join('') || `<tr><td colspan="7" class="muted">No matching nominations.</td></tr>`}
         </tbody>
       </table>
     </div>`;
