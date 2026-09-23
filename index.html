@@ -1311,8 +1311,14 @@ function setNomSearch(val){
 }
 function resetNomFilter(){
   nomFilterCategory = 'All';
-  nomFilterMonth = 'All';
-  nomFilterYear = 'All';
+  // "Reset" returns to the page's own default landing state — current
+  // month/year — not to All/All. This is deliberately different from
+  // resetPerfFilter() below, which does return to All/All, because
+  // Performance Report's own default was kept at All/All (see the
+  // Filter Reorder + Defaults audit doc) — the two pages' Reset
+  // buttons match their own respective defaults, not each other.
+  nomFilterMonth = new Date().toLocaleString('en-US', { month: 'long' });
+  nomFilterYear = String(new Date().getFullYear());
   nomFilterEmployee = 'All';
   nomSearchQuery = '';
   renderView('mgmt-nominations');
