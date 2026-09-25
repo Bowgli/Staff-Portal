@@ -7014,9 +7014,16 @@ function computeMonthlyEvaluationsByEmployee(archiveRecords){
   Object.values(groups).forEach(records=>{
     const first = records[0];
     const avg = records.reduce((sum,r)=>sum+Number(r.AverageScore),0) / records.length;
-    // Rounded to 1 decimal place, matching the precision every raw
-    // AverageScore already uses (e.g. "4.2", "4.5") — 4.2+4.5+4.4 → 4.3667 → 4.4.
-    const rounded = Math.round(avg*10)/10;
+    // Rounded to 2 decimal places from the FULL unrounded average
+    // (never re-rounding each individual r.AverageScore first — those
+    // are summed exactly as already stored) — e.g. 5.0+4.3+4.4+4.4+4.5+4.2
+    // = 26.8 / 6 = 4.4666... -> "4.47", not the old 1-decimal "4.4".
+    // .toFixed(2) (a string) rather than a plain rounded number so
+    // every display always shows two digits (e.g. "4.50", never "4.5")
+    // — every existing numeric use of this field already wraps it in
+    // Number(...) before doing math/comparisons, so a string here is
+    // safe everywhere it's already consumed.
+    const rounded = avg.toFixed(2);
     // The most recently-submitted record in this month stands in as
     // the representative for "View Details" (which still shows ONE
     // rater's own Q1-Q10/comments, unchanged) — the monthly score/
@@ -7024,7 +7031,7 @@ function computeMonthlyEvaluationsByEmployee(archiveRecords){
     const representative = records.slice().sort((a,b)=>new Date(b.Date)-new Date(a.Date))[0];
     const summary = {
       EmployeeName: first.EmployeeName, Month: first.Month, Year: first.Year,
-      AverageScore: rounded, RatingLabel: ratingLabelForScore_(rounded),
+      AverageScore: rounded, RatingLabel: ratingLabelForScore_(Number(rounded)),
       ID: representative.ID, EvaluatedBy: representative.EvaluatedBy,
       monthKey: Number(first.Year) * 12 + (EVAL_MONTH_ORDER_[first.Month] || 0),
       raterCount: records.length,
