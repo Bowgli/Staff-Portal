@@ -7074,7 +7074,7 @@ function renderRankedEvalCard(icon, title, ranked, barColor, emptyMsg, linkTo){
     <h3><span class="ic">${icon}</span> ${title}</h3>
     ${ranked.length ? ranked.map(([name,score])=>`
       <div style="margin-bottom:10px;">
-        <div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>${name}</span><span class="mono">${score}</span></div>
+        <div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>${name}</span><span class="mono">${Number(score).toFixed(2)}</span></div>
         <div style="height:8px; background:var(--panel-2); border-radius:6px; overflow:hidden;"><div style="height:100%; width:${(score/5*100).toFixed(0)}%; background:${barColor};"></div></div>
       </div>`).join('') : `<p class="muted">${emptyMsg || 'No evaluations yet.'}</p>`}
   </div>`;
