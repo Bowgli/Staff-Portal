@@ -7003,9 +7003,10 @@ function ratingLabelForScore_(avg){
 // counts toward September's average. Existing callers that don't pass
 // this keep working exactly as before (nothing archived is silently
 // included where it wasn't asked for).
-function computeMonthlyEvaluationsByEmployee(archiveRecords){
+function computeMonthlyEvaluationsByEmployee(archiveRecords, sourceRecords){
   const groups = {};
-  const allRecords = archiveRecords && archiveRecords.length ? ALL_EVALUATIONS.concat(archiveRecords) : ALL_EVALUATIONS;
+  const baseRecords = sourceRecords || ALL_EVALUATIONS;
+  const allRecords = archiveRecords && archiveRecords.length ? baseRecords.concat(archiveRecords) : baseRecords;
   allRecords.forEach(e=>{
     const key = e.EmployeeName + '|||' + e.Year + '|||' + e.Month;
     (groups[key] = groups[key] || []).push(e);
@@ -7042,7 +7043,7 @@ function computeMonthlyEvaluationsByEmployee(archiveRecords){
     };
     (byEmployee[first.EmployeeName] = byEmployee[first.EmployeeName] || []).push(summary);
   });
-  Object.keys(byEmployee).forEach(name => byEmployee[name].sort((a,b)=>b.monthKey - a.monthKey));
+  Object.keys(byEmployee).forEach(name => byEmployee[name].sort((a,b)=>a.monthKey - b.monthKey));
   return byEmployee;
 }
 // Finds the monthly summary for the month immediately before
@@ -7261,7 +7262,7 @@ function openPerfDetail(id){
   const monthlyForThisEmployee = computeMonthlyEvaluationsByEmployee()[e.EmployeeName] || [];
   const currentMonthly = monthlyForThisEmployee.find(m => m.Month === e.Month && String(m.Year) === String(e.Year));
   const prev = currentMonthly ? getPreviousMonthEvaluation(currentMonthly, monthlyForThisEmployee) : null;
-  const history = ALL_EVALUATIONS.filter(x=>x.EmployeeName===e.EmployeeName).sort((a,b)=>new Date(b.Date)-new Date(a.Date));
+  const history = monthlyForThisEmployee;
   document.getElementById('perfDetailSub').textContent = `${e.EmployeeName} — ${e.Month} ${e.Year} · Evaluated by ${e.EvaluatedBy || 'Anonymous'}`;
   document.getElementById('perfDetailBody').innerHTML = `
     <div class="card stat-card" style="background:var(--panel-2); margin-bottom:14px;">
@@ -7970,7 +7971,14 @@ const BUILDERS = {
     if(!MY_EVALUATIONS.length){
       return `<div class="card"><h3><span class="ic">📊</span> My Performance</h3><p class="muted">No evaluations yet — your Shift Manager or Floor Supervisor hasn't submitted one for you.</p></div>`;
     }
-    const latest = MY_EVALUATIONS[0]; // newest-first
+    const latest = MY_EVALUATIONS[0]; // newest-first — unchanged, still used for the top card + this one rater's own Q1-Q10 breakdown
+    // Consolidated per-month view for the History table only (see Fix 2
+    // — MY_EVALUATIONS is used as the source here, not the global
+    // ALL_EVALUATIONS, since ALL_EVALUATIONS is never loaded for a
+    // plain employee account and this page must work for them too).
+    // MY_EVALUATIONS already contains only this one employee's records,
+    // so the grouped result has exactly one key.
+    const myMonthly = Object.values(computeMonthlyEvaluationsByEmployee(null, MY_EVALUATIONS))[0] || [];
     return `
     <div class="grid grid-2" style="margin-bottom:16px;">
       <div class="card" style="display:flex; align-items:center; gap:18px;">
@@ -7990,7 +7998,7 @@ const BUILDERS = {
       <h3>Evaluation History</h3>
       <table>
         <tr><th>Period</th><th>Score</th><th>Rating</th></tr>
-        ${MY_EVALUATIONS.map(e=>`<tr><td>${e.Month} ${e.Year}</td><td class="mono">${e.AverageScore}</td><td>${ratingStars(e.AverageScore)} ${e.RatingLabel}</td></tr>`).join('')}
+        ${myMonthly.map(e=>`<tr><td>${e.Month} ${e.Year}</td><td class="mono">${e.AverageScore}</td><td>${ratingStars(e.AverageScore)} ${e.RatingLabel}</td></tr>`).join('')}
       </table>
     </div>`;
   },
