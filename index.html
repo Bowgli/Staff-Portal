@@ -2010,7 +2010,7 @@ async function promoteNextWeek(){
   btnLoadingEl(btn, 'Promoting...');
   try{
     if(USE_REMOTE()){
-      const r = await apiPost('promoteNextWeekSchedule', {});
+      const r = await apiPost('promoteNextWeekSchedule', {username: CURRENT_USER.username});
       if(!r.ok){ alert(r.error || "Couldn't promote."); btnResetEl(btn); return; }
       await refreshScheduleOnly();
     }
@@ -9067,7 +9067,7 @@ const BUILDERS = {
         ${NEXT_SCHEDULE_PUBLISHED
           ? `<button class="btn ghost auto" id="unpublishNextBtn" onclick="unpublishNextWeek()">Unpublish (back to draft)</button>`
           : `<button class="btn auto" id="publishNextBtn" onclick="publishNextWeek()">Publish to Employees</button>`}
-        <button class="btn auto" id="promoteNextBtn" onclick="promoteNextWeek()">Promote to Current Week</button>
+        ${isFullAdmin() ? `<button class="btn auto" id="promoteNextBtn" onclick="promoteNextWeek()">Promote to Current Week</button>` : ''}
         <button class="btn info auto" onclick="openAddSchedEmpModal()">+ Add New Employee</button>
         <button class="btn danger auto" onclick="openRemoveSchedEmpModal()">🗑️ Remove Employee</button>
       </div>
