@@ -8214,7 +8214,7 @@ const BUILDERS = {
         <div class="grid grid-2">
           <div>
             <label>Month</label>
-            <select id="evalMonth">${["January","February","March","April","May","June","July","August","September","October","November","December"].map(m=>`<option>${m}</option>`).join('')}</select>
+            <select id="evalMonth"><option value="" disabled selected>Select Month</option>${["January","February","March","April","May","June","July","August","September","October","November","December"].map(m=>`<option>${m}</option>`).join('')}</select>
           </div>
           <div>
             <label>Year</label>
@@ -8286,7 +8286,7 @@ const BUILDERS = {
         <div class="grid grid-2">
           <div>
             <label>Month</label>
-            <select id="nominateMonth">${["January","February","March","April","May","June","July","August","September","October","November","December"].map(m=>`<option>${m}</option>`).join('')}</select>
+            <select id="nominateMonth"><option value="" disabled selected>Select Month</option>${["January","February","March","April","May","June","July","August","September","October","November","December"].map(m=>`<option>${m}</option>`).join('')}</select>
           </div>
           <div>
             <label>Year</label>
@@ -11270,6 +11270,7 @@ async function submitEvaluationNow(){
   const ok = document.getElementById('evalOk');
   err.style.display='none'; dupWarning.style.display='none'; ok.style.display='none';
   if(!EmployeeName){ err.textContent="Type a name and pick a real match from the suggestions."; err.style.display='block'; return; }
+  if(!Month){ err.textContent="Please select a month."; err.style.display='block'; return; }
   if(!Year){ err.textContent="Enter a year."; err.style.display='block'; return; }
 
   // Duplicate check — only for a brand-new evaluation, not while
@@ -11375,6 +11376,7 @@ async function submitNomination(){
   err.style.display = 'none';
   if(!nomineeName){ err.textContent = "Type a name and pick a real match from the suggestions."; err.style.display='block'; return; }
   if(!categorySelect){ err.textContent = "Please select an award category."; err.style.display='block'; return; }
+  if(!month){ err.textContent = "Please select a month."; err.style.display='block'; return; }
   let category = categorySelect;
   if(categorySelect === 'Other'){
     const otherText = document.getElementById('nominateOtherCategory').value.trim();
