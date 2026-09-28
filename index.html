@@ -6526,8 +6526,10 @@ function restoreLastViewOrDefault(){
   // sidebar itself, so restoreLastViewOrDefault() rejected them as
   // "invalid" and silently fell back to Home whenever a saved view
   // happened to be one of those pages. renderView() already redirects
-  // to mgmt-home on its own if a role genuinely isn't authorized for
-  // a "mgmt-" view, so no separate role check is needed here.
+  // to the account's own real Home (home for a plain/hybrid employee
+  // account, mgmt-home for pure Admin) on its own if a role genuinely
+  // isn't authorized for a "mgmt-" view, so no separate role check is
+  // needed here.
   if(savedView && BUILDERS[savedView]) activeView = savedView;
   // See DETAIL_VIEW_PERSISTENCE_ above — restores the specific record
   // a detail page needs alongside the page name, or falls back to
@@ -6561,8 +6563,8 @@ function closeMobileSidebar(){
 const MGMT_ROLE_PERMISSIONS = {
   full: null,
   limited: { hiddenViews: ['mgmt-accounts', 'mgmt-concerns'] },
-  "shift-manager": { allowedViews: ['mgmt-home','mgmt-schedule','mgmt-attendance','mgmt-performance','mgmt-forms','mgmt-requests','mgmt-disciplinary','mgmt-disciplinary-new','mgmt-concerns','mgmt-concern-detail'] },
-  "supervisor": { allowedViews: ['mgmt-home','mgmt-attendance','mgmt-forms','mgmt-requests'] },
+  "shift-manager": { allowedViews: ['mgmt-schedule','mgmt-attendance','mgmt-performance','mgmt-forms','mgmt-requests','mgmt-disciplinary','mgmt-disciplinary-new','mgmt-concerns','mgmt-concern-detail'] },
+  "supervisor": { allowedViews: ['mgmt-attendance','mgmt-forms','mgmt-requests'] },
 };
 /* Extra nav items layered onto a Shift Manager's / Supervisor's OWN
    employee portal — their primary view is still their own Schedule,
@@ -6758,7 +6760,17 @@ function safeHistoryGo(delta){
 
 function renderView(id, fromHistory){
   if(!isViewAllowedForRole(id)){
-    id = 'mgmt-home'; // not authorized for this role — send them back to Home instead
+    // Not authorized for this role — send them back to their own real
+    // Home instead. currentRole is 'employee' for both plain employees
+    // AND hybrid Shift Manager/Supervisor accounts (their own personal
+    // portal, 'home'), and 'management' only for pure Full/Limited
+    // Admin (the company-wide 'mgmt-home' dashboard) — using
+    // 'mgmt-home' unconditionally here was landing hybrid accounts on
+    // an Admin-only page they have no nav link to, whenever a stale
+    // restored view (see restoreLastViewOrDefault()) happened to be
+    // one their own role's allowedViews technically permits but never
+    // actually routes to.
+    id = currentRole === 'employee' ? 'home' : 'mgmt-home';
   }
   const viewChanged = activeView !== id; // captured BEFORE reassigning below — tells a genuine navigation to a different page apart from an in-page re-render (e.g. typing in a filter box, saving a form), which also calls renderView() with the SAME id and should never yank the scroll position back to the top
   activeView = id;
