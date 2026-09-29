@@ -13,9 +13,9 @@
 <style>
   :root{
     --bg:#F7F1E1; --panel:#FFFCF5; --panel-2:#F0E8D2; --line:#E8DCC0;
-    --gold:#B8802A; --gold-soft:#F0DCA8; --teal:#4FA79C; --teal-soft:#1B3230;
-    --red:#C15B4A; --red-soft:#3A2420; --blue:#5B8FC7; --blue-soft:#1E2E40;
-    --orange:#D9863C; --orange-soft:#3A2C18;
+    --gold:#B8802A; --gold-soft:#F0DCA8; --teal:#37746D; --teal-soft:#DCF3E8;
+    --red:#A74837; --red-soft:#FBE0DE; --blue:#3869A0; --blue-soft:#DCEAF7;
+    --orange:#965618; --orange-soft:#F7E8CC;
     --purple:#8B4FC4; --purple-soft:#EEE3F7; --green:#3E9A5F; --green-soft:#DFF3E6;
     --text:#3A2E1F; --text-mute:#8A7455; --text-faint:#B0A183; --radius:14px;
   }
@@ -218,11 +218,11 @@
   .pill.danger{background:var(--red-soft); color:var(--red);}
   .pill.bad{background:var(--red-soft); color:var(--red);}
   .status-select{min-width:160px; font-weight:600;}
-  .status-select.pending{background:var(--gold-soft); color:var(--gold); border-color:rgba(201,162,75,.4);}
-  .status-select.approved{background:var(--teal-soft); color:var(--teal); border-color:rgba(79,167,124,.4);}
-  .status-select.declined{background:var(--red-soft); color:var(--red); border-color:rgba(197,88,74,.4);}
-  .status-select.acknowledged{background:var(--blue-soft); color:var(--blue); border-color:rgba(91,143,199,.4);}
-  .status-select.needs-clarification{background:var(--red-soft); color:var(--red); border-color:rgba(197,88,74,.4);}
+  .status-select.pending{background:var(--gold-soft); color:var(--gold); border-color:rgba(184,128,42,.4);}
+  .status-select.approved{background:var(--teal-soft); color:var(--teal); border-color:rgba(55,116,109,.4);}
+  .status-select.declined{background:var(--red-soft); color:var(--red); border-color:rgba(167,72,55,.4);}
+  .status-select.acknowledged{background:var(--blue-soft); color:var(--blue); border-color:rgba(56,105,160,.4);}
+  .status-select.needs-clarification{background:var(--red-soft); color:var(--red); border-color:rgba(167,72,55,.4);}
   /* All Employees — Employee Status dropdown: reuses the same
      status-based coloring pattern already used for Leave Request's
      status dropdown above (class name = the status value), so an
@@ -287,9 +287,9 @@
   .empty{text-align:center; padding:40px 20px; color:var(--text-faint);}
   .empty .ic{font-size:26px; margin-bottom:8px;}
 
-  .banner{background:var(--red-soft); border:1px solid rgba(193,91,74,0.3); color:#E8998A; border-radius:var(--radius); padding:16px 20px; margin-bottom:20px; font-size:13px;}
+  .banner{background:var(--red-soft); border:1px solid rgba(184,80,61,0.3); color:#8A4A3D; border-radius:var(--radius); padding:16px 20px; margin-bottom:20px; font-size:13px;}
   .banner b{color:var(--red);}
-  .banner.note{background:var(--blue-soft); border-color:rgba(91,143,199,.3); color:#A9C4E4;}
+  .banner.note{background:var(--blue-soft); border-color:rgba(56,105,160,.3); color:#47698C;}
   .banner.note b{color:var(--blue);}
   .banner.warn2{background:rgba(232,164,90,0.14); border-color:rgba(232,164,90,.35); color:#F0C79A;}
   .banner.warn2 b{color:var(--gold);}
