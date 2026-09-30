@@ -9008,8 +9008,8 @@ const BUILDERS = {
         <h3><span class="ic">📊</span> Performance Report</h3>
         ${myMonthlyEvaluations.length ? `
         <table>
-          <tr><th>Month</th><th>Year</th><th>Score</th><th>Rating</th><th>Trend</th></tr>
-          ${myMonthlyEvaluations.map((ev,i)=>`<tr><td>${ev.Month}</td><td>${ev.Year}</td><td class="mono">${ev.AverageScore}</td><td>${ratingStars(ev.AverageScore)} ${ev.RatingLabel}</td><td>${evalTrendHtml(ev, getPreviousMonthEvaluation(ev, myMonthlyEvaluations))}</td></tr>`).join('')}
+          <tr><th>Month</th><th>Year</th><th>Score</th><th>Rating</th><th>Trend</th><th class="no-print"></th></tr>
+          ${myMonthlyEvaluations.map((ev,i)=>`<tr><td>${ev.Month}</td><td>${ev.Year}</td><td class="mono">${ev.AverageScore}</td><td>${ratingStars(ev.AverageScore)} ${ev.RatingLabel}</td><td>${evalTrendHtml(ev, getPreviousMonthEvaluation(ev, myMonthlyEvaluations))}</td><td class="no-print"><button class="btn ghost auto" style="padding:5px 10px;" onclick="openMgmtPerfSummary('${ev.EmployeeName.replace(/'/g,"\\'")}', '${ev.Month}', '${ev.Year}')">📋 View Summary</button></td></tr>`).join('')}
         </table>` : `<p class="muted">No records available</p>`}
       ` : ''}
       ${employeeProfileTab==='attendance' ? `
