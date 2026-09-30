@@ -7152,10 +7152,10 @@ function attendanceConcernsSection(){
   return `
     <div class="section-title">Attendance & Concerns</div>
     <div class="grid grid-4" style="margin-bottom:16px;">
-      ${topStatusChart(combinedThisYear, '📊', 'Absent', 'Most Absences', 5, 'var(--red)', 'mgmt-attendance')}
-      ${topStatusChart(combinedThisYear, '⏰', 'Late', 'Most Late', 5, 'var(--gold)', 'mgmt-attendance')}
-      ${topStatusChart(combinedThisYear, '🕐', 'Undertime', 'Most Undertime', 5, 'var(--blue)', 'mgmt-attendance')}
-      ${topStatusChart(combinedThisYear, '☕', 'Over Breaktime', 'Most Over Breaktime', 5, 'var(--gold)', 'mgmt-attendance')}
+      ${topStatusChart(combinedThisYear, '📊', 'Absent', 'Absence Count', 5, 'var(--red)', 'mgmt-attendance')}
+      ${topStatusChart(combinedThisYear, '⏰', 'Late', 'Late Count', 5, 'var(--gold)', 'mgmt-attendance')}
+      ${topStatusChart(combinedThisYear, '🕐', 'Undertime', 'Undertime Count', 5, 'var(--blue)', 'mgmt-attendance')}
+      ${topStatusChart(combinedThisYear, '☕', 'Over Breaktime', 'Over Breaktime Count', 5, 'var(--gold)', 'mgmt-attendance')}
     </div>
     <div class="grid grid-2" style="margin-bottom:16px;">
       ${renderRankedEvalCard('🌟', 'Outstanding Staff', topOutstanding, 'var(--teal)', undefined, 'mgmt-performance')}
@@ -7761,10 +7761,10 @@ function topAttendanceCharts(){
       </div>
     </div>
     <div class="grid grid-4" style="margin-bottom:16px;">
-    ${topStatusChart(filteredLog, '📊', 'Absent', '20 – Most Absences', 20, 'var(--red)')}
-    ${topStatusChart(filteredLog, '⏰', 'Late', '20 – Most Late', 20, 'var(--gold)')}
-    ${topStatusChart(filteredLog, '🕐', 'Undertime', '20 – Most Undertime', 20, 'var(--blue)')}
-    ${topStatusChart(filteredLog, '☕', 'Over Breaktime', '20 – Most Over Breaktime', 20, 'var(--gold)')}
+    ${topStatusChart(filteredLog, '📊', 'Absent', '20 – Absence Count', 20, 'var(--red)')}
+    ${topStatusChart(filteredLog, '⏰', 'Late', '20 – Late Count', 20, 'var(--gold)')}
+    ${topStatusChart(filteredLog, '🕐', 'Undertime', '20 – Undertime Count', 20, 'var(--blue)')}
+    ${topStatusChart(filteredLog, '☕', 'Over Breaktime', '20 – Over Breaktime Count', 20, 'var(--gold)')}
     </div>`;
 }
 
