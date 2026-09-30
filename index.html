@@ -3097,7 +3097,7 @@ async function playAlertTone(){
 function getMgmtAlertCounts(){
   return {
     requests: ALL_REQUESTS.filter(r=>r.Status==='pending').length,
-    concerns: MOCK.concernsLog.filter(c=>c.status==='Open').length,
+    concerns: MOCK.concernsLog.filter(c=>isConcernOpen_(c.status)).length,
     suggestions: MOCK.suggestionsLog.filter(s=>s.status==='new').length,
     evaluations: ALL_EVALUATIONS.length,
     discResponses: ALL_DISCIPLINARY_RECORDS.filter(d=>d.EmployeeResponse).length,
@@ -5264,6 +5264,18 @@ function applyConcernTypeCheckboxes(cbClass, types, specifyId){
   }
 }
 const CONCERN_STATUSES = ["Submitted","Under Review","Under Investigation","Pending Information","Resolved","Closed","Escalated"];
+// Single source of truth for "does this concern still need attention" —
+// used everywhere a count of open/active concerns is needed (Management
+// Overview's Open Concerns card, the sidebar badge). Exclusion-based
+// against the known TERMINAL statuses (rather than an OR-list of active
+// ones) so a newly-added active status is automatically counted correctly
+// without this rule needing to be updated again — the exact gap that let
+// "Open" silently stop matching once newer statuses (Submitted, Under
+// Review, etc.) were introduced. "Withdrawn" and "No Action Needed" are
+// terminal too, even though concernStatusPill colors them for visibility,
+// not because they're still open.
+const CLOSED_CONCERN_STATUSES_ = new Set(["Resolved","Closed","Withdrawn","No Action Needed"]);
+function isConcernOpen_(status){ return !CLOSED_CONCERN_STATUSES_.has(status || "Submitted"); }
 function concernStatusPill(status){
   const map = { "Submitted":"warn", "Under Review":"warn", "Under Investigation":"warn", "Pending Information":"warn", "Resolved":"ok", "Closed":"ok", "Escalated":"danger", "Withdrawn":"danger",
     // legacy statuses from before this update — kept working so old reports still display correctly
@@ -6628,7 +6640,7 @@ function renderNav(){
         badge = pending > 0 ? pending : null;
       }
       if(item.id === 'mgmt-concerns'){
-        const open = MOCK.concernsLog.filter(c=>c.status==='Open').length;
+        const open = MOCK.concernsLog.filter(c=>isConcernOpen_(c.status)).length;
         badge = open > 0 ? open : null;
       }
       if(item.id === 'mgmt-suggestions'){
@@ -6665,7 +6677,7 @@ function renderNav(){
         badge = pending > 0 ? pending : null;
       }
       if(item.id === 'mgmt-concerns'){
-        const open = MOCK.concernsLog.filter(c=>c.status==='Open').length;
+        const open = MOCK.concernsLog.filter(c=>isConcernOpen_(c.status)).length;
         badge = open > 0 ? open : null;
       }
       html += `<div class="nav-item ${item.id===activeView?'active':''}" onclick="renderView('${item.id}')">
@@ -8771,7 +8783,7 @@ const BUILDERS = {
         <div style="width:36px; height:36px; border-radius:9px; background:#F5CCC5; display:flex; align-items:center; justify-content:center; margin-bottom:10px;">
           <svg width="16" height="18" viewBox="0 0 16 18"><path d="M8,0 L16,15 L0,15 Z" fill="var(--red)"/><rect x="7" y="5" width="2" height="6" fill="var(--red-soft)"/><circle cx="8" cy="13" r="1.2" fill="var(--red-soft)"/></svg>
         </div>
-        <div class="display num" style="color:var(--red);">${MOCK.concernsLog.filter(c=>c.status==='Open').length}</div>
+        <div class="display num" style="color:var(--red);">${MOCK.concernsLog.filter(c=>isConcernOpen_(c.status)).length}</div>
         <div class="label">Open concerns</div>
       </div>
       <div class="card stat-card clickable" style="background:linear-gradient(160deg,var(--purple-soft),var(--panel)); border:1px solid var(--purple);" onclick="renderView('mgmt-suggestions')">
