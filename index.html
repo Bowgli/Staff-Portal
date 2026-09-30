@@ -9060,6 +9060,7 @@ const BUILDERS = {
   "mgmt-accounts": ()=>{
     const q = accountsSearchQuery.toLowerCase();
     const rows = EMPLOYEE_ROSTER.filter(e=>{
+      if(e.archiveStatus === 'Archived') return false;
       if(!q) return true;
       const acct = findAccountByEmployeeName(e.name);
       const displayName = acct && acct.fullName ? acct.fullName : e.name;
