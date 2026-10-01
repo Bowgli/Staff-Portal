@@ -8290,10 +8290,10 @@ const BUILDERS = {
     <div class="card table-scroll">
       <h3>Evaluations You've Given</h3>
       <p class="muted" style="margin-bottom:12px;">Includes ones you submitted anonymously — the employee still only sees "Anonymous," this list is for your own eyes only.</p>
-      <table>
-        <tr><th>Employee</th><th>Period</th><th>Score</th><th>Rating</th><th></th></tr>
-        ${MY_GIVEN_EVALUATIONS.map(e=>`<tr><td>${e.EmployeeName}</td><td>${e.Month} ${e.Year}</td><td class="mono">${e.AverageScore}</td><td>${ratingStars(e.AverageScore)} ${e.RatingLabel}</td>
-          <td><button class="btn info auto" style="padding:5px 10px; margin-right:6px;" onclick="openPerfDetail('${e.ID}')">👁️ View</button><button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditEvaluation('${e.ID}')">✏️ Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyEvaluation('${e.ID}', this)">🗑️ Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">You haven't evaluated anyone yet.</td></tr>`}
+      <table class="mobile-card-table">
+        <thead><tr><th>Employee</th><th>Period</th><th>Score</th><th>Rating</th><th></th></tr></thead>
+        ${MY_GIVEN_EVALUATIONS.map(e=>`<tr><td data-label="Employee">${e.EmployeeName}</td><td data-label="Period">${e.Month} ${e.Year}</td><td class="mono" data-label="Score">${e.AverageScore}</td><td data-label="Rating">${ratingStars(e.AverageScore)} ${e.RatingLabel}</td>
+          <td style="white-space:nowrap;"><button class="btn info auto" style="padding:5px 10px; margin-right:6px;" onclick="openPerfDetail('${e.ID}')">👁️ View</button><button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditEvaluation('${e.ID}')">✏️ Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyEvaluation('${e.ID}', this)">🗑️ Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">You haven't evaluated anyone yet.</td></tr>`}
       </table>
     </div>`,
 
@@ -8345,9 +8345,9 @@ const BUILDERS = {
       </div>
       <div class="card table-scroll">
         <h3>Your Nominations</h3>
-        <table>
-          <tr><th>Nominee</th><th>Category</th><th>Period</th><th>Date Submitted</th><th></th></tr>
-          ${MY_NOMINATIONS.map(n=>`<tr><td>${n.NomineeName}</td><td>${n.AwardCategory}</td><td class="muted">${n.Month||''} ${n.Year||''}</td><td>${fmtDateTime(n.DateSubmitted)}</td><td><button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditNomination('${n.ID}')">✏️ Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyNomination('${n.ID}', this)">🗑️ Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">No nominations submitted yet.</td></tr>`}
+        <table class="mobile-card-table">
+          <thead><tr><th>Nominee</th><th>Category</th><th>Period</th><th>Date Submitted</th><th></th></tr></thead>
+          ${MY_NOMINATIONS.map(n=>`<tr><td data-label="Nominee">${n.NomineeName}</td><td data-label="Category">${n.AwardCategory}</td><td class="muted" data-label="Period">${n.Month||''} ${n.Year||''}</td><td data-label="Date Submitted">${fmtDateTime(n.DateSubmitted)}</td><td style="white-space:nowrap;"><button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditNomination('${n.ID}')">✏️ Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteMyNomination('${n.ID}', this)">🗑️ Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">No nominations submitted yet.</td></tr>`}
         </table>
       </div>
     </div>`,
