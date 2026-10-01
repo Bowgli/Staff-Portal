@@ -275,6 +275,8 @@
   .btn.info{background:var(--blue); color:#fff;} /* account/system: password, permissions, settings; also view/search actions */
   .btn.edit{background:var(--teal); color:#fff;} /* consistent color for every Edit / Change-Status toggle across Management Account */
   .btn.success{background:#34814F; color:#fff;} /* Promote to Current Week — deliberately a different color from Publish to Employees (gold); a dedicated shade (not the shared --green variable, which is calibrated for a different use — text/bars on light backgrounds, not white button text) verified at 4.77:1 contrast for white text */
+  .btn.outline{background:transparent; border:1.5px solid var(--gold); color:#966822; box-shadow:none;} /* a defined secondary action (e.g. Archived Employees) — more deliberate than .ghost's muted/washed-out look, without competing with a solid-gold primary action beside it. Text color is a dedicated darker gold shade, verified at 4.77:1 contrast on the light panel background (var(--gold) alone would only reach ~3.3:1 here) */
+  .btn.outline:hover{background:var(--gold-soft);}
   .btn.danger:hover, .btn.reset:hover, .btn.info:hover, .btn.edit:hover, .btn.success:hover{filter:brightness(1.1);}
   .btn.danger:disabled, .btn.reset:disabled, .btn.info:disabled, .btn.edit:disabled, .btn.success:disabled{opacity:0.8; cursor:default; filter:none;}
   .checkbox-row{display:flex; align-items:center; gap:8px; margin-top:14px;}
@@ -667,7 +669,7 @@
         <p class="sub" id="viewSub">Welcome back</p>
       </div>
       <div id="soundAlertToggle" style="display:none;">
-        <button class="btn ghost auto" onclick="toggleSoundAlerts()" style="padding:8px 14px; font-size:12px; display:flex; align-items:center; gap:6px; white-space:nowrap;">
+        <button class="btn ghost auto" onclick="toggleSoundAlerts()" style="padding:8px 14px; font-size:12px; display:flex; align-items:center; gap:6px; white-space:nowrap; background:rgba(20,14,8,0.35); border-color:rgba(255,255,255,0.3); color:#FFFCF5;">
           <span id="soundAlertIcon">🔔</span><span id="soundAlertLabel">Disable Sound Alert</span>
         </button>
       </div>
@@ -8828,7 +8830,7 @@ const BUILDERS = {
     return `
     <div class="no-print" style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
       <button class="btn auto" onclick="openAddEmpModal()">➕ Add Employee</button>
-      ${isFullAdmin() ? `<button class="btn ghost auto" onclick="openArchivedEmployeesPage()">📦 Archived Employees</button>` : ''}
+      ${isFullAdmin() ? `<button class="btn outline auto" onclick="openArchivedEmployeesPage()">📦 Archived Employees</button>` : ''}
     </div>
     <div class="card table-scroll">
       <h3><span class="ic">👥</span> Staff Directory</h3>
