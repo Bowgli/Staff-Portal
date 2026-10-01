@@ -11775,15 +11775,15 @@ async function refreshScheduleOnly(){
 // without the required text.
 function handleRequestStatusChange(selectEl, id, currentStatus, requestType){
   const status = selectEl.value;
-  const requiresReason = requestType === 'Leave Request';
-  if(requiresReason && status === 'declined'){
+  const requiresDeclineReason = requestType === 'Leave Request'; // unchanged — Declined still only prompts for Leave Request
+  if(requiresDeclineReason && status === 'declined'){
     const reason = prompt("Please enter a reason for declining this request:");
     if(!reason || !reason.trim()){ selectEl.value = currentStatus; selectEl.className = 'status-select '+currentStatus; return; }
     selectEl.className = 'status-select '+status;
     setRequestStatus(id, status, reason.trim());
     return;
   }
-  if(requiresReason && status === 'needs-clarification'){
+  if(status === 'needs-clarification'){ // now every request type, not just Leave Request — the employee has no way to know what's being asked otherwise
     const message = prompt("What information do you need from the employee?");
     if(!message || !message.trim()){ selectEl.value = currentStatus; selectEl.className = 'status-select '+currentStatus; return; }
     selectEl.className = 'status-select '+status;
