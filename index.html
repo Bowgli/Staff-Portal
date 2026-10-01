@@ -3748,7 +3748,7 @@ async function startEmpPolling(){
       safeApiGet('myConcerns&name=' + encodeURIComponent(CURRENT_EMPLOYEE.fullName), null),
       safeApiGet('mySuggestions&name=' + encodeURIComponent(CURRENT_EMPLOYEE.fullName), null),
       safeApiGet('myRecognition&name=' + encodeURIComponent(CURRENT_EMPLOYEE.name), null),
-      needsFullConcerns ? safeApiGet('concerns', null) : Promise.resolve(null),
+      needsFullConcerns ? safeApiGet('concerns&username=' + encodeURIComponent(CURRENT_USER.username||''), null) : Promise.resolve(null),
       needsFullSuggestions ? safeApiGet('suggestions', null) : Promise.resolve(null)
     ]);
 
@@ -6591,7 +6591,7 @@ function closeMobileSidebar(){
 const MGMT_ROLE_PERMISSIONS = {
   full: null,
   limited: { hiddenViews: ['mgmt-accounts', 'mgmt-concerns'] },
-  "shift-manager": { allowedViews: ['mgmt-schedule','mgmt-attendance','mgmt-performance','mgmt-forms','mgmt-requests','mgmt-disciplinary','mgmt-disciplinary-new','mgmt-concerns','mgmt-concern-detail'] },
+  "shift-manager": { allowedViews: ['mgmt-schedule','mgmt-attendance','mgmt-performance','mgmt-forms','mgmt-requests','mgmt-disciplinary','mgmt-disciplinary-new','mgmt-suggestions'] },
   "supervisor": { allowedViews: ['mgmt-attendance','mgmt-forms','mgmt-requests'] },
 };
 /* Extra nav items layered onto a Shift Manager's / Supervisor's OWN
@@ -6605,7 +6605,7 @@ const MGMT_EXTRA_NAV_ITEMS = {
     {id:"mgmt-forms", ic:"🖨️", label:"Forms Library"},
     {id:"mgmt-requests", ic:"📝", label:"Manage Requests"},
     {id:"mgmt-disciplinary", ic:"📁", label:"Disciplinary Reports"},
-    {id:"mgmt-concerns", ic:"⚠️", label:"Concern Log"},
+    {id:"mgmt-suggestions", ic:"💡", label:"Suggestions Log"},
   ],
   "supervisor": [
     {id:"mgmt-attendance", ic:"🕐", label:"Attendance / Log Absence"},
@@ -10178,7 +10178,7 @@ const BUILDERS = {
         <thead><tr><th>From</th><th>Idea</th><th>Date</th><th>Status</th><th></th></tr></thead>
         <tbody>
         ${MOCK.suggestionsLog.map(s=>`<tr><td data-label="From">${s.from}</td><td data-label="Idea">${s.idea}</td><td data-label="Date">${fmtDateTime(s.date)}</td><td data-label="Status"><span class="pill ${s.status==='new'?'warn':'ok'}">${s.status==='new'?'New':'Reviewed'}</span></td>
-          <td data-label="Actions">${s.status==='new' ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="reviewSuggestion('${s.id}', this)">Mark Reviewed</button>` : (isFullAdmin() && s.status==='reviewed' ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="archiveRecordNow('suggestion','${s.id}', this)">📦 Archive</button>` : '')}</td></tr>`).join('') || `<tr><td colspan="5" class="muted">No suggestions yet.</td></tr>`}
+          <td data-label="Actions">${(s.status==='new' && currentMgmtRole()!=='shift-manager') ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="reviewSuggestion('${s.id}', this)">Mark Reviewed</button>` : (isFullAdmin() && s.status==='reviewed' ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="archiveRecordNow('suggestion','${s.id}', this)">📦 Archive</button>` : '')}</td></tr>`).join('') || `<tr><td colspan="5" class="muted">No suggestions yet.</td></tr>`}
         </tbody>
       </table>
     </div>`;
@@ -11618,7 +11618,7 @@ async function reviewSuggestion(id, el){
   const s = MOCK.suggestionsLog.find(s=>s.id===id);
   try{
     if(USE_REMOTE()){
-      const r = await apiPost('updateSuggestionStatus', {id, status:"reviewed"});
+      const r = await apiPost('updateSuggestionStatus', {id, status:"reviewed", username: CURRENT_USER.username});
       if(!r.ok){ alert(r.error || "Couldn't update."); btnResetEl(el); return; }
       if(mgmtAlertBaseline && s && s.status === 'new') mgmtAlertBaseline.suggestions = Math.max(0, mgmtAlertBaseline.suggestions - 1);
     }
