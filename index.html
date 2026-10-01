@@ -2849,7 +2849,7 @@ async function refreshMyRequests(){
     .filter(r => CURRENT_EMPLOYEE && r.EmployeeName === CURRENT_EMPLOYEE.name)
     .map(r => ({type:r.Type, date:r.Date, status:r.Status, id:r.ID, details:r.Details, swapDay:r.SwapDay, theirDay:r.TheirDay, swapWithName:r.SwapWithName, reasonForAbsence:r.ReasonForAbsence, minutesLate:r.MinutesLate, shiftSchedule:r.ShiftSchedule,
       venue:r.Venue, leaveType:r.LeaveType, leaveTypeOther:r.LeaveTypeOther, numberOfDays:r.NumberOfDays, leaveStartDate:r.LeaveStartDate, leaveEndDate:r.LeaveEndDate, returnToWorkDate:r.ReturnToWorkDate, anniversaryDate:r.AnniversaryDate,
-      declineReason:r.DeclineReason, clarificationMessage:r.ClarificationMessage, clarificationResponse:r.ClarificationResponse, actionDate:r.ActionDate, statusHistory:r.StatusHistory, leaveRequestNumber:r.LeaveRequestNumber}));
+      declineReason:r.DeclineReason, clarificationMessage:r.ClarificationMessage, actionDate:r.ActionDate, statusHistory:r.StatusHistory, leaveRequestNumber:r.LeaveRequestNumber}));
   MOCK.requests = MY_REQUESTS;
   // Keep the polling baseline in sync too — otherwise a stale
   // baseline (from login time, or before this refresh) makes the
@@ -3005,7 +3005,7 @@ async function loadRemoteData(){
     MOCK.requests = myRequestsSource.filter(r => r.EmployeeName === (CURRENT_EMPLOYEE && CURRENT_EMPLOYEE.name))
       .map(r => ({type:r.Type, date:r.Date, status:r.Status, id:r.ID, details:r.Details, swapDay:r.SwapDay, theirDay:r.TheirDay, swapWithName:r.SwapWithName, reasonForAbsence:r.ReasonForAbsence, minutesLate:r.MinutesLate, shiftSchedule:r.ShiftSchedule,
       venue:r.Venue, leaveType:r.LeaveType, leaveTypeOther:r.LeaveTypeOther, numberOfDays:r.NumberOfDays, leaveStartDate:r.LeaveStartDate, leaveEndDate:r.LeaveEndDate, returnToWorkDate:r.ReturnToWorkDate, anniversaryDate:r.AnniversaryDate,
-      declineReason:r.DeclineReason, clarificationMessage:r.ClarificationMessage, clarificationResponse:r.ClarificationResponse, actionDate:r.ActionDate, statusHistory:r.StatusHistory, leaveRequestNumber:r.LeaveRequestNumber}));
+      declineReason:r.DeclineReason, clarificationMessage:r.ClarificationMessage, actionDate:r.ActionDate, statusHistory:r.StatusHistory, leaveRequestNumber:r.LeaveRequestNumber}));
     ALL_REQUESTS = requests.slice().reverse();
     EMPLOYEE_ACCOUNTS.length = 0;
     accountsStatus.forEach(a => EMPLOYEE_ACCOUNTS.push({employeeName:a.employeeName, fullName:a.fullName, username:a.username, role:"employee", email:a.email, phone:a.phone, photoFileId:a.photoFileId||''}));
@@ -8402,14 +8402,7 @@ const BUILDERS = {
       `}
 
       ${r.status==='declined' && r.declineReason ? `<div class="banner" style="margin-bottom:14px;"><strong>Decline Reason:</strong> ${r.declineReason}</div>` : ''}
-      ${r.status==='needs-clarification' && r.clarificationMessage ? `
-        <div class="banner note" style="margin-bottom:14px;"><strong>Management is asking:</strong> ${r.clarificationMessage}</div>
-        <label>Your Response</label>
-        <textarea id="reqClarifyResponse" rows="3" placeholder="Type your response here..."></textarea>
-        <p class="login-err" id="reqClarifyErr" style="display:none;"></p>
-        <button class="btn no-print" id="reqClarifyResponseBtn" onclick="submitClarificationResponse('${r.id}')">Submit Response</button>
-      ` : ''}
-      ${r.clarificationResponse ? `<div class="banner note" style="margin-bottom:14px;"><strong>Your Previous Response:</strong> ${r.clarificationResponse}</div>` : ''}
+      ${r.status==='needs-clarification' && r.clarificationMessage ? `<div class="banner note" style="margin-bottom:14px;"><strong>Management is asking:</strong> ${r.clarificationMessage}<br><span style="font-size:12px; opacity:0.85;">Use the Edit button below to update your request with this information.</span></div>` : ''}
       ${r.actionDate ? `<p class="muted" style="font-size:12px; margin-bottom:14px;">Last reviewed: ${fmtDateTime(r.actionDate)}</p>` : ''}
 
       ${history.length ? `
@@ -8468,7 +8461,6 @@ const BUILDERS = {
 
       ${r.Status==='declined' && r.DeclineReason ? `<div class="banner" style="margin-bottom:14px;"><strong>Decline Reason:</strong> ${r.DeclineReason}</div>` : ''}
       ${r.Status==='needs-clarification' && r.ClarificationMessage ? `<div class="banner note" style="margin-bottom:14px;"><strong>Clarification Requested:</strong> ${r.ClarificationMessage}</div>` : ''}
-      ${r.ClarificationResponse ? `<div class="banner note" style="margin-bottom:14px;"><strong>Employee's Response:</strong> ${r.ClarificationResponse}</div>` : ''}
       ${r.ActionDate ? `<p class="muted" style="font-size:12px; margin-bottom:14px;">Last reviewed: ${fmtDateTime(r.ActionDate)}${r.ActionBy ? ' by '+r.ActionBy : ''}</p>` : ''}
 
       ${history.length ? `
@@ -10600,39 +10592,6 @@ function openAdminRequestDetail(id){
 function closeAdminRequestDetail(){
   viewingAdminRequestId = null;
   renderView('mgmt-requests');
-}
-async function submitClarificationResponse(id){
-  const responseEl = document.getElementById('reqClarifyResponse');
-  const err = document.getElementById('reqClarifyErr');
-  const btn = document.getElementById('reqClarifyResponseBtn');
-  err.style.display = 'none';
-  if(btn && btn.disabled) return; // already submitting — a repeated click while it's in flight does nothing
-  const response = responseEl.value.trim();
-  if(!response){ err.textContent = "Please enter a response before submitting."; err.style.display = 'block'; return; }
-  btnLoadingEl(btn, 'Submitting response...');
-  if(USE_REMOTE()){
-    try{
-      const r = await apiPostRetrying('submitClarificationResponse', {id, response, employeeName: CURRENT_EMPLOYEE.name});
-      if(!r.ok){ err.textContent = r.error || "Couldn't submit — please try again."; err.style.display = 'block'; btnResetEl(btn); return; }
-    } catch(e){
-      err.textContent = e.message || "Couldn't submit — please try again.";
-      err.style.display = 'block';
-      btnResetEl(btn);
-      return;
-    }
-  }
-  const req = MOCK.requests.find(x=>x.id===id);
-  if(req){ req.status = 'pending'; req.clarificationResponse = response; }
-  refreshMyRequests().then(()=>{ if(activeView === 'request-detail') renderView('request-detail'); }).catch(e=>console.warn('background requests refresh failed (already-correct local data is unaffected):', e.message || e));
-  await btnSentEl(btn, 'Response Submitted');
-  // Only re-render if the employee is STILL looking at this exact
-  // request — during the 600ms "✓ Response Submitted" pause above,
-  // they may have already tapped "← Back" (which resets
-  // viewingRequestDetailId to null and navigates to "requests"); an
-  // unconditional re-render here would then force the detail view
-  // back open with a null id, showing "that request couldn't be
-  // found" over a page the employee had already left.
-  if(activeView === 'request-detail' && viewingRequestDetailId === id) renderView('request-detail');
 }
 let editingConcernId = null;
 let pendingConcernClientId = null; // stable id kept across a retry of the SAME not-yet-confirmed concern submission
