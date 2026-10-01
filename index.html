@@ -8697,7 +8697,7 @@ const BUILDERS = {
       <h3>Your Concern History</h3>
         <p class="muted" style="margin-bottom:12px;">Includes ones you submitted anonymously — management still only sees "Anonymous," this list is for your own eyes only.</p>
         <table class="mobile-card-table">
-          <tr><th>Ref No.</th><th>Category</th><th>Subject</th><th>Venue</th><th>Date Submitted</th><th>Status</th><th></th></tr>
+          <thead><tr><th>Ref No.</th><th>Category</th><th>Subject</th><th>Venue</th><th>Date Submitted</th><th>Status</th><th></th></tr></thead>
           ${MY_CONCERNS.map(c=>{
             const canEdit = c.status==='Submitted' || c.status==='Pending Information' || !c.status; // legacy "Open" rows won't match, which is fine — they predate the edit window rule anyway. "Pending Information" (management asking for more detail) also stays editable, so the employee can actually respond with the clarification being asked for.
             return `<tr>
