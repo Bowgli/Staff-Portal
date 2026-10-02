@@ -6597,8 +6597,8 @@ function closeMobileSidebar(){
 const MGMT_ROLE_PERMISSIONS = {
   full: null,
   limited: { hiddenViews: ['mgmt-accounts', 'mgmt-concerns'] },
-  "shift-manager": { allowedViews: ['mgmt-schedule','mgmt-attendance','mgmt-performance','mgmt-forms','mgmt-requests','mgmt-disciplinary','mgmt-disciplinary-new','mgmt-suggestions'] },
-  "supervisor": { allowedViews: ['mgmt-attendance','mgmt-forms','mgmt-requests'] },
+  "shift-manager": { allowedViews: ['mgmt-schedule','mgmt-attendance','mgmt-performance','mgmt-forms','mgmt-requests','mgmt-request-detail','mgmt-disciplinary','mgmt-disciplinary-new','mgmt-suggestions'] },
+  "supervisor": { allowedViews: ['mgmt-attendance','mgmt-forms','mgmt-requests','mgmt-request-detail'] },
 };
 /* Extra nav items layered onto a Shift Manager's / Supervisor's OWN
    employee portal — their primary view is still their own Schedule,
