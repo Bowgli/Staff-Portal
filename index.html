@@ -105,7 +105,7 @@
     #soundAlertToggle{display:none !important;}
     .topbar h2{font-size:17px !important; white-space:normal; overflow-wrap:break-word; line-height:1.3;}
     .who-name, .who-role{display:none;}
-    .grid-4, .grid-3, .grid-2, .grid-40-60{grid-template-columns:minmax(0,1fr);}
+    .grid-4, .grid-3, .grid-2{grid-template-columns:minmax(0,1fr);}
     .grid-7{grid-template-columns:repeat(2,minmax(0,1fr));}
   }
   .brand{padding:22px 20px 18px; border-bottom:1px solid var(--line);}
@@ -156,6 +156,9 @@
   .grid{display:grid; gap:16px;}
   .grid-2{grid-template-columns:minmax(0,1fr) minmax(0,1fr);}
   .grid-40-60{grid-template-columns:minmax(0,2fr) minmax(0,3fr);}
+  @media (max-width: 1024px){
+    .grid-40-60{grid-template-columns:minmax(0,1fr);} /* desktop-only split — single column on tablet (portrait and landscape) and mobile */
+  }
   .grid-3{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);}
   .grid-4{grid-template-columns:repeat(4,minmax(0,1fr));}
   .grid-5{grid-template-columns:repeat(5,minmax(0,1fr));}
