@@ -344,6 +344,27 @@
   .daycard .pos{font-size:11px; color:var(--gold); font-weight:600;}
   .daycard .off{color:var(--text-faint); font-style:italic; font-size:12px;}
 
+  /* Daily Schedule Reminder (top of My Schedule). Text colors below
+     were contrast-checked: 4.77:1 to 12.9:1 on their backgrounds. */
+  .daily-reminder{border-radius:14px; padding:18px 22px; margin-bottom:16px; box-shadow:0 2px 10px rgba(58,46,31,0.08);}
+  .daily-reminder.working{background:linear-gradient(135deg,#FBF0D9 0%,#F7DDB8 100%); border:1px solid #E8D4A0; border-left:5px solid var(--gold);}
+  .daily-reminder.dayoff{background:linear-gradient(135deg,#E6F5EC 0%,#D4EEDD 100%); border:1px solid #A9DDB8; border-left:5px solid var(--green);}
+  .daily-reminder .dr-title{font-family:'Playfair Display',serif; font-size:21px; font-weight:700; line-height:1.25;}
+  .daily-reminder.working .dr-title{color:var(--text);}
+  .daily-reminder.dayoff .dr-title{color:#1F5B3A;}
+  .daily-reminder .dr-sub, .daily-reminder .dr-foot{font-size:13.5px; color:#5C4E38;}
+  .daily-reminder .dr-sub{margin-top:3px;}
+  .daily-reminder .dr-foot{margin-top:12px;}
+  .daily-reminder .dr-shift{display:inline-flex; flex-wrap:wrap; align-items:center; gap:9px; margin-top:12px; background:var(--panel); border:1px solid #E8D4A0; border-radius:10px; padding:7px 14px; font-size:15px; font-weight:700; color:var(--text);}
+  .daily-reminder .dr-shift .dr-venue{color:#966822;}
+  .daily-reminder .dr-shift .dr-dot{color:var(--text-faint);}
+  .daily-reminder .dr-msg{font-size:15px; color:#2F5D44; margin-top:8px;}
+  @media (max-width: 860px){
+    .daily-reminder{padding:16px;}
+    .daily-reminder .dr-title{font-size:19px;}
+    .daily-reminder .dr-shift{font-size:14px; padding:7px 12px;}
+  }
+
   .avatar img, .account-box .avatar img{width:100%; height:100%; border-radius:50%; object-fit:cover;}
 
   ::-webkit-scrollbar{width:8px;}
@@ -2360,6 +2381,158 @@ function renderMyScheduleGrid(row, days){
     }).join('')}
   </div>`;
 }
+
+/* ===== DAILY SCHEDULE REMINDER START =====
+   Banner at the top of My Schedule (current week only). Built purely
+   from the schedule the page already loaded — no fetch, no polling —
+   by reusing parseScheduleCell / isScheduleDayToday /
+   parseShiftMinutes exactly as they are. Whenever it can't be sure
+   (today not in the loaded week, LEAVE, blank, "*****", or a cell
+   that isn't a recognizable shift) it shows NOTHING rather than a
+   possibly-wrong message. */
+const DAY_OFF_MESSAGES = [
+  "🌿 Rest, recharge, and enjoy your day!",
+  "☀️ Take a break and make today a productive day for yourself.",
+  "💪 A good rest today helps you perform better tomorrow.",
+  "❤️ Spend some time with family and loved ones.",
+  "📚 Use your day off to learn something new or work on a personal goal.",
+  "😌 No work today—take a well-deserved break!"
+];
+// One random pick per calendar day, kept in memory only — so re-renders
+// (polling, filters, navigating back) never make the message flicker,
+// and it picks again on the next page load / next day.
+let dayOffMessageCache = { dateKey:'', msg:'' };
+function pickDayOffMessage_(){
+  const key = new Date().toDateString();
+  if(dayOffMessageCache.dateKey !== key){
+    dayOffMessageCache = { dateKey:key, msg: DAY_OFF_MESSAGES[Math.floor(Math.random()*DAY_OFF_MESSAGES.length)] };
+  }
+  return dayOffMessageCache.msg;
+}
+/* --- Overnight carry-over across the week boundary ---------------
+   An overnight shift sits in the column of the day it STARTS. Two ways
+   to know about yesterday's shift when it is not in today's column:
+   (a) yesterday is still a column in the loaded week — e.g. Sunday
+       early morning before the new week has been promoted, so the
+       loaded week still ends on Saturday. Found by DATE, not position.
+   (b) the new week is already loaded (yesterday's column is gone —
+       "Promote" overwrites the Schedule tab and the app keeps no old
+       week). Then the only way to know is to have seen it earlier:
+       while the old week is loaded, this device remembers the
+       overnight shift in that week's LAST column (a few bytes, per
+       employee, in localStorage). No new API call; nothing existing
+       is modified; if the device never saw the old week there is
+       simply no memory and behavior falls back to today's cell. */
+const OVERNIGHT_TAIL_KEY_ = 'sv_overnight_tail_';
+const OVERNIGHT_TAIL_TTL_MS_ = 14*24*60*60*1000;
+function scheduleDayMonthDay_(raw){
+  if(!raw) return null;
+  const str = String(raw).trim();
+  const md = str.match(/(\d{1,2})\/(\d{1,2})/);
+  if(md && /^[A-Za-z]+\.?,?\s*\d{1,2}\/\d{1,2}$/.test(str)) return { m:parseInt(md[1],10), d:parseInt(md[2],10) };
+  const dt = new Date(raw);
+  if(isNaN(dt)) return null;
+  return { m:dt.getMonth()+1, d:dt.getDate() };
+}
+function scheduleDayMatchesDate_(raw, date){
+  const md = scheduleDayMonthDay_(raw);
+  return !!md && md.m === date.getMonth()+1 && md.d === date.getDate();
+}
+function overnightTailStoreKey_(){
+  const name = (typeof CURRENT_EMPLOYEE !== 'undefined' && CURRENT_EMPLOYEE) ? (CURRENT_EMPLOYEE.fullName || CURRENT_EMPLOYEE.name) : '';
+  return name ? OVERNIGHT_TAIL_KEY_ + name : null;
+}
+function rememberOvernightTail_(){
+  try{
+    const key = overnightTailStoreKey_();
+    if(!key || !SCHEDULE_DAYS.length) return;
+    const row = findMyScheduleRow(CURRENT_EMPLOYEE.name);
+    if(!row || !row.cells) return;
+    const lastIdx = SCHEDULE_DAYS.length - 1;
+    const md = scheduleDayMonthDay_(SCHEDULE_DAYS[lastIdx]);
+    if(!md) return;
+    const cell = parseScheduleCell(row.cells[lastIdx]);
+    const span = (cell.type === 'shift' && cell.venueFull && cell.time) ? parseShiftMinutes(cell.time) : null;
+    let map = {};
+    try{ map = JSON.parse(localStorage.getItem(key) || '{}') || {}; }catch(e){ map = {}; }
+    const nowMs = new Date().getTime();
+    let changed = false;
+    Object.keys(map).forEach(k => { if(!map[k] || nowMs - map[k].savedAt > OVERNIGHT_TAIL_TTL_MS_){ delete map[k]; changed = true; } });
+    const dayKey = md.m + '/' + md.d;
+    if(span && span.end > 24*60){
+      const prev = map[dayKey];
+      if(!prev || prev.venueFull !== cell.venueFull || prev.time !== cell.time){ map[dayKey] = { venueFull:cell.venueFull, time:cell.time, savedAt:nowMs }; changed = true; }
+    } else if(map[dayKey]){ delete map[dayKey]; changed = true; } // the schedule was edited — no longer overnight
+    if(changed){
+      if(Object.keys(map).length) localStorage.setItem(key, JSON.stringify(map));
+      else localStorage.removeItem(key);
+    }
+  }catch(e){ /* a convenience memory only — it must never affect the page */ }
+}
+function recalledOvernightTail_(date){
+  try{
+    const key = overnightTailStoreKey_();
+    if(!key) return null;
+    const map = JSON.parse(localStorage.getItem(key) || '{}') || {};
+    const e = map[(date.getMonth()+1) + '/' + date.getDate()];
+    if(!e || new Date().getTime() - e.savedAt > OVERNIGHT_TAIL_TTL_MS_) return null;
+    return { venueFull:e.venueFull, time:e.time };
+  }catch(e){ return null; }
+}
+// Local-only (reads in-memory arrays; no network): catches the old week
+// while it is still loaded, on any page, without touching the loaders.
+setTimeout(rememberOvernightTail_, 4000);
+setInterval(rememberOvernightTail_, 5*60*1000);
+
+// Returns {kind:'working', venueFull, time} | {kind:'off'} | null.
+function getTodayReminderState_(row){
+  if(!row || !row.cells) return null;
+  const now = new Date();
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate()-1, 12, 0, 0);
+  const todayIdx = SCHEDULE_DAYS.findIndex(d => isScheduleDayToday(d));
+  const yIdx = SCHEDULE_DAYS.findIndex(d => scheduleDayMatchesDate_(d, yesterday));
+
+  // Is yesterday's overnight shift still running? Prefer yesterday's own
+  // column in the loaded week; otherwise fall back to this device's memory.
+  let tail = null;
+  if(yIdx !== -1){
+    const prev = parseScheduleCell(row.cells[yIdx]);
+    if(prev.type === 'shift' && prev.venueFull && prev.time) tail = { venueFull:prev.venueFull, time:prev.time };
+  } else {
+    tail = recalledOvernightTail_(yesterday);
+  }
+  if(tail){
+    const span = parseShiftMinutes(tail.time);
+    if(span && span.end > 24*60){ // only shifts that actually cross midnight
+      const nowMin = now.getHours()*60 + now.getMinutes();
+      if(nowMin < span.end - 24*60) return { kind:'working', venueFull:tail.venueFull, time:tail.time };
+    }
+  }
+
+  if(todayIdx === -1) return null; // today isn't in the loaded week — say nothing
+  const c = parseScheduleCell(row.cells[todayIdx]);
+  if(c.type === 'shift' && c.venueFull && c.time) return { kind:'working', venueFull:c.venueFull, time:c.time };
+  if(c.type === 'off') return { kind:'off' };
+  return null; // leave / blank / blocked / unrecognized text
+}
+function dailyScheduleReminderHtml_(row){
+  rememberOvernightTail_();
+  const s = getTodayReminderState_(row);
+  if(!s) return '';
+  if(s.kind === 'working'){
+    return `<div class="daily-reminder working no-print">
+      <div class="dr-title">💪 You’re Scheduled Today!</div>
+      <div class="dr-sub">Your team is counting on you.</div>
+      <div class="dr-shift"><span class="dr-venue">${s.venueFull}</span><span class="dr-dot">•</span><span>${s.time.replace(/\s*-\s*/, ' – ')}</span></div>
+      <div class="dr-foot">Be on time, stay positive, and have a great shift!</div>
+    </div>`;
+  }
+  return `<div class="daily-reminder dayoff no-print">
+      <div class="dr-title">🌿 Today is Your Day Off!</div>
+      <div class="dr-msg">${pickDayOffMessage_()}</div>
+    </div>`;
+}
+/* ===== DAILY SCHEDULE REMINDER END ===== */
 
 let ATTENDANCE_LOG = [
   {name:"Ethel", day:"Monday 08/17/26", status:"Late", remarks:"Arrived 15 mins late"},
@@ -7958,6 +8131,7 @@ const BUILDERS = {
   schedule: ()=>{
     const row = findMyScheduleRow(CURRENT_EMPLOYEE.name);
     return `
+    ${dailyScheduleReminderHtml_(row)}
     <div class="card" style="margin-bottom:16px;">
       <h3><span class="ic">📅</span> This Week</h3>
       <p class="muted">Pulled by matching your name to the master schedule — nobody else's row is shown here.</p>
