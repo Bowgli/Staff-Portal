@@ -8132,10 +8132,6 @@ const BUILDERS = {
     const row = findMyScheduleRow(CURRENT_EMPLOYEE.name);
     return `
     ${dailyScheduleReminderHtml_(row)}
-    <div class="card" style="margin-bottom:16px;">
-      <h3><span class="ic">📅</span> This Week</h3>
-      <p class="muted">Pulled by matching your name to the master schedule — nobody else's row is shown here.</p>
-    </div>
     ${renderMyScheduleGrid(row)}
     ${NEXT_SCHEDULE_ROWS.length && NEXT_SCHEDULE_PUBLISHED ? `
     <div class="card" style="margin-top:24px; margin-bottom:16px;">
