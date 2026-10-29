@@ -11285,7 +11285,7 @@ let MY_LEAVE_PREFETCH = null, leaveUiLoading_ = null;
 function leaveUi_(){
   return leaveUiLoading_ || (leaveUiLoading_ = new Promise((ok, fail) => {
     const s = document.createElement('script');
-    s.src = 'leave-ui.js?v=01fe74424f';
+    s.src = 'leave-ui.js?v=3d79e7f495';
     s.onload = () => ok(window.LeaveUI);
     s.onerror = () => { leaveUiLoading_ = null; s.remove(); fail(new Error("Couldn't load My Leave. Please check your connection and try again.")); };
     document.head.appendChild(s);
@@ -12784,17 +12784,13 @@ async function printEmployeeLog(){
 // after) so it never affects the paper size used by any OTHER
 // printable page in the portal.
 function printLeaveRequestForm(id){
-  if(!currentMgmtRole()){ alert("Printing the official Leave Request Form is only available to Admin accounts."); return; }
+  // Employees: only their own leave requests (MOCK.requests holds nothing else); Admin: any.
+  if(!currentMgmtRole() && !MOCK.requests.some(x => x.id === id && x.type === "Leave Request")){ alert("You can print only your own leave requests."); return; }
   leaveUi_().then(L => L.printInfo(id)).then(info => printLeaveRequestForm_(id, info)).catch(e => alert(e.message || "Couldn't prepare the form."));
 }
 function printLeaveRequestForm_(id, info){
   const {types: typesHtml, paid: paidHtml, hoursPaid: hoursPaidHtml} = info; // built (escaped) in leave-ui.js
   document.querySelectorAll("#leaveFormPrintContainer,#leaveFormPrintStyle").forEach(e => e.remove()); // a form left by a browser that never sent afterprint
-  // Enforced here, not just by hiding the button — printing the
-  // official form is an Admin/management function; a plain employee
-  // account calling this directly (e.g. from the browser console)
-  // is refused the same as if they'd never seen a Print button at all.
-  if(!currentMgmtRole()){ alert("Printing the official Leave Request Form is only available to Admin accounts."); return; }
   let name, position, r;
   const mine = MOCK.requests.find(x=>x.id===id);
   if(mine){
@@ -12815,7 +12811,7 @@ function printLeaveRequestForm_(id, info){
   const formHtml = `
     <div style="font-family:Georgia,serif; color:#000; line-height:1.5 !important;">
       <p style="text-align:center; font-style:italic; font-size:19px !important; font-weight:700; margin:0 0 22px;">LEAVE REQUEST FORM</p>
-      <p style="text-align:right; font-size:12px !important; margin:0 0 14px;">Leave Request Number: ${__spText(r.leaveRequestNumber||'—')} &nbsp;|&nbsp; Status: ${__spText(STATUS_LABELS[r.status] || r.status)}</p>
+      <p style="text-align:right; font-size:12px !important; margin:0 0 14px;">Leave Request Number: ${__spText(r.leaveRequestNumber||'—')} &nbsp;|&nbsp; Status: <strong>${__spText(STATUS_LABELS[r.status] || r.status)}</strong></p>
 
       <div style="border:1.5px solid #000 !important; padding:16px 20px !important; margin-bottom:16px;">
         <p style="font-weight:700; margin:0 0 12px;">Employee Information:</p>
@@ -12841,7 +12837,7 @@ function printLeaveRequestForm_(id, info){
           <tr><td style="border:none !important; padding:9px 0 !important;" colspan="2">Paid: &nbsp;${paidHtml} &nbsp;&nbsp; <span>(Only if vacation leave days are available)</span></td></tr>
           <tr><td style="border:none !important; padding:9px 0 !important;" colspan="2">Manager: _______________________________________________</td></tr>
           <tr><td style="border:none !important; padding:9px 0 !important;">Consultant: _______________________</td><td style="border:none !important; padding:9px 0 !important; text-align:right;">Date: _______________</td></tr>
-          <tr><td style="border:none !important; padding:9px 0 !important;" colspan="2">Comments: ${__spText(r.status==='declined' && r.declineReason ? r.declineReason : '')}${r.actionBy ? `<br><span>Reviewed by ${__spText(r.actionBy)}${r.actionDate ? ' on '+fmtLongDate(r.actionDate) : ''}</span>` : ''}</td></tr>
+          <tr><td style="border:none !important; padding:9px 0 !important;" colspan="2">Comments: ${__spText(r.status==='declined' && r.declineReason ? r.declineReason : '')}${r.actionBy && r.status !== 'pending' ? `<br><span>Reviewed by ${__spText(r.actionBy)}${r.actionDate ? ' on '+fmtLongDate(r.actionDate) : ''}</span>` : ''}</td></tr>
         </table>
       </div>
 
@@ -12871,7 +12867,7 @@ function printLeaveRequestForm_(id, info){
   const pageStyle = document.createElement('style');
   pageStyle.id = 'leaveFormPrintStyle';
   pageStyle.textContent = `
-    @page { size: A4 portrait; margin: 18mm 16mm; }
+    @page { size: letter portrait; margin: 10mm 12mm; }
     @media print {
       body > *:not(#leaveFormPrintContainer) { display: none !important; }
       #leaveFormPrintContainer { display: block !important; }

@@ -102,8 +102,12 @@
   }
   const root = () => activeView === 'my-leave' && document.getElementById('leaveRoot');
 
+  // Furlough: leave paused (server rule); earned hours are kept and shown, nothing can be filed.
+  const pausedNote = s => s.paused ? `<div class="banner note" style="margin-top:10px;">Your status is ${esc(s.paused)}, so leave is paused: new leave requests can't be filed and 0 hours can be used for now.${s.paid && s.paid.held > 0 ? ` Your earned ${h(s.paid.held)} are kept` : ' Your earned leave is kept'} and will be reviewed by Admin when you are back to Active.</div>` : '';
+  const requestButton = s => s.paused ? '' : `<button class="btn" style="margin-top:10px;" onclick="LeaveUI.openForm()">＋ Request Leave</button>`;
   function balanceCard(){
     const s = data.summary;
+    if(!s.setUp && s.paused) return `<div class="card"><h3><span class="ic">🌴</span> Paid Vacation</h3>${pausedNote(s)}</div>`;
     if(!s.setUp) return `<div class="card"><h3><span class="ic">🌴</span> Paid Vacation</h3>
       <div class="banner note" style="margin-top:8px;">${esc(s.reason || 'Your leave balance is not set up yet — please contact Admin.')} You can still request other types of leave.</div>
       <button class="btn" style="margin-top:12px;" onclick="LeaveUI.openForm()">＋ Request Leave</button></div>`;
@@ -121,7 +125,7 @@
       <p class="muted" style="font-size:12px;">${p.starting ? `This leave year started from ${h(p.starting.hours)} available on ${day(p.starting.date)} (entered by Admin)${p.yearly !== null ? `; each new leave year gives ${h(p.yearly)}` : ''}` : `You get ${h(p.allowance)} of Paid Vacation each leave year`}${p.adjustments ? ` (${p.adjustments > 0 ? '+' : ''}${h(p.adjustments)} adjusted by Admin)` : ''}. Pending hours are held for you until your request is decided.</p>
       ${s.nextCycleReserved ? `<p class="muted" style="font-size:12px;">${h(s.nextCycleReserved)} already requested for your next leave year.</p>` : ''}
       ${matUsed ? `<p class="muted" style="font-size:12px;">Maternity Leave: ${h(m.available)} available of ${h(m.allowance)}.</p>` : ''}
-      <button class="btn" style="margin-top:10px;" onclick="LeaveUI.openForm()">＋ Request Leave</button></div>`;
+      ${pausedNote(s)}${requestButton(s)}</div>`;
   }
 
   function historyCard(){
@@ -131,6 +135,7 @@
       const split = r.unpaidHours > 0 ? ` · Paid ${h(r.paidHours)} + Unpaid ${h(r.unpaidHours)}` : '';
       const canEdit = r.source === 'portal' && (r.status === 'pending' || r.status === 'needs-clarification');
       const canCancel = r.source === 'portal' && r.status === 'approved' && (r.end || r.start) >= today;
+      const canPrint = r.source === 'portal' && (r.status === 'pending' || r.status === 'approved') && MOCK.requests.some(x => x.id === r.id); // own requests only
       return `<div class="lv-item"><div style="min-width:0;">
           <div style="font-weight:600;">${range(r.start, r.end)}</div>
           <div class="muted" style="font-size:13px;">${esc(typeLabel)} · ${h(r.hours)}${split}${r.number ? ' · ' + esc(r.number) : ''}</div>
@@ -138,6 +143,7 @@
         <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">${pill(r.status)}
           ${canEdit ? `<button class="btn edit auto" style="padding:5px 10px;" onclick="LeaveUI.openForm('${esc(r.id)}')">✏️ Edit</button>` : ''}
           ${canCancel ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="LeaveUI.askCancel('${esc(r.id)}', this)">Request Cancellation</button>` : ''}
+          ${canPrint ? `<button class="btn ghost auto" style="padding:5px 10px;" title="Print leave request" aria-label="Print leave request ${esc(r.number)}" onclick="printLeaveRequestForm('${esc(r.id)}')">🖨️</button>` : ''}
         </div></div>`;
     }).join('');
     return `<div class="card"><h3><span class="ic">🗂️</span> My Leave History</h3>
@@ -309,6 +315,7 @@
 
   async function openForm(id){
     if(!data) await render();
+    if(data && data.summary && data.summary.paused) return paint(); // paused: the card explains why there is no form
     form = {id: id || null, clientId: crypto.randomUUID ? crypto.randomUUID() : 'cid-' + Date.now() + '-' + Math.random().toString(36).slice(2)};
     if(id){
       const r = data.history.find(x => x.id === id) || {}, m = (MOCK.requests || []).find(x => x.id === id) || {};
@@ -409,7 +416,8 @@
       <table class="mobile-card-table lv-table"><thead><tr><th>Employee</th><th>Company</th><th>Available</th><th>Pending</th><th>Upcoming</th><th>Used</th></tr></thead><tbody>
       ${list.map(e => `<tr>
         <td data-label="Employee"><button class="btn info auto" style="padding:3px 10px;" data-name="${esc(e.name)}" onclick="LeaveUI.openPerson(this.dataset.name)">${esc(e.name)}</button>
-          ${e.needsEntry ? '<span class="pill warn">Needs starting balance</span>' : !e.setUp ? `<span class="pill bad" title="${esc(e.reason)}">Check settings</span>` : ''}</td>
+          ${e.needsEntry ? '<span class="pill warn">Needs starting balance</span>' : !e.setUp ? `<span class="pill bad" title="${esc(e.reason)}">Check settings</span>` : ''}
+          ${e.paused ? `<span class="pill warn" title="Leave paused: 0 can be used, earned hours are kept">${esc(e.paused)} · leave paused${e.paid && e.paid.held ? ' (' + h(e.paid.held) + ' kept)' : ''}</span>` : ''}</td>
         <td data-label="Company">${esc(shortCo(e.company))}</td>
         <td data-label="Available"><b class="${e.setUp && e.paid.available < 0 ? 'lv-neg' : ''}">${n(e, 'available')}</b></td>
         <td data-label="Pending">${n(e, 'pending')}</td><td data-label="Upcoming">${n(e, 'upcoming')}</td><td data-label="Used">${n(e, 'used')}</td></tr>`).join('')
@@ -509,6 +517,7 @@
           <div class="lv-stat"><b>${String(q.used)}</b><span>Used / Taken</span></div></div>
         <p class="muted" style="font-size:12px;">${q.starting ? `Starting balance ${h(q.starting.hours)} as of ${day(q.starting.date)}.` : `Yearly Paid Vacation: ${h(q.allowance)}.`}${q.adjustments ? ` Adjustments: ${q.adjustments > 0 ? '+' : ''}${h(q.adjustments)}.` : ''} Maternity: ${h(s.maternity.available)} available.</p>`;
     }
+    if(s.paused) bal += `<div class="banner note" style="margin-top:8px;">${esc(s.paused)}: leave is paused. 0 hours can be used and new leave can't be filed or recorded until the status is back to Active.${s.paid && s.paid.held !== undefined ? ` Earned and kept: ${h(s.paid.held)} (same anniversary year).` : ''}</div>`;
     const acts = isFull() ? `<div class="lv-actions">${[['starting', 'Set starting balance'], ['record', 'Record approved leave'], ['adjust', 'Adjust balance'], ['suspension', 'Suspension'], ['settings', 'Leave settings']]
       .map(([k, l]) => `<button class="btn ${adm.action === k ? '' : 'ghost'} auto" onclick="LeaveUI.admAction('${k}')">${l}</button>`).join('')}</div>${actionForm(d)}` : '';
     const hist = d.history.map(r => `<div class="lv-item"><div style="min-width:0;"><div style="font-weight:600;">${range(r.start, r.end)}</div>
@@ -704,7 +713,8 @@
     const raw = typeof ALL_REQUESTS !== 'undefined' && ALL_REQUESTS.find(x => x.ID === id) || null;
     const mine = !raw && MOCK.requests.find(x => x.id === id) || {};
     const name = raw ? raw.EmployeeName : CURRENT_EMPLOYEE.name;
-    let d = null; try{ d = await fastOrFallback('leaveEmployee', null, 'name=' + encodeURIComponent(name) + '&older=true'); } catch(e){}
+    // Admin: that employee's records; an employee: only their own (the server scopes myLeave to the signed-in person).
+    let d = null; try{ d = raw ? await fastOrFallback('leaveEmployee', null, 'name=' + encodeURIComponent(name) + '&older=true') : await fastOrFallback('myLeave', null, 'older=true'); } catch(e){}
     const rec = d && !d.error && (d.history || []).find(x => x.id === id) || null;
     const type = rec ? rec.type : String((raw ? raw.LeaveType : mine.leaveType) || ''), other = rec ? rec.typeOther : String((raw ? raw.LeaveTypeOther : mine.leaveTypeOther) || '');
     const hours = rec ? rec.hours : Number(raw && (raw.LeaveHours || raw.NumberOfDays * 8)) || 0;
