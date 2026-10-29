@@ -11285,7 +11285,7 @@ let MY_LEAVE_PREFETCH = null, leaveUiLoading_ = null;
 function leaveUi_(){
   return leaveUiLoading_ || (leaveUiLoading_ = new Promise((ok, fail) => {
     const s = document.createElement('script');
-    s.src = 'leave-ui.js?v=8cece6a7bf';
+    s.src = 'leave-ui.js?v=01fe74424f';
     s.onload = () => ok(window.LeaveUI);
     s.onerror = () => { leaveUiLoading_ = null; s.remove(); fail(new Error("Couldn't load My Leave. Please check your connection and try again.")); };
     document.head.appendChild(s);
@@ -12784,6 +12784,12 @@ async function printEmployeeLog(){
 // after) so it never affects the paper size used by any OTHER
 // printable page in the portal.
 function printLeaveRequestForm(id){
+  if(!currentMgmtRole()){ alert("Printing the official Leave Request Form is only available to Admin accounts."); return; }
+  leaveUi_().then(L => L.printInfo(id)).then(info => printLeaveRequestForm_(id, info)).catch(e => alert(e.message || "Couldn't prepare the form."));
+}
+function printLeaveRequestForm_(id, info){
+  const {types: typesHtml, paid: paidHtml, hoursPaid: hoursPaidHtml} = info; // built (escaped) in leave-ui.js
+  document.querySelectorAll("#leaveFormPrintContainer,#leaveFormPrintStyle").forEach(e => e.remove()); // a form left by a browser that never sent afterprint
   // Enforced here, not just by hiding the button — printing the
   // official form is an Admin/management function; a plain employee
   // account calling this directly (e.g. from the browser console)
@@ -12805,9 +12811,6 @@ function printLeaveRequestForm(id){
   }
 
   const leaveTypeDisplay = r.leaveType === 'Other' ? (r.leaveTypeOther || 'Other') : (r.leaveType || '');
-  const LEAVE_TYPES_COL1 = ['Vacation Leave','Sick Leave','Emergency Leave','Jury or Witness Duty Leave'];
-  const LEAVE_TYPES_COL2 = ['Maternity Leave','Bereavement Leave','Military Leave','Other'];
-  const checkbox = (label) => `<span style="display:inline-block; width:14px; height:14px; border:1.2px solid #000; margin-right:8px; vertical-align:middle; text-align:center; line-height:13px; font-size:12px;">${__spText((r.leaveType===label || (label==='Other' && r.leaveType==='Other'))?'✓':'')}</span>${__spText(label)}`;
 
   const formHtml = `
     <div style="font-family:Georgia,serif; color:#000; line-height:1.5 !important;">
@@ -12824,13 +12827,8 @@ function printLeaveRequestForm(id){
       </div>
 
       <div style="border:1.5px solid #000 !important; padding:16px 20px !important; margin-bottom:16px;">
-        <p style="font-weight:700; margin:0 0 12px;">TYPE OF REQUEST</p>
-        <table style="width:100%; border:none !important; font-size:12px !important; border-collapse:collapse;">
-          <tr>
-            <td style="border:none !important; padding:0 !important; vertical-align:top;">${LEAVE_TYPES_COL1.map(t=>`<div style="margin-bottom:8px;">${checkbox(t)}</div>`).join('')}</td>
-            <td style="border:none !important; padding:0 !important; vertical-align:top;">${LEAVE_TYPES_COL2.map(t=>`<div style="margin-bottom:8px;">${checkbox(t)}</div>`).join('')}</td>
-          </tr>
-        </table>
+        <p style="font-weight:700; margin:0 0 12px;">TYPE OF LEAVE</p>
+        ${typesHtml}
         <p style="font-weight:700; margin:14px 0 8px;">Reason for leave:</p>
         <p style="border-bottom:1px solid #000; min-height:44px; font-size:12px !important; padding-bottom:4px;">${__spText(r.details||'')}</p>
       </div>
@@ -12840,7 +12838,7 @@ function printLeaveRequestForm(id){
         <table style="width:100%; border:none !important; font-size:12px !important; border-collapse:collapse;">
           <tr><td style="border:none !important; padding:9px 0 !important;">Employee Signature: _______________________</td><td style="border:none !important; padding:9px 0 !important; text-align:right;">Date: _______________</td></tr>
           <tr><td style="border:none !important; padding:9px 0 !important;">Received By: _______________________</td><td style="border:none !important; padding:9px 0 !important; text-align:right;">Date: _______________</td></tr>
-          <tr><td style="border:none !important; padding:9px 0 !important;" colspan="2">Paid: &nbsp;☐ YES &nbsp;&nbsp; ☐ NO &nbsp;&nbsp; <span>(Only if vacation leave days are available)</span></td></tr>
+          <tr><td style="border:none !important; padding:9px 0 !important;" colspan="2">Paid: &nbsp;${paidHtml} &nbsp;&nbsp; <span>(Only if vacation leave days are available)</span></td></tr>
           <tr><td style="border:none !important; padding:9px 0 !important;" colspan="2">Manager: _______________________________________________</td></tr>
           <tr><td style="border:none !important; padding:9px 0 !important;">Consultant: _______________________</td><td style="border:none !important; padding:9px 0 !important; text-align:right;">Date: _______________</td></tr>
           <tr><td style="border:none !important; padding:9px 0 !important;" colspan="2">Comments: ${__spText(r.status==='declined' && r.declineReason ? r.declineReason : '')}${r.actionBy ? `<br><span>Reviewed by ${__spText(r.actionBy)}${r.actionDate ? ' on '+fmtLongDate(r.actionDate) : ''}</span>` : ''}</td></tr>
@@ -12852,7 +12850,7 @@ function printLeaveRequestForm(id){
           <p style="font-weight:700; margin:0 0 12px;">FOR ADMIN USE ONLY</p>
           <p style="margin:9px 0;">Paid Vacation Days Available: _______________</p>
           <p style="margin:9px 0;">Pay Period Applied to: _______________</p>
-          <p style="margin:9px 0;">Total Hours Paid: _______________</p>
+          <p style="margin:9px 0;">Total Hours Paid: ${hoursPaidHtml}</p>
           <p style="margin:9px 0;">Vacation Days Left: _______________</p>
           <p style="font-size:9.5px !important; margin:6px 0 0; font-style:italic;">(Note: After deducted leave days from pay period)</p>
         </div>

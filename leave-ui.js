@@ -47,6 +47,8 @@
 .lv-split div{background:var(--panel); border-radius:10px; padding:8px; text-align:center;} .lv-split b{display:block; font-size:20px;}
 .lv-policy{border:1px solid #BFDBFE; background:#EFF6FF; border-radius:12px; padding:12px 14px; margin:10px 0 4px; font-size:14px; line-height:1.5;}
 .lv-policy h4{margin:0 0 4px; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:#1E3A8A;} .lv-policy h4 + p{margin:0 0 10px;} .lv-policy p:last-child{margin-bottom:0;}
+.lv-sending{display:flex; align-items:center; gap:8px; padding:10px 12px; border-radius:10px; background:#EFF6FF; color:#1D4ED8; font-weight:600; font-size:14px; margin:8px 0;}
+.lv-sending .btn-spinner{border-color:rgba(29,78,216,.25) !important; border-top-color:#1D4ED8 !important; margin:0;}
 .lv-ro{border:1px solid var(--line); border-radius:10px; padding:10px 12px; background:var(--panel-2); font-weight:600; margin-bottom:12px;}
 .lv-bad{border-color:var(--red) !important; box-shadow:0 0 0 2px var(--red-soft) !important;} .lv-ferr{display:block; color:var(--red); font-size:12px; margin:-6px 0 10px;}
 .lv-tabs{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;}
@@ -169,6 +171,7 @@
       <label for="lvReason">Reason <span class="muted">(required)</span></label><textarea id="lvReason" maxlength="1000" placeholder="Why do you need this leave?" oninput="LeaveUI.update()"></textarea>
       <div id="lvSummary"></div>
       <p class="login-err" id="lvErr"></p>
+      <p class="lv-sending" id="lvSending" role="status" aria-live="polite" style="display:none;"><span class="btn-spinner"></span>${form.id ? 'Saving your changes... Please wait.' : 'Submitting your leave request... Please wait.'}</p>
       <div style="display:flex; gap:8px; margin-top:8px;"><button class="btn" id="lvSubmit" style="flex:1;" onclick="LeaveUI.submit()">${form.id ? 'Save Changes' : 'Submit Leave Request'}</button>
         <button class="btn ghost auto" onclick="LeaveUI.closeForm()">Cancel</button></div></div>`;
   }
@@ -272,16 +275,24 @@
       LeaveStartDate: v.start, LeaveEndDate: v.end, NumberOfDays: v.days, ReturnToWorkDate: v.ret, PartialHours: v.part || '',
       AnniversaryDate: data.summary.setUp ? data.summary.cycle.start : ''};
     if(form.split) Object.assign(body, {PaidHours: form.split.paid, UnpaidHours: form.split.unpaid, SplitConfirmed: 'yes'});
-    const btn = $('lvSubmit'); btn.disabled = true; btn.textContent = 'Sending...'; form.sending = true;
+    // While sending: spinner + message, the form is locked (not cleared). The same clientId is sent on every
+    // try, so a retry after an error never files a second request.
+    const btn = $('lvSubmit'), sending = on => {
+      form.sending = on; btn.disabled = on;
+      if(on) btn.innerHTML = `<span class="btn-spinner"></span>${form.id ? 'Saving...' : 'Submitting...'}`; else btn.textContent = form.id ? 'Save Changes' : 'Submit Leave Request';
+      document.querySelectorAll('#leaveForm input, #leaveForm select, #leaveForm textarea, #leaveForm button:not(#lvSubmit)').forEach(x => { x.disabled = on; });
+      $('lvSending').style.display = on ? '' : 'none';
+    };
+    sending(true);
     try{
       const r = form.id ? await apiPostMinDelayRetrying('editRequest', Object.assign({id: form.id}, body))
         : await apiPostMinDelayRetrying('submitRequest', Object.assign({EmployeeName: CURRENT_EMPLOYEE.name, clientId: form.clientId}, body));
       if(!r.ok){
+        sending(false);
         if(r.needsSplitConfirm){ // the balance changed since this screen was loaded: show the server's breakdown
           data.summary.paid.available = r.available - (paidAvailable() - data.summary.paid.available);
           form.values = v; update();
         }
-        btn.disabled = false; btn.textContent = form.id ? 'Save Changes' : 'Submit Leave Request'; form.sending = false;
         const field = /reason/i.test(r.error || '') ? 'lvReason' : /date|already have a leave|end date/i.test(r.error || '') ? 'lvStart' : '';
         if(field){ const m = {}; m[field] = r.error; showErrors(m); }
         return fail(r.error || 'Couldn’t send your request. Please try again.');
@@ -291,7 +302,7 @@
       if(typeof refreshMyRequests === 'function') refreshMyRequests().catch(() => {});
       await load(); paint();
     } catch(e){
-      btn.disabled = false; btn.textContent = form && form.id ? 'Save Changes' : 'Submit Leave Request'; if(form) form.sending = false;
+      if(form) sending(false);
       fail(e.message || 'Couldn’t send your request. Please try again.');
     }
   }
@@ -516,7 +527,7 @@
       <div class="grid grid-2"><div><label for="lvStDate">As of</label><input id="lvStDate" type="date" max="${t}" value="${t}"></div>
       <div><label for="lvStHours">Available hours</label><input id="lvStHours" type="number" step="0.5" value="${d.profile.startingPaidHours ?? ''}"></div></div>
       <label for="lvStNote">Note</label><input id="lvStNote" type="text" maxlength="300" placeholder="e.g. Checked against the Leave Tracker">${err}
-      <button class="btn auto" onclick="LeaveUI.saveStarting()">Save starting balance</button></div>`;
+      <button class="btn auto" onclick="LeaveUI.saveStarting(this)">Save starting balance</button></div>`;
     if(adm.action === 'record') return `<div class="lv-form"><p class="muted">For leave already approved outside the portal (for example in the Leave Tracker). It is saved as Approved and counted once.</p>
       <label for="lvRType">Type of leave</label><select id="lvRType" onchange="LeaveUI.recordUpdate()">${types.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join('')}</select>
       <div id="lvROtherWrap" style="display:none;"><label for="lvROther">Please specify</label><input id="lvROther" type="text" maxlength="80"></div>
@@ -524,44 +535,62 @@
       <div><label for="lvREnd">Last day</label><input id="lvREnd" type="date" onchange="LeaveUI.recordUpdate()"></div></div>
       <label for="lvRPart">Part-day hours <span class="muted">(only for a one-day leave, optional)</span></label><input id="lvRPart" type="number" min="0.5" max="7.5" step="0.5" oninput="LeaveUI.recordUpdate()">
       <label for="lvRNote">Note</label><input id="lvRNote" type="text" maxlength="300" placeholder="e.g. Approved in the Leave Tracker on Oct 20">
-      <div id="lvRSum"></div>${err}<button class="btn auto" onclick="LeaveUI.saveRecord()">Save as approved leave</button></div>`;
+      <div id="lvRSum"></div>${err}<button class="btn auto" onclick="LeaveUI.saveRecord(this)">Save as approved leave</button></div>`;
     if(adm.action === 'adjust') return `<div class="lv-form"><p class="muted">Add (+) or remove (−) hours. Every adjustment is recorded with your reason.</p>
       <div class="grid grid-2"><div><label for="lvAjBal">Balance</label><select id="lvAjBal"><option value="Paid">Paid Vacation</option><option value="Maternity">Maternity</option></select></div>
       <div><label for="lvAjHours">Hours (+ or −)</label><input id="lvAjHours" type="number" step="0.5"></div></div>
       <label for="lvAjDate">Date</label><input id="lvAjDate" type="date" value="${t}">
-      <label for="lvAjReason">Reason</label><input id="lvAjReason" type="text" maxlength="300">${err}<button class="btn auto" onclick="LeaveUI.saveAdjust()">Save adjustment</button></div>`;
+      <label for="lvAjReason">Reason</label><input id="lvAjReason" type="text" maxlength="300">${err}<button class="btn auto" onclick="LeaveUI.saveAdjust(this)">Save adjustment</button></div>`;
     if(adm.action === 'suspension') return `<div class="lv-form"><p class="muted">Records a suspension. It uses no leave balance.</p>
       <div class="grid grid-2"><div><label for="lvSuStart">First day</label><input id="lvSuStart" type="date"></div><div><label for="lvSuEnd">Last day</label><input id="lvSuEnd" type="date"></div></div>
-      <label for="lvSuReason">Reason</label><input id="lvSuReason" type="text" maxlength="300">${err}<button class="btn auto" onclick="LeaveUI.saveSuspension()">Save suspension</button></div>`;
+      <label for="lvSuReason">Reason</label><input id="lvSuReason" type="text" maxlength="300">${err}<button class="btn auto" onclick="LeaveUI.saveSuspension(this)">Save suspension</button></div>`;
     if(adm.action === 'settings') return `<div class="lv-form"><p class="muted">Yearly Paid Vacation follows the entitlement position (from the next leave year). The leave year starts on the Promoted Date, or the Date Hired in All Employees.</p>
       <div class="grid grid-2"><div><label for="lvSePos">Entitlement position</label><select id="lvSePos"><option value="">— Choose —</option>${(d.positions || []).map(x => `<option value="${esc(x.position)}" ${x.position === d.profile.entitlementPosition ? 'selected' : ''}>${esc(x.position)} (${h(x.hours)})</option>`).join('')}</select></div>
       <div><label for="lvSeProm">Promoted date <span class="muted">(optional)</span></label><input id="lvSeProm" type="date" value="${esc(d.profile.promotedDate || '')}"></div></div>
       ${d.profile.source === 'Admin-managed' ? `<div class="grid grid-2"><div><label for="lvSeHire">Date hired</label><input id="lvSeHire" type="date"></div>
         <div><label for="lvSeCo">Company</label><select id="lvSeCo"><option value="">— Choose —</option>${COMPANIES.map(c => `<option ${c === d.profile.company ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div></div>` : ''}
-      <label for="lvSeReason">Reason</label><input id="lvSeReason" type="text" maxlength="300">${err}<button class="btn auto" onclick="LeaveUI.saveSettings()">Save leave settings</button></div>`;
+      <label for="lvSeReason">Reason</label><input id="lvSeReason" type="text" maxlength="300">${err}<button class="btn auto" onclick="LeaveUI.saveSettings(this)">Save leave settings</button></div>`;
     return '';
   }
   const val = id => (document.getElementById(id) || {}).value || '';
-  const admFail = m => { const e = document.getElementById('lvAdmErr'); if(e){ e.textContent = m; e.style.display = 'block'; } };
-  async function admSend(action, payload, done, btnText){
-    const btn = document.activeElement && document.activeElement.tagName === 'BUTTON' ? document.activeElement : null;
-    if(btn){ btn.disabled = true; btn.dataset.t = btn.textContent; btn.textContent = 'Saving...'; }
-    try{
-      const r = await apiPostMinDelayRetrying(action, payload);
-      if(!r.ok){ if(r.needsSplitConfirm) return showSplit(r); return admFail(r.error || 'Couldn’t save. Nothing was changed.'); }
-      saveStatusPill_('done', done);
-      adm.action = ''; adm.split = null;
-      adm.data = await monitoring().catch(() => adm.data);
-      await loadPerson();
-    } catch(e){ admFail(e.message || 'Couldn’t save. Please try again.'); }
-    finally { if(btn && document.body.contains(btn)){ btn.disabled = false; btn.textContent = btn.dataset.t; } }
+  const admFail = m => { const e = document.getElementById('lvAdmErr'); if(e){ e.textContent = m; e.style.display = m ? 'block' : 'none'; } };
+  /* Saves (same pattern as All Employees): the clicked button (passed in, so it is found even after the
+     confirmation dialog) shows a spinner and stays disabled; "Saving…" until the server answers; success only
+     after it confirms; on an error the form keeps what was typed. Every save carries an operation ID that the
+     automatic retries reuse, and saving the same thing again after an error reuses it too, so the server
+     applies it once (Security.gs secWrite_) even when a reply was lost after the save. */
+  let lastOp = null;
+  const opFor = (action, payload) => { const key = action + JSON.stringify(payload); if(!lastOp || lastOp.key !== key) lastOp = {key, id: newOpId_()}; return lastOp.id; };
+  const busy = (btn, on) => { if(!btn) return; if(on){ btn.dataset.t = btn.dataset.t || btn.textContent; btn.innerHTML = '<span class="btn-spinner"></span>Saving...'; } else if(document.body.contains(btn)) btn.textContent = btn.dataset.t; btn.disabled = on; };
+  const pillOff = () => { const p = document.getElementById('saveStatusPill'); if(p) p.style.display = 'none'; };
+  const saveError = e => /too long/i.test(e.message || '') ? 'The server is taking longer than usual, so the save may still finish. Please wait a moment and check before saving again (saving the same thing again will not record it twice).'
+    : e.message || 'Couldn’t save. Please try again.';
+  async function sendOnce(action, payload, btn){ // {r} with the server's answer, or {error}
+    if(adm.saving) return {busy: true};
+    adm.saving = true; busy(btn, true); admFail(''); saveStatusPill_('saving');
+    try{ return {r: await apiPostMinDelayRetrying(action, Object.assign({opId: opFor(action, payload)}, payload))}; }
+    catch(e){ const m = saveError(e); admFail(m); saveStatusPill_('error', m); return {error: m}; }
+    finally { adm.saving = false; busy(btn, false); }
   }
-  async function saveStarting(){
+  async function admSend(action, payload, done, btn){
+    const {r} = await sendOnce(action, payload, btn);
+    if(!r) return;
+    if(!r.ok){
+      if(r.needsSplitConfirm){ pillOff(); return showSplit(r); }
+      const m = r.error || 'Couldn’t save. Nothing was changed.'; saveStatusPill_('error', m); return admFail(m);
+    }
+    lastOp = null; saveStatusPill_('done', done);
+    adm.action = ''; adm.split = null;
+    const [m] = await Promise.all([monitoring().catch(() => adm.data), loadPerson()]);
+    adm.data = m; paintAdmin();
+  }
+  async function saveStarting(btn){
+    if(adm.saving) return; // a save is already on its way
     const hours = val('lvStHours'), date = val('lvStDate'), note = val('lvStNote').trim();
     if(hours === '' || isNaN(Number(hours))) return admFail('Enter the available hours.');
     if(!date) return admFail('Choose the date.'); if(!note) return admFail('Please add a note.');
     if(!await confirmDialog_({title: 'Save starting balance?', message: adm.person + ': ' + h(hours) + ' available as of ' + day(date) + '.', confirm: 'Save', danger: false})) return;
-    admSend('leaveSetStarting', {date, note, entries: [{employeeName: adm.person, paidHours: Number(hours)}]}, 'Starting balance saved.');
+    admSend('leaveSetStarting', {date, note, entries: [{employeeName: adm.person, paidHours: Number(hours)}]}, 'Starting balance saved.', btn);
   }
   function recordValues(){
     const start = val('lvRStart'), end = val('lvREnd') || start, part = start && start === end ? Number(val('lvRPart')) || 0 : 0;
@@ -576,7 +605,8 @@
       : v.hours ? `<div class="lv-sum">This leave: <b>${h(v.hours)}</b></div>` : '';
   }
   function showSplit(r){ adm.split = r; recordUpdate(); admFail(''); }
-  async function saveRecord(){
+  async function saveRecord(btn){
+    if(adm.saving) return; // a save is already on its way
     const v = recordValues();
     if(!v.start || v.end < v.start) return admFail('Choose valid first and last days.');
     if(v.type === 'Other' && !v.other) return admFail('Please say what kind of leave this is.');
@@ -587,28 +617,31 @@
       Object.assign(body, {PaidHours: adm.split.paidHours, UnpaidHours: adm.split.unpaidHours, SplitConfirmed: 'yes'});
     }
     if(!await confirmDialog_({title: 'Save as approved leave?', message: adm.person + ': ' + v.type + ', ' + range(v.start, v.end) + ' · ' + h(v.hours), confirm: 'Save', danger: false})) return;
-    admSend('leaveRecordApproved', body, 'Approved leave recorded.');
+    admSend('leaveRecordApproved', body, 'Approved leave recorded.', btn);
   }
-  async function saveAdjust(){
+  async function saveAdjust(btn){
+    if(adm.saving) return; // a save is already on its way
     const hours = val('lvAjHours'), reason = val('lvAjReason').trim();
     if(!hours || isNaN(Number(hours)) || Number(hours) === 0) return admFail('Enter the hours to add (+) or remove (−).');
     if(!reason) return admFail('A reason is required.');
     if(!await confirmDialog_({title: 'Save adjustment?', message: adm.person + ': ' + (Number(hours) > 0 ? '+' : '') + h(hours) + ' (' + val('lvAjBal') + ').', confirm: 'Save', danger: false})) return;
-    admSend('leaveAdjust', {employeeName: adm.person, balance: val('lvAjBal'), hours: Number(hours), date: val('lvAjDate'), reason}, 'Adjustment saved.');
+    admSend('leaveAdjust', {employeeName: adm.person, balance: val('lvAjBal'), hours: Number(hours), date: val('lvAjDate'), reason}, 'Adjustment saved.', btn);
   }
-  async function saveSuspension(){
+  async function saveSuspension(btn){
+    if(adm.saving) return; // a save is already on its way
     const start = val('lvSuStart'), end = val('lvSuEnd') || start, reason = val('lvSuReason').trim();
     if(!start || end < start) return admFail('Choose valid first and last days.');
     if(!reason) return admFail('A reason is required.');
     if(!await confirmDialog_({title: 'Save suspension?', message: adm.person + ': ' + range(start, end) + '.', confirm: 'Save', danger: false})) return;
-    admSend('leaveAdminEntry', {employeeName: adm.person, start, end, reason}, 'Suspension saved.');
+    admSend('leaveAdminEntry', {employeeName: adm.person, start, end, reason}, 'Suspension saved.', btn);
   }
-  async function saveSettings(){
+  async function saveSettings(btn){
+    if(adm.saving) return; // a save is already on its way
     const pos = val('lvSePos'), reason = val('lvSeReason').trim(), d = adm.personData;
     if(!pos) return admFail('Choose the entitlement position.');
     if(!reason) return admFail('A reason is required.');
     admSend('leaveProfileSave', {employeeName: adm.person, entitlementPosition: pos, promotedDate: val('lvSeProm'), hireDate: val('lvSeHire'),
-      source: d.profile.source, company: val('lvSeCo'), reason}, 'Leave settings saved.');
+      source: d.profile.source, company: val('lvSeCo'), reason}, 'Leave settings saved.', btn);
   }
 
   /* ----- Starting balances for many employees at once ----- */
@@ -630,9 +663,10 @@
         <td data-label="Available hours"><input class="lvBHours" type="number" step="0.5" aria-label="Available hours for ${esc(e.name)}" style="max-width:120px;"></td></tr>`).join('')
         || '<tr><td colspan="5" class="muted">Everyone already has a starting balance.</td></tr>'}
       </tbody></table><p class="login-err" id="lvAdmErr"></p>
-      <button class="btn" style="margin-top:12px;" onclick="LeaveUI.saveBulk()">Save starting balances</button></div>`;
+      <button class="btn" style="margin-top:12px;" onclick="LeaveUI.saveBulk(this)">Save starting balances</button></div>`;
   }
-  async function saveBulk(){
+  async function saveBulk(btn){
+    if(adm.saving) return; // a save is already on its way
     const date = val('lvBDate'), note = val('lvBNote').trim();
     const entries = [...document.querySelectorAll('#leaveRoot tr[data-name]')].map(tr => ({employeeName: tr.dataset.name,
       paidHours: tr.querySelector('.lvBHours').value, entitlementPosition: tr.querySelector('.lvBPos').value})).filter(x => x.paidHours !== '');
@@ -640,13 +674,11 @@
     if(entries.some(x => isNaN(Number(x.paidHours)))) return admFail('Hours must be numbers.');
     if(!date) return admFail('Choose the date.'); if(!note) return admFail('Please add a note.');
     if(!await confirmDialog_({title: 'Save ' + entries.length + ' starting balance' + (entries.length > 1 ? 's' : '') + '?', message: 'As of ' + day(date) + '.\n' + entries.slice(0, 8).map(x => x.employeeName + ': ' + h(x.paidHours)).join('\n') + (entries.length > 8 ? '\n…' : ''), confirm: 'Save', danger: false})) return;
-    const btn = document.activeElement; if(btn && btn.tagName === 'BUTTON'){ btn.disabled = true; btn.textContent = 'Saving...'; }
-    try{
-      const r = await apiPostMinDelayRetrying('leaveSetStarting', {date, note, entries: entries.map(x => ({employeeName: x.employeeName, paidHours: Number(x.paidHours), entitlementPosition: x.entitlementPosition}))});
-      if(!r.ok){ if(btn){ btn.disabled = false; btn.textContent = 'Save starting balances'; } return admFail(r.error || 'Couldn’t save. Nothing was changed.'); }
-      saveStatusPill_('done', r.saved + ' starting balance' + (r.saved > 1 ? 's' : '') + ' saved.');
-      adm.bulk = false; adm.data = await monitoring().catch(() => adm.data); paintAdmin();
-    } catch(e){ if(btn){ btn.disabled = false; btn.textContent = 'Save starting balances'; } admFail(e.message || 'Couldn’t save. Please try again.'); }
+    const {r} = await sendOnce('leaveSetStarting', {date, note, entries: entries.map(x => ({employeeName: x.employeeName, paidHours: Number(x.paidHours), entitlementPosition: x.entitlementPosition}))}, btn);
+    if(!r) return;
+    if(!r.ok){ const m = r.error || 'Couldn’t save. Nothing was changed.'; saveStatusPill_('error', m); return admFail(m); }
+    lastOp = null; saveStatusPill_('done', r.saved + ' starting balance' + (r.saved > 1 ? 's' : '') + ' saved.');
+    adm.bulk = false; adm.data = await monitoring().catch(() => adm.data); paintAdmin();
   }
 
   /* ----- Paid Vacation box on a leave request (Manage Requests) ----- */
@@ -665,7 +697,31 @@
       ${paid || unpaid ? ` · This request: Paid ${h(paid)}${unpaid ? ' + Unpaid ' + h(unpaid) : ''}` : ' · This leave type does not use Paid Vacation'}</div>`;
   }
 
-  window.LeaveUI = {render, openForm, update, submit, askCancel, renderAdmin, openPerson, balanceBox, recordUpdate, saveStarting, saveRecord, saveAdjust, saveSuspension, saveSettings, saveBulk,
+  /* ----- Printable Leave Request Form (printLeaveRequestForm in the page): Type of Leave and Paid hours -----
+     The choices are the configured leave types (the server's list) and the hours come from the same saved
+     leave record the balances use, so the printed form matches the request. */
+  async function printInfo(id){
+    const raw = typeof ALL_REQUESTS !== 'undefined' && ALL_REQUESTS.find(x => x.ID === id) || null;
+    const mine = !raw && MOCK.requests.find(x => x.id === id) || {};
+    const name = raw ? raw.EmployeeName : CURRENT_EMPLOYEE.name;
+    let d = null; try{ d = await fastOrFallback('leaveEmployee', null, 'name=' + encodeURIComponent(name) + '&older=true'); } catch(e){}
+    const rec = d && !d.error && (d.history || []).find(x => x.id === id) || null;
+    const type = rec ? rec.type : String((raw ? raw.LeaveType : mine.leaveType) || ''), other = rec ? rec.typeOther : String((raw ? raw.LeaveTypeOther : mine.leaveTypeOther) || '');
+    const hours = rec ? rec.hours : Number(raw && (raw.LeaveHours || raw.NumberOfDays * 8)) || 0;
+    // Maternity is paid from its own balance; older "Vacation Leave" requests show Paid or Unpaid Vacation from their hours.
+    const paid = type === 'Maternity Leave' ? hours : rec ? rec.paidHours : Number(raw && raw.PaidHours) || 0, unpaid = rec ? rec.unpaidHours : Number(raw && raw.UnpaidHours) || 0;
+    const ticked = type === 'Vacation Leave' ? (paid > 0 ? 'Paid Vacation Leave' : 'Unpaid Vacation Leave') : type;
+    let types = (d && !d.error && d.types) || (data && data.types) || [];
+    if(ticked && !types.includes(ticked)) types = types.concat([ticked]); // an older type no longer offered
+    const box = t => `<div style="margin-bottom:8px;"><span style="display:inline-block; width:14px; height:14px; border:1.2px solid #000; margin-right:8px; vertical-align:middle; text-align:center; line-height:13px; font-size:12px;">${t === ticked ? '✓' : ''}</span>${esc(t)}${t === 'Other' && ticked === 'Other' && other ? ': <strong>' + esc(other) + '</strong>' : ''}</div>`;
+    const cell = list => `<td style="border:none !important; padding:0 !important; vertical-align:top; width:50%;">${list.map(box).join('')}</td>`, half = Math.ceil(types.length / 2);
+    const known = !!(rec || raw), mark = on => `<span style="font-size:14px;">${on ? '☑' : '☐'}</span>`;
+    return {types: `<table style="width:100%; border:none !important; font-size:12px !important; border-collapse:collapse;"><tr>${cell(types.slice(0, half))}${cell(types.slice(half))}</tr></table>`,
+      paid: `${mark(known && paid > 0)} YES &nbsp;&nbsp; ${mark(known && !(paid > 0))} NO`,
+      hoursPaid: known ? '<strong>' + h(paid) + '</strong>' + (unpaid > 0 ? ' (+ ' + h(unpaid) + ' unpaid)' : '') : '_______________'};
+  }
+
+  window.LeaveUI = {render, openForm, update, submit, askCancel, renderAdmin, openPerson, balanceBox, recordUpdate, saveStarting, saveRecord, saveAdjust, saveSuspension, saveSettings, saveBulk, printInfo,
     admTab(t){ adm.tab = t; paintAdmin(); },
     admSet(k, v){ adm[k] = v; paintAdmin(); },
     admSearch(v){ adm.q = v; adm.focusSearch = true; paintAdmin(); },
