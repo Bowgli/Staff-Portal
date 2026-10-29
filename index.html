@@ -721,6 +721,19 @@ h1, h2, h3, h4, .section-title, .daily-reminder .dr-title, [style*="Fraunces"], 
 .tsc-over-breaktime{background-color:#EDE9FE; background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M9%203c-1%201.5%201%202.5%200%204M13%203c-1%201.5%201%202.5%200%204%22%20stroke%3D%22%23A78BFA%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20fill%3D%22none%22%2F%3E%3Cpath%20d%3D%22M4%209h13v5a6%206%200%200%201-6%206h-1a6%206%200%200%201-6-6z%22%20fill%3D%22%238B5CF6%22%2F%3E%3Cpath%20d%3D%22M17%2011h1.5a2.5%202.5%200%200%201%200%205H16%22%20stroke%3D%22%238B5CF6%22%20stroke-width%3D%222%22%20fill%3D%22none%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%2220%22%20width%3D%2215%22%20height%3D%222%22%20rx%3D%221%22%20fill%3D%22%236D28D9%22%2F%3E%3C%2Fsvg%3E"); font-size:0;}
 .tsc-all{font-size:12.5px; font-weight:700; color:#1D4ED8; white-space:nowrap;}
 .card:not(.clickable) .tsc-all{display:none;} /* only cards that open a page say View All */
+
+/* Action icons (Delete / Edit / View): one size and style everywhere; the name is in the tooltip (title) and aria-label. */
+.ib{display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; padding:0; border-radius:10px; border:1px solid var(--line); background:var(--panel); color:#475569; cursor:pointer; vertical-align:middle; font-size:0; transition:background .15s, border-color .15s;}
+.ib + .ib{margin-left:6px;}
+.ib::before{content:''; width:18px; height:18px; background:currentColor; -webkit-mask:var(--ic) center/contain no-repeat; mask:var(--ic) center/contain no-repeat;}
+.ib:hover{background:var(--panel-2);} .ib:focus-visible{outline:2px solid var(--blue); outline-offset:2px;}
+.ib:disabled{opacity:.7; cursor:wait;} .ib:has(.btn-spinner)::before{display:none;}
+.ib .btn-spinner{margin:0; border-color:currentColor; border-top-color:transparent;}
+.ib-del{color:var(--red); --ic:url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2024%2024'%20fill%3D'none'%20stroke%3D'black'%20stroke-width%3D'2'%20stroke-linecap%3D'round'%20stroke-linejoin%3D'round'%3E%3Cpath%20d%3D'M3%206h18M8%206V4h8v2M19%206l-1%2014H6L5%206M10%2011v6M14%2011v6'%2F%3E%3C%2Fsvg%3E");} .ib-del:hover{background:var(--red-soft); border-color:#FECACA;}
+.ib-edit{color:var(--blue); --ic:url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2024%2024'%20fill%3D'none'%20stroke%3D'black'%20stroke-width%3D'2'%20stroke-linecap%3D'round'%20stroke-linejoin%3D'round'%3E%3Cpath%20d%3D'M12%2020h9M16.5%203.5a2.1%202.1%200%200%201%203%203L7%2019l-4%201%201-4z'%2F%3E%3C%2Fsvg%3E");} .ib-edit:hover{background:var(--blue-soft); border-color:#BFDBFE;}
+.ib-view{--ic:url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2024%2024'%20fill%3D'none'%20stroke%3D'black'%20stroke-width%3D'2'%20stroke-linecap%3D'round'%20stroke-linejoin%3D'round'%3E%3Cpath%20d%3D'M2%2012s3.5-7%2010-7%2010%207%2010%207-3.5%207-10%207S2%2012%202%2012z'%2F%3E%3Ccircle%20cx%3D'12'%20cy%3D'12'%20r%3D'3'%2F%3E%3C%2Fsvg%3E");}
+.status-select.cancel-requested{background:#FEF3C7 !important; color:#B45309 !important; border-color:#F59E0B !important;}
+.status-select.cancelled{background:#F1F5F9 !important; color:#475569 !important; border-color:#CBD5E1 !important;}
 </style>
 </head>
 <body>
@@ -2272,6 +2285,7 @@ function computeProbationEndDate(dateHired){
   return `${yyyy}-${mm}-${dd}`;
 }
 // Admin-assigned numeric Employee ID for the logged-in employee ('' if none set yet).
+function myRosterRecord_(){ return (CURRENT_EMPLOYEE && EMPLOYEE_ROSTER.find(x => x.name === CURRENT_EMPLOYEE.name)) || {}; }
 function currentEmployeeId(){
   if(!CURRENT_EMPLOYEE) return '';
   const r = EMPLOYEE_ROSTER.find(x => x.name === CURRENT_EMPLOYEE.name);
@@ -2285,7 +2299,7 @@ function employmentStatusPill(employmentStatus, dateHired){
     return `🟡 Probationary${isDue ? ' <span class="muted" style="font-size:11px;">⚠️ Review Due</span>' : ''}`;
   }
   if(employmentStatus === 'Regular') return '🟢 Regular';
-  return employmentStatus;
+  return String(employmentStatus).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 }
 
 // Shift Manager, Supervisor, and the Slot Tech/Security roles get
@@ -2640,6 +2654,20 @@ async function saveCellEdit(){
   });
   // Picks up anyone ELSE's changes once this save has landed; values still saving stay on screen.
   if(ok) refreshScheduleOnly().then(() => { if(activeView === 'mgmt-schedule') renderView('mgmt-schedule'); }).catch(e => console.warn('saveCellEdit: background refresh failed:', e.message || e));
+}
+// Browser pop-ups (alert) don't show in some in-app browsers, so every portal message uses the portal
+// dialog instead (OK only; "Title\n\nDetails" keeps its title). Never blocks; no message is followed by a page change.
+const nativeAlert_ = window.alert.bind(window);
+window.alert = text => {
+  if(!document.body) return nativeAlert_(text);
+  const t = String(text ?? ''), cut = t.indexOf('\n\n'), titled = cut > 0 && cut < 80;
+  confirmDialog_({title: titled ? t.slice(0, cut) : 'Notice', message: titled ? t.slice(cut + 2) : t, confirm: 'OK', danger: false, cancel: false});
+};
+// The login display name option is ticked when the name is changed (untick to keep the old login name),
+// and left unticked for other edits so a company or position change never renames the login.
+function syncLoginBoxFollowsName_(input){
+  const box = document.getElementById('empProfileSyncLogin');
+  if(box) box.checked = input.value.trim() !== input.defaultValue.trim();
 }
 
 function renderMyScheduleGrid(row, days){
@@ -3434,6 +3462,7 @@ async function loadRemoteData(){
     const recognition = mgmtBulkA.recognition, requests = mgmtBulkA.requests, concerns = mgmtBulkA.concerns;
     const suggestions = mgmtBulkB.suggestions, evaluations = mgmtBulkB.evaluations, disciplinaryRecords = mgmtBulkB.disciplinaryRecords;
     const myEvaluationsReceivedRaw = myEmpScopedGroup.myEvaluationsReceived, myRequestsScopedRaw = myEmpScopedGroup.myRequestsScoped, myRecognitionRaw = myEmpScopedGroup.myRecognition;
+    MY_LEAVE_PREFETCH = myEmpScopedGroup.myLeave || null; // own balance came with the normal load
     EMPLOYEE_ROSTER.length = 0;
     const acctByName = {};
     accountsStatus.forEach(a => { acctByName[a.employeeName] = a; });
@@ -3444,7 +3473,7 @@ async function loadRemoteData(){
     // already established for Employment Status.
     ACCOUNT_ROLE_BY_EMPLOYEE = {};
     accountsStatus.forEach(a => { if(a.employeeName) ACCOUNT_ROLE_BY_EMPLOYEE[a.employeeName] = a.role || ''; });
-    roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, employeeId:String(r.EmployeeID||'').trim(), position:r.Position, status:r.Status||"Active", employmentStatus:r.EmploymentStatus||'', archiveStatus:r.ArchiveStatus||'', probationMilestonesSent:r.ProbationMilestonesSent||'[]', attendance:"—", dateHired:r.DateHired||'', phone:(acctByName[r.Name]&&acctByName[r.Name].phone)||'', email:(acctByName[r.Name]&&acctByName[r.Name].email)||'', photoFileId:(acctByName[r.Name]&&acctByName[r.Name].photoFileId)||''}));
+    roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, employeeId:String(r.EmployeeID||'').trim(), position:r.Position, status:r.Status||"Active", employmentStatus:r.EmploymentStatus||'', employmentCompany:r.EmploymentCompany||'', archiveStatus:r.ArchiveStatus||'', probationMilestonesSent:r.ProbationMilestonesSent||'[]', attendance:"—", dateHired:r.DateHired||'', phone:(acctByName[r.Name]&&acctByName[r.Name].phone)||'', email:(acctByName[r.Name]&&acctByName[r.Name].email)||'', photoFileId:(acctByName[r.Name]&&acctByName[r.Name].photoFileId)||''}));
     SCHEDULE_DAYS = schedule.days || [];
     SCHEDULE_ROWS = schedule.rows || [];
     NEXT_SCHEDULE_DAYS = nextSchedule.days || [];
@@ -4471,6 +4500,7 @@ function stopSessionTimeout(){
 });
 
 function logout(){
+  clearStoredPhotos_();
   CURRENT_USER = null;
   CURRENT_EMPLOYEE = null;
   stopMgmtPolling();
@@ -4771,6 +4801,7 @@ const NAV = {
       {id:"schedule", ic:"📅", label:"My Schedule"},
       {id:"duties", ic:"📋", label:"My Responsibilities"},
       {id:"attendance", ic:"🕐", label:"My Attendance"},
+      {id:"my-leave", ic:"🌴", label:"My Leave"},
       {id:"performance", ic:"📊", label:"My Performance"},
     ]},
     {group:"Company", items:[
@@ -4809,6 +4840,7 @@ const NAV = {
     ]},
     {group:"Requests & Feedback", items:[
       {id:"mgmt-requests", ic:"📝", label:"Manage Requests"},
+      {id:"mgmt-leave", ic:"🌴", label:"Leave Monitoring"},
       {id:"mgmt-concerns", ic:"⚠️", label:"Concerns Log", restricted:true},
       {id:"mgmt-suggestions", ic:"💡", label:"Suggestions Log"},
     ]},
@@ -5546,7 +5578,7 @@ let lastTeamOnDutyPhotos = []; // populated by renderTeamOnDuty() each render �
 // is no photo, the fetch fails, or the image itself fails to load).
 function photoThumbHtml(name, fileId, size, elId, shape){
   const initials = initialsFromName(name);
-  const cached = fileId && PHOTO_CACHE[fileId];
+  const cached = fileId && (PHOTO_CACHE[fileId] || PHOTO_CACHE['t:' + fileId]);
   const fontSize = Math.round(size*0.38);
   const radius = shape === 'square' ? '10px' : '50%'; // square is used for the larger Employee Profile display (1:1, not circular); every existing caller keeps the original circular avatar by simply not passing this param
   return `<span style="position:relative; display:inline-flex; width:${size}px; height:${size}px; flex-shrink:0;">
@@ -5558,55 +5590,61 @@ function photoThumbHtml(name, fileId, size, elId, shape){
 // thumbnail element in place — safe to call for elements that may no
 // longer be in the DOM (e.g. the user navigated away while it was
 // loading), since it just does nothing in that case.
-async function loadPhotoThumbnail(fileId, elId){
-  if(!fileId || !USE_REMOTE()) return;
-  if(PHOTO_CACHE[fileId]){
-    const img = document.getElementById(elId);
-    if(img){ img.src = PHOTO_CACHE[fileId]; img.style.display = 'block'; const init = document.getElementById(elId+'_init'); if(init) init.style.display = 'none'; }
-    return;
-  }
-  try{
-    const photo = await apiGet('photo&id=' + fileId);
-    if(photo.ok){
-      const dataUrl = `data:${photo.mime};base64,${photo.base64}`;
-      PHOTO_CACHE[fileId] = dataUrl;
-      const img = document.getElementById(elId);
-      if(img){ img.src = dataUrl; img.style.display = 'block'; const init = document.getElementById(elId+'_init'); if(init) init.style.display = 'none'; }
-    }
-  } catch(e){ /* no photo yet, or fetch failed — initials stay showing */ }
+// Photos: lists use small Drive thumbnails, Employee Profile and the preview use the original file.
+// Missing photos are fetched in groups of 6, 4 groups at a time, and shown as each group arrives.
+// Each photo is kept in this browser by file ID (a new upload always gets a new ID, so a kept
+// photo is never out of date) and cleared at logout. The server still checks who may see each photo.
+const PHOTO_DB_ = 'sp-photos';
+function photoDb_(){
+  return photoDb_.p || (photoDb_.p = new Promise(ok => {
+    try{ const r = indexedDB.open(PHOTO_DB_, 1); r.onupgradeneeded = () => r.result.createObjectStore('p'); r.onsuccess = () => ok(r.result); r.onerror = () => ok(null); }
+    catch(e){ ok(null); } // private mode etc.: works without the browser copy
+  }));
 }
-// Loads a batch of thumbnails that were just rendered onto the page
-// — only ever called with the small set of people actually visible
-// right now (a Manage Accounts page of rows, or today's on-duty
-// team), never the whole roster at once. Fetches every NOT-yet-
-// cached photo in this batch in a SINGLE combined request instead of
-// one separate request per photo — several individual requests
-// firing at the same moment were queueing up behind Apps Script's
-// per-account concurrent-execution limit (the same root cause
-// already fixed for login data via the grouped endpoints elsewhere
-// in this file), which is what made photos visibly lag behind the
-// rest of an already-rendered card.
-function loadVisiblePhotos(items){
+async function photoStored_(key){
+  const db = await photoDb_(); if(!db) return null;
+  return new Promise(ok => { try{ const q = db.transaction('p').objectStore('p').get(key); q.onsuccess = () => ok(q.result || null); q.onerror = () => ok(null); } catch(e){ ok(null); } });
+}
+async function photoStore_(key, url){ const db = await photoDb_(); if(db) try{ db.transaction('p', 'readwrite').objectStore('p').put(url, key); } catch(e){} }
+function clearStoredPhotos_(){ // the open connection is closed first, or the delete would wait for it
+  const open = photoDb_.p; photoDb_.p = null;
+  for(const k in PHOTO_CACHE) delete PHOTO_CACHE[k];
+  Promise.resolve(open).then(db => { try{ if(db) db.close(); } catch(e){} try{ indexedDB.deleteDatabase(PHOTO_DB_); } catch(e){} });
+}
+function showPhoto_(url, elId){
+  const img = document.getElementById(elId);
+  if(img){ img.src = url; img.style.display = 'block'; const init = document.getElementById(elId + '_init'); if(init) init.style.display = 'none'; }
+}
+async function loadVisiblePhotos(items, full){
   if(!USE_REMOTE()) return;
-  const applyFromCache = (fileId, elId) => {
-    const img = document.getElementById(elId);
-    if(img){ img.src = PHOTO_CACHE[fileId]; img.style.display = 'block'; const init = document.getElementById(elId+'_init'); if(init) init.style.display = 'none'; }
+  const key = id => (full ? '' : 't:') + id;
+  const pick = id => PHOTO_CACHE[id] || (!full && PHOTO_CACHE['t:' + id]);
+  const show = () => items.forEach(({fileId, elId}) => { const u = fileId && pick(fileId); if(u) showPhoto_(u, elId); });
+  const missing = [];
+  await Promise.all([...new Set(items.map(i => i.fileId).filter(Boolean))].map(async id => {
+    if(pick(id)) return;
+    const kept = await photoStored_(key(id));
+    if(kept) PHOTO_CACHE[key(id)] = kept; else missing.push(id);
+  }));
+  show();
+  const groups = [];
+  for(let i = 0; i < missing.length; i += 6) groups.push(missing.slice(i, i + 6));
+  const worker = async () => {
+    for(let g; (g = groups.shift());){
+      try{
+        const batch = await apiGet('photosBatch&ids=' + encodeURIComponent(g.join(',')) + (full ? '' : '&thumb=true'));
+        g.forEach(id => { const r = batch && batch[id]; if(r && r.ok){ const u = 'data:' + r.mime + ';base64,' + r.base64; PHOTO_CACHE[key(id)] = u; photoStore_(key(id), u); } });
+        show();
+      } catch(e){ /* that group stays as initials */ }
+    }
   };
-  const needed = [];
-  items.forEach(({fileId, elId}) => {
-    if(!fileId) return;
-    if(PHOTO_CACHE[fileId]) applyFromCache(fileId, elId);
-    else needed.push(fileId);
-  });
-  if(!needed.length) return; // everything was already cached — nothing to fetch
-  const uniqueIds = [...new Set(needed)];
-  apiGet('photosBatch&ids=' + encodeURIComponent(uniqueIds.join(','))).then(batch=>{
-    uniqueIds.forEach(id=>{
-      const result = batch && batch[id];
-      if(result && result.ok) PHOTO_CACHE[id] = `data:${result.mime};base64,${result.base64}`;
-    });
-    items.forEach(({fileId, elId}) => { if(fileId && PHOTO_CACHE[fileId]) applyFromCache(fileId, elId); });
-  }).catch(e => { /* batch failed — thumbnails just stay as initials, same as an individual failed fetch would */ });
+  await Promise.all([worker(), worker(), worker(), worker()]);
+}
+async function loadPhotoThumbnail(fileId, elId){ return loadVisiblePhotos([{fileId, elId}], true); }
+// Preview: shows the small photo at once, then the original when it arrives.
+async function openPhotoPreview(fileId){
+  previewPhotoModal(PHOTO_CACHE[fileId] || PHOTO_CACHE['t:' + fileId] || 'data:,');
+  await loadVisiblePhotos([{fileId, elId: 'photoPreviewImg'}], true);
 }
 function previewPhotoModal(src){
   if(!src) return;
@@ -6491,7 +6529,7 @@ async function optimisticSave_(key, {apply, revert, send, rerender}){
 // Used instead of the browser's own confirm and prompt boxes, which some phones, in-app browsers and
 // embedded browsers block (the click then silently does nothing).
 // input: false = yes/no dialog (resolves true/false); true = text box (resolves the text, or null on Cancel).
-function confirmDialog_({title, message, confirm: confirmLabel, danger = true, input = false, placeholder = ''}){
+function confirmDialog_({title, message, confirm: confirmLabel, danger = true, input = false, placeholder = '', cancel = true}){
   return new Promise(resolve => {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
@@ -6499,7 +6537,7 @@ function confirmDialog_({title, message, confirm: confirmLabel, danger = true, i
     overlay.innerHTML = '<div class="modal-box" role="alertdialog" aria-modal="true" aria-labelledby="cdTitle" aria-describedby="cdMsg" style="max-width:420px;">'
       + '<h3 id="cdTitle"></h3><p id="cdMsg" class="muted" style="margin:6px 0 4px; font-size:14px; line-height:1.55; white-space:pre-line;"></p>'
       + (input ? '<textarea id="cdInput" rows="3" style="width:100%; margin-top:10px;"></textarea>' : '')
-      + '<div class="modal-btns"><button type="button" class="btn ghost" data-r="0">Cancel</button><button type="button" class="btn" data-r="1"></button></div></div>';
+      + '<div class="modal-btns">' + (cancel ? '<button type="button" class="btn ghost" data-r="0">Cancel</button>' : '') + '<button type="button" class="btn" data-r="1"></button></div></div>';
     overlay.querySelector('#cdTitle').textContent = title;
     overlay.querySelector('#cdMsg').textContent = message || '';
     const ok = overlay.querySelector('[data-r="1"]'), box = overlay.querySelector('#cdInput');
@@ -6511,7 +6549,7 @@ function confirmDialog_({title, message, confirm: confirmLabel, danger = true, i
     overlay.addEventListener('click', e => { if(e.target === overlay) done(false); const b = e.target.closest('[data-r]'); if(b && !b.disabled) done(b.dataset.r === '1'); });
     document.addEventListener('keydown', onKey);
     document.body.appendChild(overlay);
-    (box || overlay.querySelector('[data-r="0"]')).focus(); // safe default: Cancel (or the text box)
+    (box || overlay.querySelector('[data-r="0"]') || ok).focus(); // safe default: Cancel (the text box; OK when it is the only button)
   });
 }
 // Same dialog for the existing plain-text confirmation messages: "Title?\n\nDetails" keeps its first line as the title.
@@ -6532,6 +6570,9 @@ async function saveEmployeeProfile(){
   const employmentStatus = document.getElementById('empProfileEmploymentStatus').value;
   const dateHired = document.getElementById('empProfileDateHired').value;
   const employeeId = document.getElementById('empProfileEmployeeId').value.trim();
+  const employmentCompany = document.getElementById('empProfileCompany').value;
+  const acct = findAccountByEmployeeName(oldName), syncBox = document.getElementById('empProfileSyncLogin');
+  const syncDisplayName = !!(acct && syncBox && syncBox.checked && acct.fullName !== newName); // login display name follows the employee name
   const err = document.getElementById('empProfileErr');
   err.style.display = 'none';
   if(!newName){ err.textContent = "Name can't be empty."; err.style.display='block'; return; }
@@ -6539,39 +6580,39 @@ async function saveEmployeeProfile(){
   const dupId = employeeId && EMPLOYEE_ROSTER.find(x => x.employeeId === employeeId && x.name !== oldName);
   if(dupId){ err.textContent = "Employee ID " + employeeId + " is already used by " + dupId.name + "."; err.style.display='block'; return; }
   const btn = document.getElementById('empProfileSaveBtn');
-  const payload = {name: oldName, newName, position, status, dateHired, employmentStatus, employeeId};
+  const payload = {name: oldName, newName, position, status, dateHired, employmentStatus, employeeId, employmentCompany, syncDisplayName};
 
-  // A rename touches every sheet linked by name and reloads everything afterwards,
-  // so it keeps the confirm-first flow; ordinary edits are saved optimistically.
-  if(newName !== oldName || !USE_REMOTE()){
-    btnLoadingEl(btn, 'Saving...');
+  // A rename changes the record's key, so it is shown only after the server confirms (not optimistic),
+  // with the same centred Saving / Saved / error message; linked data then refreshes in the background.
+  if(newName !== oldName || syncDisplayName || !USE_REMOTE()){
+    btn.disabled = true; saveStatusPill_('saving');
     try{
+      let r = {};
       if(USE_REMOTE()){
-        const r = await apiPostRetrying('updateEmployee', Object.assign({opId: newOpId_()}, payload));
-        if(!r.ok){ err.textContent = r.error || "Couldn't save."; err.style.display='block'; btnResetEl(btn); return; }
+        r = await apiPostRetrying('updateEmployee', Object.assign({opId: newOpId_()}, payload));
+        if(!r.ok) throw new Error(r.error || "Couldn't save.");
       }
+      if(acct){ acct.employeeName = newName; if(r.displayName === 'updated') acct.fullName = newName; }
       const roster = EMPLOYEE_ROSTER.find(e=>e.name===oldName);
-      if(roster){ roster.name = newName; roster.position = position; roster.status = status; roster.employmentStatus = employmentStatus; roster.dateHired = dateHired; roster.employeeId = employeeId; }
+      if(roster){ roster.name = newName; roster.position = position; roster.status = status; roster.employmentStatus = employmentStatus; roster.dateHired = dateHired; roster.employeeId = employeeId; roster.employmentCompany = employmentCompany; }
       viewingEmployeeName = newName;
-      await btnSentEl(btn, 'Saved');
-      employeeProfileEditMode = false;
-      if(newName !== oldName) await loadRemoteData();
-      renderView('mgmt-employee-profile');
+      renderView('mgmt-employee-profile'); // stays on Edit with the saved values; Cancel or Back to leave
+      saveStatusPill_(r.displayName && /^skipped/.test(r.displayName) ? 'done' : 'saved', 'Saved. Login display name kept — it is also used by someone else.');
+      if((newName !== oldName || syncDisplayName) && USE_REMOTE()) loadRemoteData().then(() => { if((activeView === 'mgmt-employee-profile' && !employeeProfileEditMode) || activeView === 'mgmt-employees') renderView(activeView); }).catch(() => {}); // never redraws a form being edited
     } catch(e){
-      err.textContent = e.message || "Couldn't save — please try again.";
-      err.style.display = 'block';
-      btnResetEl(btn);
+      btn.disabled = false;
+      err.textContent = e.message || "Couldn't save — please try again."; err.style.display = 'block'; // form keeps what was typed
+      saveStatusPill_('error', (e.message || "Couldn't save.") + ' Nothing was changed.');
     }
     return;
   }
 
   const roster = EMPLOYEE_ROSTER.find(e => e.name === oldName);
   if(!roster){ err.textContent = "Employee not found — please refresh."; err.style.display='block'; return; }
-  const before = {position: roster.position, status: roster.status, employmentStatus: roster.employmentStatus, dateHired: roster.dateHired, employeeId: roster.employeeId};
-  const after = {position, status, employmentStatus, dateHired, employeeId};
+  const before = {position: roster.position, status: roster.status, employmentStatus: roster.employmentStatus, dateHired: roster.dateHired, employeeId: roster.employeeId, employmentCompany: roster.employmentCompany};
+  const after = {position, status, employmentStatus, dateHired, employeeId, employmentCompany};
   const opId = newOpId_();
-  employeeProfileEditMode = false;
-  await optimisticSave_('employee:' + oldName, {
+  await optimisticSave_('employee:' + oldName, { // stays on Edit (shows the saved values); Cancel or Back to leave
     apply: () => { const r = EMPLOYEE_ROSTER.find(e => e.name === oldName); if(r) Object.assign(r, after); },
     revert: () => { const r = EMPLOYEE_ROSTER.find(e => e.name === oldName); if(r) Object.assign(r, before); },
     send: () => apiPostRetrying('updateEmployee', Object.assign({opId}, payload)), // same opId on every retry: applied once
@@ -7188,7 +7229,7 @@ function closeMobileSidebar(){
 const MGMT_ROLE_PERMISSIONS = {
   full: null,
   limited: { hiddenViews: ['mgmt-accounts', 'mgmt-concerns'] },
-  "shift-manager": { allowedViews: ['mgmt-schedule','mgmt-attendance','mgmt-performance','mgmt-forms','mgmt-requests','mgmt-request-detail','mgmt-disciplinary','mgmt-disciplinary-new','mgmt-suggestions'] },
+  "shift-manager": { allowedViews: ['mgmt-schedule','mgmt-attendance','mgmt-performance','mgmt-forms','mgmt-requests','mgmt-request-detail','mgmt-disciplinary','mgmt-disciplinary-new','mgmt-suggestions','mgmt-leave'] },
   "supervisor": { allowedViews: ['mgmt-attendance','mgmt-forms','mgmt-requests','mgmt-request-detail'] },
 };
 /* Extra nav items layered onto a Shift Manager's / Supervisor's OWN
@@ -7201,6 +7242,7 @@ const MGMT_EXTRA_NAV_ITEMS = {
     {id:"mgmt-performance", ic:"📊", label:"Performance Reports"},
     {id:"mgmt-forms", ic:"🖨️", label:"Forms Library"},
     {id:"mgmt-requests", ic:"📝", label:"Manage Requests"},
+    {id:"mgmt-leave", ic:"🌴", label:"Leave Monitoring"},
     {id:"mgmt-disciplinary", ic:"📁", label:"Disciplinary Reports"},
     {id:"mgmt-suggestions", ic:"💡", label:"Suggestions Log"},
   ],
@@ -7307,6 +7349,7 @@ const TITLES = {
   schedule:["My Schedule","Your shifts this week — pulled from the master schedule"],
   duties:["My Responsibilities","Standard duties for your position"],
   attendance:["My Attendance","Reflects the log kept by management"],
+  "my-leave":["My Leave","Your leave balance, requests and history"],
   performance:["My Performance","Your evaluation summary"],
   policies:["Policies & Procedures","Company-wide reference documents"],
   handbook:["Handbook & Policy Assistant","Search the Employee Handbook or ask a question"],
@@ -7335,6 +7378,7 @@ const TITLES = {
   "mgmt-disciplinary-detail":["Case Details","Full record, review, and timeline"],
   "mgmt-employee-profile":["Employee Profile","Employment info, contact details, and full record"],
   "mgmt-requests":["Manage Requests","Approve or decline pending requests"],
+  "mgmt-leave":["Leave Monitoring","Leave balances, who is on leave, and the leave calendar"],
   "mgmt-requests-archived":["Archived Requests","Finished requests moved out of the active list"],
   "archived-request-detail":["Archived Request","Full details — read-only"],
   "mgmt-concerns":["Concerns Log","All reported concerns"],
@@ -7434,7 +7478,7 @@ function renderView(id, fromHistory){
   if(id === 'mgmt-accounts') loadVisiblePhotos(EMPLOYEE_ROSTER.filter(e=>e.photoFileId).map(e=>({fileId:e.photoFileId, elId:'photoThumb_mgmt_'+e.name.replace(/[^a-zA-Z0-9]/g,'')})));
   if(id === 'mgmt-employee-profile'){
     const emp = EMPLOYEE_ROSTER.find(r=>r.name===viewingEmployeeName);
-    if(emp && emp.photoFileId) loadVisiblePhotos([{fileId: emp.photoFileId, elId: 'empProfilePhotoBig'}]);
+    if(emp && emp.photoFileId) loadVisiblePhotos([{fileId: emp.photoFileId, elId: 'empProfilePhotoBig'}], true);
   }
   if(id === 'mgmt-concern-detail') captureConcernInvestigationSnapshot();
 
@@ -8292,7 +8336,7 @@ async function ensureDisciplinaryArchiveForEmployee(name){
   } finally {
     delete disciplinaryArchiveByEmployeeLoading[name];
   }
-  if(activeView === 'mgmt-employee-profile' && viewingEmployeeName === name) renderView(activeView);
+  if(activeView === 'mgmt-employee-profile' && viewingEmployeeName === name && !employeeProfileEditMode) renderView(activeView);
 }
 let evaluationArchiveByEmployeeLoading = {}; // {[employeeName]: true} while a fetch for that employee is in flight
 // Same per-employee, server-filtered archive pattern as disciplinary's
@@ -8310,7 +8354,7 @@ async function ensureEvaluationArchiveForEmployee(name){
   } finally {
     delete evaluationArchiveByEmployeeLoading[name];
   }
-  if(activeView === 'mgmt-employee-profile' && viewingEmployeeName === name) renderView(activeView);
+  if(activeView === 'mgmt-employee-profile' && viewingEmployeeName === name && !employeeProfileEditMode) renderView(activeView);
 }
 let disciplinaryArchiveByYearLoading = {}; // {[year]: true} while a fetch for that year is in flight
 // Disciplinary Summary (By Year / By Month) needs this ONE year's
@@ -8486,8 +8530,8 @@ function renderAttendanceQuickAttention(todayCounts, thisMonthRecords){
 }
 
 function statusPill(status){
-  const map = {"approved":"ok","done":"ok","Active":"ok","pending":"warn","open":"bad","resolved":"ok","On Leave":"bad","declined":"bad","acknowledged":"ok","needs-clarification":"warn","Inactive":"bad","Under Probation":"warn","Furlough":"warn","Resigned":"bad","Terminated":"bad"};
-  const labels = {"acknowledged":"Acknowledged","needs-clarification":"Need Clarification"};
+  const map = {"approved":"ok","done":"ok","Active":"ok","pending":"warn","open":"bad","resolved":"ok","On Leave":"bad","declined":"bad","acknowledged":"ok","needs-clarification":"warn","cancel-requested":"warn","cancelled":"bad","Inactive":"bad","Under Probation":"warn","Furlough":"warn","Resigned":"bad","Terminated":"bad"};
+  const labels = {"acknowledged":"Acknowledged","needs-clarification":"Need Clarification","cancel-requested":"Cancellation Requested","cancelled":"Cancelled"};
   return `<span class="pill ${__spAttr(map[status]||'ok')}">${labels[status]||status}</span>`;
 }
 
@@ -8505,8 +8549,8 @@ const BUILDERS = {
       <p class="muted" style="font-size:13px; margin-bottom:6px;">${__spText(CURRENT_EMPLOYEE.position)}${currentEmployeeId() ? ` <span style="display:inline-block; font-size:12px; font-weight:600; padding:1px 9px; border-radius:999px; border:1px solid var(--line, rgba(201,162,75,.45)); background:rgba(201,162,75,.15); margin-left:4px;">ID ${currentEmployeeId()}</span>` : ''} • Saipan Vegas Resort</p>
       <p class="muted" style="font-size:13px;">Have a great day and thank you for being part of the team!</p>
     </div>
-    <div class="section-title">This Week's Schedule</div>
-    ${renderMyScheduleGrid(findMyScheduleRow(CURRENT_EMPLOYEE.name))}
+    ${findMyScheduleRow(CURRENT_EMPLOYEE.name) ? `<div class="section-title">This Week's Schedule</div>
+    ${renderMyScheduleGrid(findMyScheduleRow(CURRENT_EMPLOYEE.name))}` : ''}
     ${NEXT_SCHEDULE_ROWS.length && NEXT_SCHEDULE_PUBLISHED ? `
     <div class="section-title" style="margin-top:22px;">Next Week's Schedule <span class="pill info" style="margin-left:8px;">Preview</span></div>
     ${renderMyScheduleGrid(findRowInSchedule(NEXT_SCHEDULE_ROWS, CURRENT_EMPLOYEE.name), NEXT_SCHEDULE_DAYS)}` : ''}
@@ -8553,8 +8597,11 @@ const BUILDERS = {
           <tr><td class="muted">Full name</td><td>${__spText(CURRENT_EMPLOYEE.fullName)}</td></tr>
           <tr><td class="muted">Employee ID</td><td class="mono">${currentEmployeeId() || '—'}</td></tr>
           <tr><td class="muted">Position</td><td>${__spText(CURRENT_EMPLOYEE.position)}</td></tr>
+          <tr><td class="muted">Employment Company</td><td>${__spText(myRosterRecord_().employmentCompany || '—')}</td></tr>
+          <tr><td class="muted">Employment Status</td><td>${employmentStatusPill(myRosterRecord_().employmentStatus, myRosterRecord_().dateHired)}</td></tr>
+          <tr><td class="muted">Date Hired</td><td>${myRosterRecord_().dateHired ? fmtDiscDate(myRosterRecord_().dateHired) : '—'}</td></tr>
         </table>
-        <p class="muted" style="font-size:11.5px; margin-top:8px;">Full name and Position are your official employment information — set by management, not editable here.</p>
+        <p class="muted" style="font-size:11.5px; margin-top:8px;">Your employment details are kept by management in All Employees and are not editable here.</p>
         <label>Contact Number <span style="color:var(--red);">*required</span></label>
         <input type="text" id="profilePhone" placeholder="e.g. 670-235-1234" value="${__spAttr(CURRENT_EMPLOYEE.phone || '')}">
         <label>Email <span class="muted">(optional)</span></label>
@@ -9080,14 +9127,9 @@ const BUILDERS = {
       <p class="muted" style="font-size:12px; margin-bottom:4px;">Status</p>
       <p class="no-print" style="margin-bottom:14px;">
         ${savingRequestIds.has(r.ID) ? `<span class="btn-spinner"></span><span class="muted" style="font-size:12px;">Saving...</span>` : `
-        <select class="status-select ${__spAttr(r.Status)}" onchange="handleRequestStatusChange(this, '${__spJSString(r.ID)}', '${__spJSString(r.Status)}', '${r.Type.replace(/'/g,"\\'")}')">
-          <option value="pending" ${r.Status==='pending'?'selected':''}>Pending</option>
-          <option value="approved" ${r.Status==='approved'?'selected':''}>Approved</option>
-          <option value="declined" ${r.Status==='declined'?'selected':''}>Declined</option>
-          <option value="acknowledged" ${r.Status==='acknowledged'?'selected':''}>Acknowledged</option>
-          <option value="needs-clarification" ${r.Status==='needs-clarification'?'selected':''}>Need Clarification</option>
-        </select>`}
+        <select class="status-select ${__spAttr(r.Status)}" onchange="handleRequestStatusChange(this, '${__spJSString(r.ID)}', '${__spJSString(r.Status)}', '${r.Type.replace(/'/g,"\\'")}')">${requestStatusOptions_(r)}</select>`}
       </p>
+      ${isLeave ? leaveBalanceBoxSlot_(r) : ''}
       <p class="print-only" style="display:none; margin-bottom:14px;">${statusPill(r.Status)}</p>
 
       ${isLeave ? `
@@ -9118,6 +9160,9 @@ const BUILDERS = {
     </div>`;
   },
 
+  "my-leave": ()=> leaveView_(),
+  "mgmt-leave": ()=> leaveAdminView_(),
+
   requests: ()=>`
     <div class="grid grid-2">
       <div class="card">
@@ -9139,56 +9184,6 @@ const BUILDERS = {
         <div id="absenceDateField" style="display:none;">
           <label>Date of Absence</label>
           <input type="date" id="reqAbsenceDate">
-        </div>
-        <div id="leaveRequestFields" style="display:none;">
-          <div class="grid grid-2">
-            <div>
-              <label>Venue</label>
-              <select id="reqLeaveVenue"><option value="">Select Venue</option><option>Saipan Vegas</option><option>Club 88</option></select>
-            </div>
-            <div>
-              <label>Position</label>
-              <input type="text" value="${__spAttr(CURRENT_EMPLOYEE.position||'')}" disabled style="opacity:0.7;">
-            </div>
-          </div>
-          <div class="grid grid-2">
-            <div>
-              <label>Leave Start Date</label>
-              <input type="date" id="reqLeaveStart" onchange="updateLeaveDaysCalc()">
-            </div>
-            <div>
-              <label>Leave End Date</label>
-              <input type="date" id="reqLeaveEnd" onchange="updateLeaveDaysCalc()">
-            </div>
-          </div>
-          <div class="grid grid-2">
-            <div>
-              <label>Number of Days</label>
-              <input type="number" id="reqLeaveDays" min="1" placeholder="Auto-calculated from dates">
-            </div>
-            <div>
-              <label>Expected Return to Work Date</label>
-              <input type="date" id="reqLeaveReturn">
-            </div>
-          </div>
-          <label>Anniversary Date <span class="muted">(optional)</span></label>
-          <input type="date" id="reqLeaveAnniversary">
-          <label>Type of Request</label>
-          <select id="reqLeaveType" onchange="toggleLeaveTypeOther()">
-            <option value="">Select Leave Type</option>
-            <option>Vacation Leave</option>
-            <option>Sick Leave</option>
-            <option>Emergency Leave</option>
-            <option>Jury or Witness Duty Leave</option>
-            <option>Maternity Leave</option>
-            <option>Bereavement Leave</option>
-            <option>Military Leave</option>
-            <option>Other</option>
-          </select>
-          <div id="reqLeaveTypeOtherWrap" style="display:none; margin-bottom:14px;">
-            <label>Please Specify</label>
-            <input type="text" id="reqLeaveTypeOther" placeholder="Specify the leave type">
-          </div>
         </div>
         <label id="reqDetailsLabel">Details</label>
         <textarea id="reqDetails" placeholder="Describe your request..."></textarea>
@@ -9527,7 +9522,7 @@ const BUILDERS = {
           <td class="muted" data-label="Date Hired">${e.dateHired ? fmtDiscDate(e.dateHired) : '—'}</td>
           <td data-label="Actions">
             ${(isFullAdmin() && EMPLOYEE_ARCHIVABLE_STATUSES.has(e.status)) ? `<button class="btn ghost auto" style="padding:4px 10px; margin-right:4px;" onclick="archiveEmployeeNow('${e.name.replace(/'/g,"\\'")}', this)">📦 Archive</button>` : ''}
-            ${isFullAdmin() ? `<button class="btn danger auto" style="padding:4px 10px;" onclick="deleteEmployeeConfirm('${e.name.replace(/'/g,"\\'")}', this)">🗑️ Delete</button>` : ''}
+            ${isFullAdmin() ? `<button class="ib ib-del" title="Delete employee" aria-label="Delete employee" onclick="deleteEmployeeConfirm('${e.name.replace(/'/g,"\\'")}', this)"></button>` : ''}
           </td>
         </tr>`).join('') || `<tr><td colspan="8" class="muted">No matches.</td></tr>`}
         </tbody>
@@ -9605,9 +9600,16 @@ const BUILDERS = {
         </h3>
         ${employeeProfileEditMode ? `
           <label>Full Name</label>
-          <input type="text" id="empProfileName" value="${__spAttr(e.name)}">
+          <input type="text" id="empProfileName" value="${__spAttr(e.name)}" oninput="syncLoginBoxFollowsName_(this)">
+          ${findAccountByEmployeeName(e.name) ? `<div class="checkbox-row"><input type="checkbox" id="empProfileSyncLogin"><label for="empProfileSyncLogin">Also use this name as their login display name (now: ${__spText(findAccountByEmployeeName(e.name).fullName || '—')}) and keep their own submitted records linked. Username, password and role are not changed.</label></div>` : ''}
           <label>Employee ID <span class="muted">(numbers only — optional)</span></label>
           <input type="text" id="empProfileEmployeeId" inputmode="numeric" maxlength="10" value="${__spAttr(e.employeeId||'')}">
+          <label>Employment Company</label>
+          <select id="empProfileCompany">
+            <option value="" ${!e.employmentCompany?'selected':''}>— Not Set —</option>
+            <option value="MP Holdings LLC" ${e.employmentCompany==='MP Holdings LLC'?'selected':''}>MP Holdings LLC</option>
+            <option value="Mariana Entertainment" ${e.employmentCompany==='Mariana Entertainment'?'selected':''}>Mariana Entertainment</option>
+          </select>
           <label>Position</label>
           <select id="empProfilePosition">
             ${EMPLOYEE_POSITIONS.map(p=>`<option ${e.position===p?'selected':''}>${p}</option>`).join('')}
@@ -9642,6 +9644,7 @@ const BUILDERS = {
             <table style="flex:1;">
             <tr><td class="muted">Full Name</td><td>${__spText(e.name)}</td></tr>
             <tr><td class="muted">Employee ID</td><td class="mono">${__spText(e.employeeId || '—')}</td></tr>
+            <tr><td class="muted">Employment Company</td><td>${__spText(e.employmentCompany || '—')}</td></tr>
             <tr><td class="muted">Position</td><td>${__spText(e.position)}</td></tr>
             <tr><td class="muted">Employment Status</td><td>${employmentStatusPill(e.employmentStatus, e.dateHired)}</td></tr>
             <tr><td class="muted">Employee Status</td><td>${statusPill(e.status)}</td></tr>
@@ -9726,7 +9729,7 @@ const BUILDERS = {
       if(!q) return true;
       const acct = findAccountByEmployeeName(e.name);
       const displayName = acct && acct.fullName ? acct.fullName : e.name;
-      return displayName.toLowerCase().includes(q) || e.position.toLowerCase().includes(q) || (acct && acct.username && acct.username.toLowerCase().includes(q));
+      return displayName.toLowerCase().includes(q) || e.name.toLowerCase().includes(q) || e.position.toLowerCase().includes(q) || (acct && acct.username && acct.username.toLowerCase().includes(q));
     }).sort((a, b) => a.name.localeCompare(b.name, 'en', {sensitivity: 'base'}));
     return `
     <div class="banner note"><b>Note:</b> only management can create or reset an employee's login — there's no self-registration. Photos are also assigned by management, not uploaded by employees themselves.</div>
@@ -9742,7 +9745,7 @@ const BUILDERS = {
         ${rows.map(e=>{
           const acct = findAccountByEmployeeName(e.name);
           return `<tr>
-            <td data-label="Employee">${__spText(acct && acct.fullName ? acct.fullName : e.name)}</td>
+            <td data-label="Employee">${__spText(e.name)}${acct && acct.fullName && acct.fullName !== e.name ? `<div class="muted" style="font-size:11px;">Login name: ${__spText(acct.fullName)}</div>` : ''}</td>
             <td class="muted" data-label="Position">${__spText(e.position)}</td>
             <td class="mono" data-label="Username">${__spText(acct ? acct.username : '—')}</td>
             <td data-label="Account Status">${acct ? `<span class="pill ok">Registered</span>` : `<span class="pill warn">Not registered</span>`}</td>
@@ -9750,7 +9753,7 @@ const BUILDERS = {
             <td data-label="Photo">
               ${e.photoFileId ? `
                 <div style="display:flex; align-items:center; gap:8px;">
-                  <span onclick="loadPhotoThumbnail('${__spJSString(e.photoFileId)}','photoThumb_mgmt_${e.name.replace(/[^a-zA-Z0-9]/g,'')}'); previewPhotoModal(document.getElementById('photoThumb_mgmt_${e.name.replace(/[^a-zA-Z0-9]/g,'')}').src)" style="cursor:pointer;">
+                  <span onclick="openPhotoPreview('${__spJSString(e.photoFileId)}')" style="cursor:pointer;" title="View photo">
                     ${photoThumbHtml(e.name, e.photoFileId, 32, 'photoThumb_mgmt_'+e.name.replace(/[^a-zA-Z0-9]/g,''))}
                   </span>
                   <label class="btn ghost auto" style="padding:5px 10px; cursor:pointer; font-size:11.5px;">Change Photo
@@ -10091,7 +10094,7 @@ const BUILDERS = {
       <table>
         <tr><th>Form Name</th><th>Category</th><th>Uploaded</th><th></th></tr>
         ${ALL_FORMS.map(f=>`<tr><td>${__spText(f.FormName)}</td><td class="muted">${__spText(f.Category||'—')}</td><td>${fmtDateTime(f.DateUploaded)}</td>
-          <td><button class="btn info auto" style="padding:5px 10px; margin-right:6px;" onclick="openLibraryForm('${__spJSString(f.FileId)}','${(f.FileName||'').replace(/'/g,"\\'")}')">⬇️ Download</button>${canManageForms ? `<button class="btn danger auto" style="padding:5px 10px;" onclick="deleteLibraryForm('${__spJSString(f.ID)}', this)">🗑️ Delete</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No forms uploaded yet.</td></tr>`}
+          <td><button class="btn info auto" style="padding:5px 10px; margin-right:6px;" onclick="openLibraryForm('${__spJSString(f.FileId)}','${(f.FileName||'').replace(/'/g,"\\'")}')">⬇️ Download</button>${canManageForms ? `<button class="ib ib-del" title="Delete form" aria-label="Delete form" onclick="deleteLibraryForm('${__spJSString(f.ID)}', this)"></button>` : ''}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No forms uploaded yet.</td></tr>`}
       </table>
     </div>`;
   },
@@ -10500,13 +10503,7 @@ const BUILDERS = {
         ${filtered.map(r=>`<tr><td data-label="Employee">${__spText(r.EmployeeName)}</td><td data-label="Type">${__spText(r.Type)}${r.Type==='Schedule Swap' && r.SwapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.SwapDay)}${r.TheirDay && r.TheirDay!==r.SwapDay ? ' ↔ '+fmtDayLabel(r.TheirDay) : ''} ↔ ${__spText(r.SwapWithName)}</span>` : ''}</td><td class="muted" data-label="Details">${__spText(r.Details||'')}</td><td data-label="Date">${fmtDateTime(r.Date)}</td>
           <td data-label="Status">
             ${savingRequestIds.has(r.ID) ? `<span class="btn-spinner"></span><span class="muted" style="font-size:12px;">Saving...</span>` : `
-            <select class="status-select ${__spAttr(r.Status)}" onchange="handleRequestStatusChange(this, '${__spJSString(r.ID)}', '${__spJSString(r.Status)}', '${r.Type.replace(/'/g,"\\'")}')">
-              <option value="pending" ${r.Status==='pending'?'selected':''}>Pending</option>
-              <option value="needs-clarification" ${r.Status==='needs-clarification'?'selected':''}>Need Clarification</option>
-              <option value="declined" ${r.Status==='declined'?'selected':''}>Declined</option>
-              <option value="acknowledged" ${r.Status==='acknowledged'?'selected':''}>Acknowledged</option>
-              <option value="approved" ${r.Status==='approved'?'selected':''}>Approved</option>
-            </select>`}
+            <select class="status-select ${__spAttr(r.Status)}" onchange="handleRequestStatusChange(this, '${__spJSString(r.ID)}', '${__spJSString(r.Status)}', '${r.Type.replace(/'/g,"\\'")}')">${requestStatusOptions_(r)}</select>`}
           </td>
           <td class="muted" data-label="Action By">${__spText(r.Status !== 'pending' && r.ActionBy ? r.ActionBy : '—')}${r.Type==='Leave Request' ? `<br><button class="btn ghost auto no-print" style="padding:3px 8px; margin-top:4px; font-size:11px;" onclick="openAdminRequestDetail('${__spJSString(r.ID)}')">👁 View</button>` : ''}</td>
           ${isFullAdmin() ? `<td data-label="Actions">${REQUEST_ARCHIVABLE_STATUSES.has(r.Status) ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="archiveRecordNow('request','${__spJSString(r.ID)}', this)">📦 Archive</button>` : ''}</td>` : ''}</tr>`).join('') || `<tr><td colspan="${__spAttr(isFullAdmin()?7:6)}" class="muted">No matching requests.</td></tr>`}
@@ -10998,7 +10995,7 @@ const BUILDERS = {
         <thead><tr><th>Employee</th><th>Award</th><th>Note</th><th>Date</th><th></th></tr></thead>
         <tbody>
         ${MOCK.recognition.map(r=>`<tr><td data-label="Employee">${__spText(r.employeeName||'')}</td><td data-label="Award">${__spText(r.name)}</td><td class="muted" data-label="Note">${__spText(r.desc)}</td><td data-label="Date">${fmtDateTime(r.date)}</td>
-          <td data-label="Actions"><button class="btn ghost auto" style="padding:5px 10px; margin-right:6px;" onclick="openRecognitionDetail('${__spJSString(r.id)}', 'mgmt-recognition', 'Recognition')">👁 View Details</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteRecognitionEntry('${__spJSString(r.id)}', this)">🗑️ Delete</button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">No awards issued yet.</td></tr>`}
+          <td data-label="Actions"><button class="ib ib-view" title="View details" aria-label="View details" onclick="openRecognitionDetail('${__spJSString(r.id)}', 'mgmt-recognition', 'Recognition')"></button><button class="ib ib-del" title="Delete award" aria-label="Delete award" onclick="deleteRecognitionEntry('${__spJSString(r.id)}', this)"></button></td></tr>`).join('') || `<tr><td colspan="5" class="muted">No awards issued yet.</td></tr>`}
         </tbody>
       </table>
     </div>`,
@@ -11225,10 +11222,10 @@ const BUILDERS = {
         <tbody>
         ${ALL_ANNOUNCEMENTS.map(a=>`<tr><td data-label="Title">${__spText(a.Title)}</td><td class="muted" data-label="Sent to">${__spText(a.TargetType==='All'?'All Staff':a.TargetType==='Position'?a.TargetValue:a.TargetValue)}</td><td data-label="Date">${fmtDateTime(a.Date)}</td>
           <td data-label="Actions">
-            <button class="btn info auto" style="padding:5px 10px; margin-right:6px;" onclick="viewAnnouncementDetail('${__spJSString(a.ID)}')">👁️ View</button>
+            <button class="ib ib-view" title="View announcement" aria-label="View announcement" onclick="viewAnnouncementDetail('${__spJSString(a.ID)}')"></button>
             <button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditAnnouncement('${__spJSString(a.ID)}')">✏️ Edit</button>
             ${isFullAdmin() ? `<button class="btn reset auto" style="padding:5px 10px; margin-right:6px;" onclick="archiveRecordNow('announcement','${__spJSString(a.ID)}', this)">📦 Archive</button>` : ''}
-            <button class="btn danger auto" style="padding:5px 10px;" onclick="deleteAnnouncementEntry('${__spJSString(a.ID)}', this)">🗑️ Delete</button>
+            <button class="ib ib-del" title="Delete announcement" aria-label="Delete announcement" onclick="deleteAnnouncementEntry('${__spJSString(a.ID)}', this)"></button>
           </td></tr>`).join('') || `<tr><td colspan="4" class="muted">No announcements posted yet.</td></tr>`}
         </tbody>
       </table>
@@ -11283,6 +11280,47 @@ function prefillConcernEmployeeInfo(){
   document.getElementById('concernEmpPosition').value = emp ? emp.position : '';
 }
 
+// My Leave lives in leave-ui.js, fetched only when My Leave is opened (keeps the main page small).
+let MY_LEAVE_PREFETCH = null, leaveUiLoading_ = null;
+function leaveUi_(){
+  return leaveUiLoading_ || (leaveUiLoading_ = new Promise((ok, fail) => {
+    const s = document.createElement('script');
+    s.src = 'leave-ui.js?v=8cece6a7bf';
+    s.onload = () => ok(window.LeaveUI);
+    s.onerror = () => { leaveUiLoading_ = null; s.remove(); fail(new Error("Couldn't load My Leave. Please check your connection and try again.")); };
+    document.head.appendChild(s);
+  }));
+}
+function leaveView_(){
+  leaveUi_().then(L => L.render()).catch(e => { const el = document.getElementById('leaveRoot'); if(el) el.textContent = e.message; });
+  return '<div id="leaveRoot"><div class="card"><p class="muted">Loading your leave…</p></div></div>';
+}
+function leaveOpenForm_(id){
+  renderView('my-leave');
+  leaveUi_().then(L => L.openForm(id)).catch(e => alert(e.message));
+}
+// Leave Monitoring: same on-demand file.
+function leaveAdminView_(){
+  leaveUi_().then(L => L.renderAdmin()).catch(e => { const el = document.getElementById('leaveRoot'); if(el) el.textContent = e.message; });
+  return '<div id="leaveRoot"><div class="card"><p class="muted">Loading leave monitoring…</p></div></div>';
+}
+// Paid Vacation box on a leave request (Manage Requests).
+function leaveBalanceBoxSlot_(r){
+  setTimeout(() => leaveUi_().then(L => L.balanceBox(r)).catch(() => {}), 0);
+  return '<div id="lvBalanceBox" class="no-print" style="margin-bottom:14px;"></div>';
+}
+// Manage Requests status choices. Leave: no Acknowledged (Q2); approved leave only via cancellation (Q3).
+function requestStatusOptions_(r){
+  const s = r.Status;
+  let list = [['pending', 'Pending'], ['needs-clarification', 'Need Clarification'], ['declined', 'Declined'], ['acknowledged', 'Acknowledged'], ['approved', 'Approved']];
+  if(r.Type === 'Leave Request'){
+    list = list.filter(o => o[0] !== 'acknowledged' || s === 'acknowledged');
+    if(s === 'approved') list = [['approved', 'Approved']].concat(isFullAdmin() ? [['cancelled', 'Cancel leave…']] : []);
+    if(s === 'cancel-requested') list = [['cancel-requested', 'Cancellation Requested'], ['cancelled', 'Approve cancellation'], ['approved', 'Keep leave (decline cancellation)']];
+    if(s === 'cancelled') list = [['cancelled', 'Cancelled']];
+  }
+  return list.map(o => '<option value="' + o[0] + '"' + (o[0] === s ? ' selected' : '') + '>' + o[1] + '</option>').join('');
+}
 function toggleSwapFields(){
   const type = document.getElementById('reqType').value;
   const isSwap = type === 'Schedule Swap';
@@ -11291,9 +11329,7 @@ function toggleSwapFields(){
 
   document.getElementById('absenceDateField').style.display = (type === 'Absence / Call-Out Notice') ? 'block' : 'none';
 
-  const isLeave = type === 'Leave Request';
-  document.getElementById('leaveRequestFields').style.display = isLeave ? 'block' : 'none';
-  document.getElementById('reqDetailsLabel').textContent = isLeave ? 'Reason for Leave' : 'Details';
+  if(type === 'Leave Request'){ leaveOpenForm_(); return; } // filed in My Leave, where the balance is shown first
 
   const placeholders = {
     'Absence / Call-Out Notice': 'Reason for Absence / Shift Schedule',
@@ -11304,28 +11340,6 @@ function toggleSwapFields(){
   document.getElementById('scheduleRequestNotice').style.display = type === 'Schedule Request' ? 'block' : 'none';
   document.getElementById('reqDetails').placeholder = placeholders[type] || 'Describe your request...';
 }
-function toggleLeaveTypeOther(){
-  const isOther = document.getElementById('reqLeaveType').value === 'Other';
-  document.getElementById('reqLeaveTypeOtherWrap').style.display = isOther ? 'block' : 'none';
-}
-// Purely a convenience default — filled in automatically from the
-// selected Start/End dates, but left as a normal editable number
-// field (not disabled), since the employee may need to adjust it
-// (e.g. a leave period that excludes a rest day already built into
-// their schedule). This never overwrites a value the employee has
-// already typed in by hand.
-function updateLeaveDaysCalc(){
-  const startVal = document.getElementById('reqLeaveStart').value;
-  const endVal = document.getElementById('reqLeaveEnd').value;
-  const daysField = document.getElementById('reqLeaveDays');
-  if(!startVal || !endVal) return;
-  const start = new Date(startVal + 'T00:00:00');
-  const end = new Date(endVal + 'T00:00:00');
-  if(isNaN(start) || isNaN(end) || end < start) return;
-  const diffDays = Math.round((end - start) / 86400000) + 1; // inclusive of both the start and end day
-  daysField.value = diffDays;
-}
-
 function toggleDiffDay(){
   const on = document.getElementById('diffDayToggle').checked;
   document.getElementById('theirDayField').style.display = on ? 'block' : 'none';
@@ -11421,36 +11435,7 @@ async function submitMyRequestInner(){
   }
 
   let Venue = '', LeaveType = '', LeaveTypeOther = '', NumberOfDays = '', LeaveStartDate = '', LeaveEndDate = '', ReturnToWorkDate = '', AnniversaryDate = '';
-  if(Type === 'Leave Request'){
-    Venue = document.getElementById('reqLeaveVenue').value;
-    LeaveType = document.getElementById('reqLeaveType').value;
-    LeaveTypeOther = document.getElementById('reqLeaveTypeOther').value.trim();
-    NumberOfDays = document.getElementById('reqLeaveDays').value;
-    LeaveStartDate = document.getElementById('reqLeaveStart').value;
-    LeaveEndDate = document.getElementById('reqLeaveEnd').value;
-    ReturnToWorkDate = document.getElementById('reqLeaveReturn').value;
-    AnniversaryDate = document.getElementById('reqLeaveAnniversary').value;
-
-    if(!Venue){ err.textContent="Please select a venue."; err.style.display='block'; return; }
-    if(!LeaveType){ err.textContent="Please select a leave type."; err.style.display='block'; return; }
-    if(LeaveType === 'Other' && !LeaveTypeOther){ err.textContent="Please specify the leave type."; err.style.display='block'; return; }
-    if(!LeaveStartDate || !LeaveEndDate){ err.textContent="Please select both a start and end date."; err.style.display='block'; return; }
-    if(new Date(LeaveStartDate) > new Date(LeaveEndDate)){ err.textContent="Start Date cannot be later than End Date."; err.style.display='block'; return; }
-    if(!NumberOfDays || Number(NumberOfDays) < 1){ err.textContent="Please enter a valid number of days."; err.style.display='block'; return; }
-    if(ReturnToWorkDate && new Date(ReturnToWorkDate) < new Date(LeaveEndDate)){ err.textContent="Return to Work Date should be on or after the Leave End Date."; err.style.display='block'; return; }
-
-    // A simple review step, not a separate page — matches the "show
-    // a summary so the employee can confirm before submitting"
-    // requirement without adding a whole new modal/UI for it.
-    const leaveTypeDisplay = LeaveType === 'Other' ? LeaveTypeOther : LeaveType;
-    const summary = `Please review your leave request:\n\n`+
-      `Venue: ${Venue}\n`+
-      `Leave Type: ${leaveTypeDisplay}\n`+
-      `Dates: ${LeaveStartDate} to ${LeaveEndDate} (${NumberOfDays} day${NumberOfDays==1?'':'s'})\n`+
-      (ReturnToWorkDate ? `Return to Work: ${ReturnToWorkDate}\n` : '') +
-      `\nSubmit this leave request?`;
-    if(!await confirmText_(summary)) return;
-  }
+  if(Type === 'Leave Request') return; // filed in My Leave
 
   if(editingRequestId){
     btnLoading('reqSubmitBtn', 'Updating...');
@@ -11518,6 +11503,7 @@ function cancelEditRequest(){
 function startEditRequest(id){
   const r = MOCK.requests.find(x=>x.id===id);
   if(!r) return;
+  if(r.type === 'Leave Request') return leaveOpenForm_(id); // edited in My Leave
   document.getElementById('reqType').value = r.type;
   document.getElementById('reqDetails').value = r.details || '';
   toggleSwapFields();
@@ -11532,24 +11518,6 @@ function startEditRequest(id){
   }
   if(r.type === 'Absence / Call-Out Notice' && r.absenceDate){
     document.getElementById('reqAbsenceDate').value = r.absenceDate;
-  }
-  if(r.type === 'Leave Request'){
-    if(r.venue) document.getElementById('reqLeaveVenue').value = r.venue;
-    if(r.leaveType) document.getElementById('reqLeaveType').value = r.leaveType;
-    toggleLeaveTypeOther();
-    if(r.leaveTypeOther) document.getElementById('reqLeaveTypeOther').value = r.leaveTypeOther;
-    // Logged so a report of "dates went blank on Edit" can be
-    // diagnosed instantly from the console instead of guessing —
-    // shows exactly what raw value came in and what got parsed out
-    // of it for each of the four date fields.
-    ['leaveStartDate','leaveEndDate','returnToWorkDate','anniversaryDate'].forEach(k=>{
-      if(r[k]) console.log(`startEditRequest: ${k} raw="${r[k]}" -> parsed="${toDateInputValue_(r[k])}"`);
-    });
-    if(r.leaveStartDate) document.getElementById('reqLeaveStart').value = toDateInputValue_(r.leaveStartDate);
-    if(r.leaveEndDate) document.getElementById('reqLeaveEnd').value = toDateInputValue_(r.leaveEndDate);
-    if(r.numberOfDays) document.getElementById('reqLeaveDays').value = r.numberOfDays;
-    if(r.returnToWorkDate) document.getElementById('reqLeaveReturn').value = toDateInputValue_(r.returnToWorkDate);
-    if(r.anniversaryDate) document.getElementById('reqLeaveAnniversary').value = toDateInputValue_(r.anniversaryDate);
   }
   editingRequestId = id;
   document.getElementById('reqSubmitBtn').textContent = 'Update Request';
@@ -12418,6 +12386,16 @@ async function handleRequestStatusChange(selectEl, id, currentStatus, requestTyp
     setRequestStatus(id, status, reason.trim());
     return;
   }
+  if(requestType === 'Leave Request' && status === 'cancelled'){
+    const direct = currentStatus === 'approved';
+    const reason = direct
+      ? await confirmDialog_({title: 'Cancel this approved leave?', message: 'The hours go back to the employee. Please give the reason (it is recorded):', input: true, confirm: 'Cancel leave', placeholder: 'Reason'})
+      : (await confirmDialog_({title: 'Approve the cancellation?', message: 'The leave will be cancelled and the hours go back to the employee.', confirm: 'Approve cancellation', danger: false}) ? '' : null);
+    if(reason === null || (direct && !reason.trim())){ selectEl.value = currentStatus; selectEl.className = 'status-select '+currentStatus; return; }
+    selectEl.className = 'status-select '+status;
+    setRequestStatus(id, status, null, null, direct ? {cancelReason: reason.trim()} : {});
+    return;
+  }
   if(status === 'needs-clarification'){ // now every request type, not just Leave Request — the employee has no way to know what's being asked otherwise
     const message = await confirmDialog_({title: 'Need Clarification', message: 'What information do you need from the employee?', input: true, confirm: 'Send', danger: false, placeholder: 'Your question for the employee'});
     if(!message || !message.trim()){ selectEl.value = currentStatus; selectEl.className = 'status-select '+currentStatus; return; }
@@ -12438,7 +12416,7 @@ async function handleRequestStatusChange(selectEl, id, currentStatus, requestTyp
 function renderRequestStatusDestination_(){
   renderView(activeView === 'mgmt-request-detail' ? 'mgmt-request-detail' : 'mgmt-requests');
 }
-async function setRequestStatus(id, status, declineReason, clarificationMessage){
+async function setRequestStatus(id, status, declineReason, clarificationMessage, extra){
   const req = ALL_REQUESTS.find(r=>r.ID===id);
   const previousStatus = req ? req.Status : null;
   const previousActionBy = req ? req.ActionBy : null;
@@ -12449,10 +12427,16 @@ async function setRequestStatus(id, status, declineReason, clarificationMessage)
 
   if(USE_REMOTE()){
     try{
-      const r = await apiPost('updateRequestStatus', {id, status, actionBy, declineReason, clarificationMessage});
+      const r = await apiPost('updateRequestStatus', Object.assign({id, status, actionBy, declineReason, clarificationMessage}, extra || {}));
       savingRequestIds.delete(id);
       if(!r.ok){
         if(req){ req.Status = previousStatus; req.ActionBy = previousActionBy; } // revert since it didn't actually save
+        if(status === 'approved' && isFullAdmin() && /exception/.test(r.error || '') && !(extra && extra.exceptionReason)){
+          renderRequestStatusDestination_();
+          const why = await confirmDialog_({title: 'Approve with exception?', message: r.error + '\n\nAs Full Admin you may still approve it. Please give the reason (it is recorded):', input: true, confirm: 'Approve with exception', danger: false, placeholder: 'Reason'});
+          if(why && why.trim()) return setRequestStatus(id, status, null, null, {exceptionReason: why.trim()});
+          return;
+        }
         alert(r.error || "Couldn't update.");
         renderRequestStatusDestination_();
         return;
@@ -12675,7 +12659,7 @@ function renderAttendanceLogRows(){
   let filtered = sortedAttendanceLog();
   const q = attendanceSearchQuery.toLowerCase();
   if(!q) filtered = filtered.slice(0, 6); // keep the default view short — search shows everything that matches
-  return filtered.map(a=>`<tr><td data-label="Employee">${__spText(a.name)}</td><td data-label="Date">${fmtLogDate(a.date)}</td><td class="mono" data-label="Time">${fmtLogTime(a.time)}</td><td data-label="Status">${attendancePill(a.status)}</td><td class="muted" data-label="Remarks">${__spText(a.remarks||'—')}</td><td class="muted" data-label="Logged By">${__spText(a.loggedBy||'—')}</td><td data-label="Actions"><button class="btn edit auto" style="padding:5px 10px; margin-right:6px;" onclick="startEditAttendance('${__spJSString(a.id)}')">✏️ Edit</button><button class="btn danger auto" style="padding:5px 10px;" onclick="deleteAttendanceEntry('${__spJSString(a.id)}', this)">🗑️ Delete</button></td></tr>`).join('')
+  return filtered.map(a=>`<tr><td data-label="Employee">${__spText(a.name)}</td><td data-label="Date">${fmtLogDate(a.date)}</td><td class="mono" data-label="Time">${fmtLogTime(a.time)}</td><td data-label="Status">${attendancePill(a.status)}</td><td class="muted" data-label="Remarks">${__spText(a.remarks||'—')}</td><td class="muted" data-label="Logged By">${__spText(a.loggedBy||'—')}</td><td data-label="Actions"><button class="ib ib-edit" title="Edit entry" aria-label="Edit entry" onclick="startEditAttendance('${__spJSString(a.id)}')"></button><button class="ib ib-del" title="Delete entry" aria-label="Delete entry" onclick="deleteAttendanceEntry('${__spJSString(a.id)}', this)"></button></td></tr>`).join('')
     || `<tr><td colspan="7" class="muted">${__spText(attendanceSearchQuery ? 'No entries match that search.' : 'No entries logged yet.')}</td></tr>`;
 }
 /* Individual Employee Print Log — search shows an on-screen preview
