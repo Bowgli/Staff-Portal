@@ -62,6 +62,10 @@
 .lv-check.lv-showall{display:flex; margin:16px 0 18px; font-size:14px; gap:8px;} .lv-check.lv-showall input{width:16px; height:16px;}
 .lv-fbar label.cap{display:block; font-size:11.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--text-mute); margin:0 0 6px;}
 .lv-field{position:relative;} .lv-field .lv-ico{position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#64748B; pointer-events:none;}
+#lvSearch{padding-right:48px;}
+.lv-field .lv-clear{position:absolute; right:4px; top:50%; transform:translateY(-50%); width:38px; min-width:38px; height:38px; padding:0; margin:0; border:0; border-radius:8px; background:#E2E8F0; color:#0F172A; display:inline-flex; align-items:center; justify-content:center; cursor:pointer;}
+.lv-field .lv-clear .lv-ico{position:static; transform:none; width:18px; height:18px; color:inherit; stroke-width:2.5;}
+.lv-field .lv-clear:hover,.lv-field .lv-clear:focus-visible{background:#CBD5E1; outline:2px solid #64748B; outline-offset:1px;}
 .lv-field select,.lv-field input{margin:0; padding-left:40px; height:44px; border-radius:10px; width:100%; max-width:none; box-sizing:border-box;}
 .lv-fbar > *,.lv-fbar .lv-addbtn{margin:0; min-width:0;}
 .lv-need{display:inline-flex; align-items:center; gap:8px; height:44px; padding:0 14px; border-radius:10px; border:1px solid #FDE68A; background:#FFFBEB; font-size:14px; font-weight:600; margin:0; cursor:pointer; white-space:nowrap;}
@@ -357,6 +361,7 @@
   const ICON = {
     people: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    x: '<path d="M18 6 6 18M6 6l12 12"/>',
     cal: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h2M14 14h2M8 18h2M14 18h2"/>',
     building: '<rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 22v-4h6v4M8 6h.01M12 6h.01M16 6h.01M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
@@ -406,11 +411,13 @@
   const n = (e, k) => e.setUp ? String(Math.round(e.paid[k] * 2) / 2) : '—';
   function balancesHtml(){
     const list = visible(), needs = adm.data.employees.filter(e => matches(e) && e.needsEntry).length;
+    // Starting-balance controls only while someone still needs one (any company, any search, so typing never moves the bar).
+    const needsAny = adm.data.employees.some(e => e.needsEntry); if(!needsAny) adm.needsOnly = false;
     return `<div class="card" style="margin-bottom:16px;"><div class="lv-fbar">
         <div><label class="cap">Company</label>${companySelect()}</div>
-        <div><label class="cap" for="lvSearch">Search employee</label><div class="lv-field">${ico('search')}<input id="lvSearch" type="search" placeholder="Search name, position or ID..." value="${esc(adm.q)}" oninput="LeaveUI.admSearch(this.value)"></div></div>
-        <label class="lv-need"><input type="checkbox" ${adm.needsOnly ? 'checked' : ''} onchange="LeaveUI.admSet('needsOnly', this.checked)">${ico('warn')} Needs starting balance (${needs})</label>
-        ${isFull() ? `<button class="btn auto lv-addbtn" onclick="LeaveUI.openBulk()">${ico('plus')} Enter starting balances</button>` : '<span></span>'}
+        <div><label class="cap" for="lvSearch">Search employee</label><div class="lv-field">${ico('search')}<input id="lvSearch" type="text" enterkeyhint="search" autocomplete="off" placeholder="Search name, position or ID..." value="${esc(adm.q)}" oninput="LeaveUI.admSearch(this.value)">${adm.q ? `<button type="button" class="lv-clear" aria-label="Clear search" title="Clear search" onclick="LeaveUI.admSearch('')">${ico('x')}</button>` : ''}</div></div>
+        ${needsAny ? `<label class="lv-need"><input type="checkbox" ${adm.needsOnly ? 'checked' : ''} onchange="LeaveUI.admSet('needsOnly', this.checked)">${ico('warn')} Needs starting balance (${needs})</label>
+        ${isFull() ? `<button class="btn auto lv-addbtn" onclick="LeaveUI.openBulk()">${ico('plus')} Enter starting balances</button>` : '<span></span>'}` : ''}
       </div></div>
       <div class="card">
       <table class="mobile-card-table lv-table"><thead><tr><th>Employee</th><th>Company</th><th>Available</th><th>Pending</th><th>Upcoming</th><th>Used</th></tr></thead><tbody>
