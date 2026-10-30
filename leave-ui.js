@@ -147,7 +147,7 @@
         <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">${pill(r.status)}
           ${canEdit ? `<button class="btn edit auto" style="padding:5px 10px;" onclick="LeaveUI.openForm('${esc(r.id)}')">✏️ Edit</button>` : ''}
           ${canCancel ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="LeaveUI.askCancel('${esc(r.id)}', this)">Request Cancellation</button>` : ''}
-          ${canPrint ? `<button class="btn ghost auto" style="padding:5px 10px;" title="Print leave request" aria-label="Print leave request ${esc(r.number)}" onclick="printLeaveRequestForm('${esc(r.id)}')">🖨️</button>` : ''}
+          ${canPrint ? `<button class="btn edit auto" style="padding:5px 10px;" title="Print leave request" aria-label="Print leave request ${esc(r.number)}" onclick="printLeaveRequestForm('${esc(r.id)}')">🖨️ Print</button>` : ''}
         </div></div>`;
     }).join('');
     return `<div class="card"><h3><span class="ic">🗂️</span> My Leave History</h3>
