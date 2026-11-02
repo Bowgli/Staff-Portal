@@ -1385,7 +1385,7 @@ async function confirmAndDelete(el, message, action){
 // on the server, which enforces this same rule again regardless of
 // what the UI shows, so a direct API call can't bypass it either.
 const CONCERN_ARCHIVABLE_STATUSES = new Set(["Resolved","Closed","No Action Needed","Withdrawn"]);
-const REQUEST_ARCHIVABLE_STATUSES = new Set(["approved","declined","acknowledged"]);
+const REQUEST_ARCHIVABLE_STATUSES = new Set(["approved","declined","acknowledged","cancelled"]);
 // Furlough is deliberately NOT included — Furlough doesn't necessarily
 // mean the employee has permanently left the company, per the explicit
 // requirement, so it stays in the normal Active Employees list.
@@ -5909,7 +5909,7 @@ async function openRequestsArchivedPage(){
     if(requestsArchiveData === null){
       requestsArchiveLoading = true;
       renderView('mgmt-requests-archived');
-      const raw = await safeApiGet('requestsArchive&username=' + encodeURIComponent(CURRENT_USER.username||''), null, undefined, undefined, ARCHIVE_TIMEOUT_MS);
+      const raw = await safeApiGet(bustCache_('requestsArchive&username=' + encodeURIComponent(CURRENT_USER.username||'')), null, undefined, undefined, ARCHIVE_TIMEOUT_MS);
       if(!Array.isArray(raw)){
         console.error('requestsArchive did not return a list:', raw);
         alert((raw && raw.error) || "Couldn't load Archived Requests — unexpected response from the server.");
@@ -12814,7 +12814,7 @@ let requestsUiLoading_ = null;
 function requestsUi_(){
   return requestsUiLoading_ || (requestsUiLoading_ = new Promise((ok, fail) => {
     const s = document.createElement('script');
-    s.src = 'requests-ui.js?v=d17019fe75';
+    s.src = 'requests-ui.js?v=b043d50031';
     s.onload = () => ok(window.RequestsUI);
     s.onerror = () => { requestsUiLoading_ = null; s.remove(); fail(new Error("Couldn't load Manage Requests. Please check your connection and try again.")); };
     document.head.appendChild(s);

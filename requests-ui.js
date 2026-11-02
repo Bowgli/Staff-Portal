@@ -11,7 +11,9 @@
     'Certificate of Employment (COE)': ['#CCFBF1', '#0F766E'], 'Uniform Replacement': ['#FCE7F3', '#BE185D']};
   // Card colors = the status dropdown colors.
   const CARDS = [['pending', 'Pending', '#B45309'], ['needs-clarification', 'Needs Clarification', '#1D4ED8'], ['declined', 'Declined', '#B91C1C'],
-    ['approved', 'Approved', '#15803D'], ['acknowledged', 'Acknowledged', '#0369A1']];
+    ['approved', 'Approved', '#15803D'], ['acknowledged', 'Acknowledged', '#0369A1'], ['cancelled', 'Cancelled', '#475569']];
+  const CANCEL_REQUESTED = ['cancel-requested', 'Cancellation Requested', '#B45309']; // a card only while there are some, so the cards always add up to Total
+  const label = st => STATUS_LABELS[st] || {cancelled: 'Cancelled', 'cancel-requested': 'Cancellation Requested'}[st] || st;
   const RANK = {'pending': 0, 'needs-clarification': 1, 'declined': 2, 'acknowledged': 3, 'approved': 4};
   const state = {page: 1, size: 10, key: ''};
   let archive = {loading: false, failed: false};
@@ -55,9 +57,10 @@
     if(!USE_REMOTE() || archive.failed) return '—';
     if(!archive.loading){
       archive.loading = true;
-      safeApiGet('requestsArchive&username=' + encodeURIComponent(CURRENT_USER.username || ''), null, undefined, undefined, ARCHIVE_TIMEOUT_MS).then(raw => {
+      const list = ALL_REQUESTS; // Archive/Restore replace this list: an answer that started before them is stale
+      safeApiGet(bustCache_('requestsArchive&username=' + encodeURIComponent(CURRENT_USER.username || '')), null, undefined, undefined, ARCHIVE_TIMEOUT_MS).then(raw => {
         if(!Array.isArray(raw)) throw Error('unexpected response');
-        if(requestsArchiveData === null) requestsArchiveData = raw.map(r => ({id: r.ID, employeeName: r.EmployeeName, type: r.Type, details: r.Details, date: r.Date, status: r.Status, actionBy: r.ActionBy, archived: true}))
+        if(requestsArchiveData === null && ALL_REQUESTS === list) requestsArchiveData = raw.map(r => ({id: r.ID, employeeName: r.EmployeeName, type: r.Type, details: r.Details, date: r.Date, status: r.Status, actionBy: r.ActionBy, archived: true}))
           .sort((a, b) => new Date(b.date) - new Date(a.date)); // same shape and order as openRequestsArchivedPage
       }).catch(e => { console.warn('archived count:', e.message || e); archive.failed = true; }).finally(() => {
         archive.loading = false;
@@ -105,7 +108,7 @@
       </div>
     </div>
     <div class="rq-cards no-print">
-      ${CARDS.map(([s, label, c]) => card(s, label, c, count(s))).join('')}
+      ${CARDS.concat(count(CANCEL_REQUESTED[0]) ? [CANCEL_REQUESTED] : []).map(([s, label, c]) => card(s, label, c, count(s))).join('')}
       ${isFullAdmin() ? card('archived', 'Archived', '#6D28D9', archivedCount(), ' id="rqArchivedCount"') : ''}
       ${card('All', 'Total', '#334155', ALL_REQUESTS.length)}
     </div>
@@ -114,7 +117,7 @@
         <input type="text" list="reqEmployeeDatalist" data-filter="reqEmployee" placeholder="Search by employee name..." aria-label="Search by employee name" value="${esc(reqFilter.employee)}" oninput="setReqFilter('employee', this.value)">
         <datalist id="reqEmployeeDatalist">${EMPLOYEE_ROSTER.map(e => `<option value="${esc(e.name)}">`).join('')}</datalist>
         <select aria-label="Request type" onchange="setReqFilter('type', this.value)">${opt('All', 'All Types', reqFilter.type)}${types.map(t => opt(t, t, reqFilter.type)).join('')}</select>
-        <select aria-label="Status" onchange="setReqFilter('status', this.value)">${opt('All', 'All Statuses', reqFilter.status)}${[['pending', 'Pending'], ['needs-clarification', 'Need Clarification'], ['declined', 'Declined'], ['acknowledged', 'Acknowledged'], ['approved', 'Approved']].map(([v, l]) => opt(v, l, reqFilter.status)).join('')}</select>
+        <select aria-label="Status" onchange="setReqFilter('status', this.value)">${opt('All', 'All Statuses', reqFilter.status)}${[['pending', 'Pending'], ['needs-clarification', 'Need Clarification'], ['declined', 'Declined'], ['acknowledged', 'Acknowledged'], ['approved', 'Approved'], ['cancel-requested', 'Cancellation Requested'], ['cancelled', 'Cancelled']].map(([v, l]) => opt(v, l, reqFilter.status)).join('')}</select>
         <input type="date" aria-label="Date from" title="Date from" value="${esc(reqFilter.dateFrom)}" onchange="setReqFilter('dateFrom', this.value)">
         <input type="date" aria-label="Date to" title="Date to" value="${esc(reqFilter.dateTo)}" onchange="setReqFilter('dateTo', this.value)">
         <button class="btn reset auto" onclick="resetReqFilter()">↻ Reset</button>
@@ -147,10 +150,10 @@
     <p style="margin:2px 0;">Employee: ${esc(reqFilter.employee || 'All Employees')}</p>
     <p style="margin:2px 0;">Request Type: ${esc(reqFilter.type === 'All' ? 'All Types' : reqFilter.type)}</p>
     <p style="margin:2px 0;">Date Range: ${esc(range)}</p>
-    <p style="margin:2px 0 10px;">Status: ${esc(reqFilter.status === 'All' ? 'All Status' : (STATUS_LABELS[reqFilter.status] || reqFilter.status))}</p>`;
+    <p style="margin:2px 0 10px;">Status: ${esc(reqFilter.status === 'All' ? 'All Status' : label(reqFilter.status))}</p>`;
     document.getElementById('reqPrintTable').innerHTML = `<tr><th>Date Submitted</th><th>Employee</th><th>Request Type</th><th>Date/Period</th><th>Details</th><th>Status</th></tr>` + (rows.map(r => {
       const period = r.Type === 'Schedule Swap' && r.SwapWithName ? `${fmtDayLabel(r.SwapDay)}${r.TheirDay && r.TheirDay !== r.SwapDay ? ' ↔ ' + fmtDayLabel(r.TheirDay) : ''} ↔ ${r.SwapWithName}` : '—';
-      return `<tr><td>${esc(fmtDateTime(r.Date))}</td><td>${esc(r.EmployeeName)}</td><td>${esc(r.Type)}</td><td>${esc(period)}</td><td>${esc(r.Details || '—')}</td><td>${esc(STATUS_LABELS[r.Status] || r.Status)}</td></tr>`;
+      return `<tr><td>${esc(fmtDateTime(r.Date))}</td><td>${esc(r.EmployeeName)}</td><td>${esc(r.Type)}</td><td>${esc(period)}</td><td>${esc(r.Details || '—')}</td><td>${esc(label(r.Status))}</td></tr>`;
     }).join('') || `<tr><td colspan="6">No matching requests.</td></tr>`);
     document.getElementById('reqPrintTotal').textContent = `Total Requests: ${rows.length}`;
     printWithPageSettings('letter', 'portrait', '0.75in');
