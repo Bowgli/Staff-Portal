@@ -9170,15 +9170,17 @@ const BUILDERS = {
         <label>Request type</label>
         <select id="reqType" onchange="toggleSwapFields()"><option value="" disabled selected>Select a Request Type</option><option>Absence / Call-Out Notice</option><option>Certificate of Employment (COE)</option><option>Late / Tardiness Notice</option><option>Leave Request</option><option>Schedule Request</option><option>Schedule Swap</option><option>Uniform Replacement</option><option>Other</option></select>
         <div id="swapFields" style="display:none;">
-          <label>Your day to give up</label>
+          <label style="margin-top:14px;">Your day to give up</label>
           <select id="reqSwapDay" onchange="syncTheirDayDefault(); updateSwapPreview()">${SCHEDULE_DAYS.map(d=>`<option value="${d}">${fmtDayLabel(d)}</option>`).join('')}</select>
           <label>Swap with</label>
           ${employeePickerHtml('reqSwapWith', EMPLOYEE_ROSTER.filter(e=>e.name!==CURRENT_EMPLOYEE.name), 'oninput="updateSwapPreview()"')}
+          <details id="diffDayBox" style="margin-top:14px;"><summary class="muted" style="cursor:pointer; font-size:13px;">Different-day swap (optional)</summary>
           <div class="checkbox-row"><input type="checkbox" id="diffDayToggle" onchange="toggleDiffDay()"><label for="diffDayToggle">They're giving up a different day (not a same-day trade)</label></div>
           <div id="theirDayField" style="display:none;">
             <label>Their day you're taking in exchange</label>
             <select id="reqTheirDay" onchange="updateSwapPreview()">${SCHEDULE_DAYS.map(d=>`<option value="${d}">${fmtDayLabel(d)}</option>`).join('')}</select>
           </div>
+          </details>
           <div id="swapPreview" class="banner note" style="margin-top:4px; margin-bottom:14px; display:none;"></div>
         </div>
         <div id="absenceDateField" style="display:none;">
@@ -9187,6 +9189,7 @@ const BUILDERS = {
         </div>
         <label id="reqDetailsLabel">Details</label>
         <textarea id="reqDetails" placeholder="Describe your request..."></textarea>
+        <div class="checkbox-row" id="swapAgreeRow" style="display:none;"><input type="checkbox" id="swapAgree"><label for="swapAgree">I confirm that both employees have agreed to this schedule swap.</label></div>
         <div id="scheduleRequestNotice" class="banner note" role="note" style="display:none; margin-top:8px;">Your schedule request is subject to management review and approval. Submission does not guarantee approval. Your request may be approved or declined.</div>
         <div style="display:flex; gap:8px; margin-top:8px;">
           <button class="btn" id="reqSubmitBtn" onclick="submitMyRequest()" style="flex:1;">Submit Request</button>
@@ -11325,6 +11328,7 @@ function toggleSwapFields(){
   const type = document.getElementById('reqType').value;
   const isSwap = type === 'Schedule Swap';
   document.getElementById('swapFields').style.display = isSwap ? 'block' : 'none';
+  document.getElementById('swapAgreeRow').style.display = isSwap ? 'flex' : 'none';
   if(isSwap) updateSwapPreview();
 
   document.getElementById('absenceDateField').style.display = (type === 'Absence / Call-Out Notice') ? 'block' : 'none';
@@ -11426,6 +11430,7 @@ async function submitMyRequestInner(){
     TheirDay = document.getElementById('diffDayToggle').checked ? document.getElementById('reqTheirDay').value : SwapDay;
     SwapWithName = readEmployeePicker('reqSwapWith');
     if(!SwapWithName){ err.textContent="Type a name and pick a real match from the suggestions."; err.style.display='block'; return; }
+    if(!document.getElementById('swapAgree').checked){ err.textContent="Please confirm that both employees have agreed to this swap."; err.style.display='block'; return; }
   }
 
   let AbsenceDate = '';
@@ -11441,7 +11446,7 @@ async function submitMyRequestInner(){
     btnLoading('reqSubmitBtn', 'Updating...');
     try{
       if(USE_REMOTE()){
-        const r = await apiPostMinDelayRetrying('editRequest', {id:editingRequestId, Type, Details, SwapDay, TheirDay, SwapWithName, AbsenceDate, Venue, LeaveType, LeaveTypeOther, NumberOfDays, LeaveStartDate, LeaveEndDate, ReturnToWorkDate, AnniversaryDate});
+        const r = await apiPostMinDelayRetrying('editRequest', {id:editingRequestId, Type, Details, SwapDay, TheirDay, SwapWithName, SwapAgreed: Type === 'Schedule Swap', AbsenceDate, Venue, LeaveType, LeaveTypeOther, NumberOfDays, LeaveStartDate, LeaveEndDate, ReturnToWorkDate, AnniversaryDate});
         if(!r.ok){ err.textContent = r.error || "Couldn't update."; err.style.display='block'; btnReset('reqSubmitBtn','Update Request'); return; }
         // Applied directly to MOCK.requests (what the History table
         // actually reads from) rather than waiting on a full refresh
@@ -11474,7 +11479,7 @@ async function submitMyRequestInner(){
   if(!pendingRequestClientId) pendingRequestClientId = (crypto.randomUUID ? crypto.randomUUID() : ('cid-' + Date.now() + '-' + Math.random().toString(36).slice(2)));
   try{
     if(USE_REMOTE()){
-      const r = await apiPostMinDelayRetrying('submitRequest', {EmployeeName: CURRENT_EMPLOYEE.name, Type, Details, SwapDay, TheirDay, SwapWithName, AbsenceDate, Venue, LeaveType, LeaveTypeOther, NumberOfDays, LeaveStartDate, LeaveEndDate, ReturnToWorkDate, AnniversaryDate, clientId: pendingRequestClientId});
+      const r = await apiPostMinDelayRetrying('submitRequest', {EmployeeName: CURRENT_EMPLOYEE.name, Type, Details, SwapDay, TheirDay, SwapWithName, SwapAgreed: Type === 'Schedule Swap', AbsenceDate, Venue, LeaveType, LeaveTypeOther, NumberOfDays, LeaveStartDate, LeaveEndDate, ReturnToWorkDate, AnniversaryDate, clientId: pendingRequestClientId});
       if(!r.ok){ err.textContent = r.error || "Couldn't submit."; err.style.display='block'; btnReset('reqSubmitBtn','Submit Request'); return; }
       pendingRequestClientId = null; // succeeded — a future submission gets a fresh id
       // Added directly to MOCK.requests (what the History table
@@ -11512,6 +11517,7 @@ function startEditRequest(id){
     if(r.swapWithName) document.getElementById('reqSwapWith').value = r.swapWithName;
     const diff = r.theirDay && r.theirDay !== r.swapDay;
     document.getElementById('diffDayToggle').checked = diff;
+    document.getElementById('diffDayBox').open = diff;
     document.getElementById('theirDayField').style.display = diff ? 'block' : 'none';
     if(diff) document.getElementById('reqTheirDay').value = r.theirDay;
     updateSwapPreview();
