@@ -3180,7 +3180,7 @@ async function finishLogin(){
     if(!lastLoadHadFailures) break; // recovered — no need for the remaining attempts
   }
   hideDataRecoveryBanner();
-  renderView(activeView); // re-render whatever's currently on screen with whatever data ultimately came back
+  if(!requestFormInUse_()) renderView(activeView); // re-render whatever's currently on screen with whatever data ultimately came back (not over a request being filled in)
   renderNav();
   if(lastLoadHadFailures){
     // Every attempt still came back incomplete — something more than
@@ -4468,7 +4468,7 @@ async function startEmpPolling(){
       showMgmtToast('💡', newOthersSuggestions===1?'New Suggestion':`${newOthersSuggestions} New Suggestions`, `${detail || 'A new suggestion came in'} — tap to view`, 'mgmt-suggestions');
     }
 
-    if(['home','requests','schedule','my-disciplinary','announcements','mgmt-requests','concern','suggestion','recognition'].includes(activeView)) renderView(activeView);
+    if(['home','requests','schedule','my-disciplinary','announcements','mgmt-requests','concern','suggestion','recognition'].includes(activeView) && !requestFormInUse_()) renderView(activeView);
   }, 45000); // check every 45 seconds
 }
 function stopEmpPolling(){
@@ -9076,7 +9076,7 @@ const BUILDERS = {
         ${isLeave && currentMgmtRole() ? `<button class="btn auto no-print" onclick="printLeaveRequestForm('${__spJSString(r.id)}')">🖨️ Print</button>` : ''}
       </div>
       <h3>${__spText(r.type)}</h3>
-      <p class="muted" style="font-size:12px; margin-bottom:14px;">${isLeave ? `Leave Request Number: <span class="mono">${__spText(r.leaveRequestNumber||'—')}</span>` : `Request ID: <span class="mono">${__spText(r.id)}</span>`} · Submitted ${fmtDateTime(r.date)}</p>
+      <p class="muted" style="font-size:12px; margin-bottom:14px;">${isLeave ? `Leave Request Number: <span class="mono">${__spText(r.leaveRequestNumber||'—')}</span>` : `Request ID: <span class="mono">${__spText(String(r.id).slice(0,8))}</span>`} · Submitted ${fmtDateTime(r.date)}</p>
       <p style="margin-bottom:14px;">${statusPill(r.status)}</p>
 
       ${isLeave ? `
@@ -9123,7 +9123,7 @@ const BUILDERS = {
       </div>
       <h3>${__spText(r.Type)}</h3>
       <p class="muted" style="font-size:12px; margin-bottom:4px;">Employee: <strong>${__spText(r.EmployeeName)}</strong></p>
-      <p class="muted" style="font-size:12px; margin-bottom:14px;">${isLeave ? `Leave Request Number: <span class="mono">${__spText(r.LeaveRequestNumber||'—')}</span>` : `Request ID: <span class="mono">${__spText(r.ID)}</span>`} · Submitted ${fmtDateTime(r.Date)}</p>
+      <p class="muted" style="font-size:12px; margin-bottom:14px;">${isLeave ? `Leave Request Number: <span class="mono">${__spText(r.LeaveRequestNumber||'—')}</span>` : `Request ID: <span class="mono">${__spText(String(r.ID).slice(0,8))}</span>`} · Submitted ${fmtDateTime(r.Date)}</p>
       <p class="muted" style="font-size:12px; margin-bottom:4px;">Status</p>
       <p class="no-print" style="margin-bottom:14px;">
         ${savingRequestIds.has(r.ID) ? `<span class="btn-spinner"></span><span class="muted" style="font-size:12px;">Saving...</span>` : `
@@ -9149,6 +9149,7 @@ const BUILDERS = {
         <p style="margin-bottom:14px;">${__spText(r.Details||'—')}</p>
       `}
 
+      ${r.Type==='Schedule Swap' && history.some(h=>h.event==='Submitted (both employees agreed)') ? `<div class="banner note" style="margin-bottom:14px;">✓ Both employees agreed (Confirmed by Requester)</div>` : ''}
       ${r.Status==='declined' && r.DeclineReason ? `<div class="banner" style="margin-bottom:14px;"><strong>Decline Reason:</strong> ${__spText(r.DeclineReason)}</div>` : ''}
       ${r.Status==='needs-clarification' && r.ClarificationMessage ? `<div class="banner note" style="margin-bottom:14px;"><strong>Clarification Requested:</strong> ${__spText(r.ClarificationMessage)}</div>` : ''}
       ${r.ActionDate ? `<p class="muted" style="font-size:12px; margin-bottom:14px;">Last reviewed: ${fmtDateTime(r.ActionDate)}${r.ActionBy ? ' by '+r.ActionBy : ''}</p>` : ''}
@@ -10428,96 +10429,7 @@ const BUILDERS = {
     </div>`;
   },
 
-  "mgmt-requests": ()=>{
-    const types = Array.from(new Set(ALL_REQUESTS.map(r=>r.Type))).sort();
-    const filtered = ALL_REQUESTS
-      .map((r, idx) => Object.assign({}, r, {_idx: idx})) // remember original position as a tiebreaker for same-timestamp entries
-      .filter(r=>{
-        if(reqFilter.employee && !r.EmployeeName.toLowerCase().includes(reqFilter.employee.toLowerCase()) && !String(r.ID||'').toLowerCase().includes(reqFilter.employee.toLowerCase())) return false;
-        if(reqFilter.type !== 'All' && r.Type !== reqFilter.type) return false;
-        if(reqFilter.status !== 'All' && r.Status !== reqFilter.status) return false;
-        if(reqFilter.dateFrom){ const dt = new Date(r.Date); if(isNaN(dt) || dt < new Date(reqFilter.dateFrom)) return false; }
-        if(reqFilter.dateTo){ const dt = new Date(r.Date); if(isNaN(dt) || dt > new Date(reqFilter.dateTo + 'T23:59:59')) return false; }
-        return true;
-      })
-      .sort((a,b)=>{
-        // Pending, Needs Clarification, Declined, Acknowledged, Approved; newest first within each status.
-        const rank = s => ({'pending':0, 'needs-clarification':1, 'declined':2, 'acknowledged':3, 'approved':4})[s] ?? 5;
-        if(rank(a.Status) !== rank(b.Status)) return rank(a.Status) - rank(b.Status);
-        const ak = a.Date || '';
-        const bk = b.Date || '';
-        if(ak !== bk) return bk.localeCompare(ak); // latest first
-        return b._idx - a._idx; // same timestamp — whichever was added later (further in the array) shows first
-      });
-    return `
-    <div class="card no-print" style="margin-bottom:16px;">
-      <h3>Filter Requests</h3>
-      <div class="grid grid-2">
-        <div>
-          <label>Employee</label>
-          <input type="text" list="reqEmployeeDatalist" data-filter="reqEmployee" placeholder="Search by employee name or Request ID..." value="${__spAttr(reqFilter.employee)}" oninput="setReqFilter('employee', this.value)">
-          <datalist id="reqEmployeeDatalist">
-            ${EMPLOYEE_ROSTER.map(e=>`<option value="${__spAttr(e.name)}">`).join('')}
-          </datalist>
-        </div>
-        <div>
-          <label>Request Type</label>
-          <select onchange="setReqFilter('type', this.value)">
-            <option value="All" ${reqFilter.type==='All'?'selected':''}>All Types</option>
-            ${types.map(t=>`<option ${reqFilter.type===t?'selected':''}>${t}</option>`).join('')}
-          </select>
-        </div>
-        <div>
-          <label>Status</label>
-          <select onchange="setReqFilter('status', this.value)">
-            <option value="All" ${reqFilter.status==='All'?'selected':''}>All Statuses</option>
-            <option value="pending" ${reqFilter.status==='pending'?'selected':''}>Pending</option>
-            <option value="needs-clarification" ${reqFilter.status==='needs-clarification'?'selected':''}>Need Clarification</option>
-            <option value="declined" ${reqFilter.status==='declined'?'selected':''}>Declined</option>
-            <option value="acknowledged" ${reqFilter.status==='acknowledged'?'selected':''}>Acknowledged</option>
-            <option value="approved" ${reqFilter.status==='approved'?'selected':''}>Approved</option>
-          </select>
-        </div>
-        <div></div>
-        <div>
-          <label>Date From</label>
-          <input type="date" value="${__spAttr(reqFilter.dateFrom)}" onchange="setReqFilter('dateFrom', this.value)">
-        </div>
-        <div>
-          <label>Date To</label>
-          <input type="date" value="${__spAttr(reqFilter.dateTo)}" onchange="setReqFilter('dateTo', this.value)">
-        </div>
-      </div>
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
-        <button class="btn reset auto" onclick="resetReqFilter()">↻ Reset Filters</button>
-        ${isFullAdmin() ? `<button class="btn ghost auto no-print" onclick="openRequestsArchivedPage()">📁 Archived Requests</button>` : ''}
-      </div>
-    </div>
-    <div class="card print-doc table-scroll">
-      <div class="no-print" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:4px;">
-        <h3 style="margin:0;"><span class="ic">📝</span> All Requests</h3>
-        <button class="btn auto" onclick="printRequestsLog()">🖨️ Print Filtered Requests</button>
-      </div>
-      <div class="print-only" style="display:none;" id="reqPrintHeader"></div>
-      <p class="muted no-print" style="margin-bottom:12px;">Status can be changed anytime — handy for an accidental click or if the staff member changes their mind on a swap.</p>
-      <table class="no-print mobile-card-table">
-        <thead><tr><th>Employee</th><th>Type</th><th>Details</th><th>Date</th><th>Status</th><th>Action By</th>${(isFullAdmin()?'<th></th>':'')}</tr></thead>
-        <tbody>
-        ${filtered.map(r=>`<tr><td data-label="Employee">${__spText(r.EmployeeName)}</td><td data-label="Type">${__spText(r.Type)}${r.Type==='Schedule Swap' && r.SwapWithName ? `<br><span class="muted" style="font-size:11px;">${fmtDayLabel(r.SwapDay)}${r.TheirDay && r.TheirDay!==r.SwapDay ? ' ↔ '+fmtDayLabel(r.TheirDay) : ''} ↔ ${__spText(r.SwapWithName)}</span>` : ''}</td><td class="muted" data-label="Details">${__spText(r.Details||'')}</td><td data-label="Date">${fmtDateTime(r.Date)}</td>
-          <td data-label="Status">
-            ${savingRequestIds.has(r.ID) ? `<span class="btn-spinner"></span><span class="muted" style="font-size:12px;">Saving...</span>` : `
-            <select class="status-select ${__spAttr(r.Status)}" onchange="handleRequestStatusChange(this, '${__spJSString(r.ID)}', '${__spJSString(r.Status)}', '${r.Type.replace(/'/g,"\\'")}')">${requestStatusOptions_(r)}</select>`}
-          </td>
-          <td class="muted" data-label="Action By">${__spText(r.Status !== 'pending' && r.ActionBy ? r.ActionBy : '—')}${r.Type==='Leave Request' ? `<br><button class="btn ghost auto no-print" style="padding:3px 8px; margin-top:4px; font-size:11px;" onclick="openAdminRequestDetail('${__spJSString(r.ID)}')">👁 View</button>` : ''}</td>
-          ${isFullAdmin() ? `<td data-label="Actions">${REQUEST_ARCHIVABLE_STATUSES.has(r.Status) ? `<button class="btn ghost auto" style="padding:5px 10px;" onclick="archiveRecordNow('request','${__spJSString(r.ID)}', this)">📦 Archive</button>` : ''}</td>` : ''}</tr>`).join('') || `<tr><td colspan="${__spAttr(isFullAdmin()?7:6)}" class="muted">No matching requests.</td></tr>`}
-        </tbody>
-      </table>
-      <table class="print-only" style="display:none;" id="reqPrintTable">
-        <tr><th>Date Submitted</th><th>Employee</th><th>Request Type</th><th>Date/Period</th><th>Details</th><th>Status</th></tr>
-      </table>
-      <p class="print-only" style="display:none; font-weight:600; margin-top:8px;" id="reqPrintTotal"></p>
-    </div>`;
-  },
+  "mgmt-requests": ()=> requestsView_(),
 
   "mgmt-requests-archived": ()=>{
     if(!isFullAdmin()) return `<div class="card"><p class="muted">🔒 Archive access is limited to Admin accounts.</p></div>`;
@@ -10531,14 +10443,14 @@ const BUILDERS = {
       <p class="muted" style="margin-bottom:10px; font-size:12.5px;">Finished requests moved out of the active list — still fully viewable, searchable, and printable.</p>
       <input type="text" placeholder="🔍 Search by employee name or type..." value="${requestsArchiveSearch}" oninput="setRequestsArchiveSearch(this.value)" style="margin-bottom:12px;">
       ${requestsArchiveLoading ? `<p class="muted">Loading archived requests…</p>` : `
-      <table>
-        <tr><th>Employee</th><th>Type</th><th>Details</th><th>Date</th><th>Status</th><th>Action By</th><th></th></tr>
-        ${filtered.map((r)=>`<tr>
-          <td>${__spText(r.employeeName)}</td><td>${__spText(r.type)}</td><td class="muted">${__spText(r.details||'')}</td><td>${fmtDateTime(r.date)}</td>
-          <td>${__spText(r.status)}</td><td class="muted">${__spText(r.actionBy||'—')}</td>
-          <td><button class="btn info auto" style="padding:5px 10px;" onclick="viewArchivedRequestDetail(${(requestsArchiveData||[]).indexOf(r)})">View</button> <button class="btn ghost auto" style="padding:5px 10px;" onclick="restoreRecordNow('request','${__spJSString(r.id)}', this)">↩️ Restore</button></td>
-        </tr>`).join('') || `<tr><td colspan="7" class="muted">No archived requests${__spText(requestsArchiveSearch?' match that search':' yet')}.</td></tr>`}
-      </table>`}
+      <div class="table-scroll"><table class="mobile-card-table">
+        <thead><tr><th>Employee</th><th>Type</th><th>Details</th><th>Date</th><th>Status</th><th>Action By</th><th></th></tr></thead>
+        <tbody>${filtered.map((r)=>`<tr>
+          <td data-label="Employee">${__spText(r.employeeName)}</td><td data-label="Type">${__spText(r.type)}</td><td class="muted" data-label="Details" style="overflow-wrap:anywhere; min-width:160px;">${__spText(r.details||'')}</td><td data-label="Date">${fmtDateTime(r.date)}</td>
+          <td data-label="Status">${__spText(r.status)}</td><td class="muted" data-label="Action By">${__spText(r.actionBy||'—')}</td>
+          <td data-label="Actions"><div style="display:flex; gap:6px; flex-wrap:wrap;"><button class="btn info auto" style="padding:5px 10px; margin:0; white-space:nowrap;" onclick="viewArchivedRequestDetail(${(requestsArchiveData||[]).indexOf(r)})">View</button><button class="btn ghost auto" style="padding:5px 10px; margin:0; white-space:nowrap;" onclick="restoreRecordNow('request','${__spJSString(r.id)}', this)">↩️ Restore</button></div></td>
+        </tr>`).join('') || `<tr><td colspan="7" class="muted">No archived requests${__spText(requestsArchiveSearch?' match that search':' yet')}.</td></tr>`}</tbody>
+      </table></div>`}
     </div>`;
   },
 
@@ -11454,7 +11366,7 @@ async function submitMyRequestInner(){
         // just for this one record.
         const reqLocal = MOCK.requests.find(x=>x.id===editingRequestId);
         if(reqLocal) Object.assign(reqLocal, {type:Type, details:Details, swapDay:SwapDay, theirDay:TheirDay, swapWithName:SwapWithName, venue:Venue, leaveType:LeaveType, leaveTypeOther:LeaveTypeOther, numberOfDays:NumberOfDays, leaveStartDate:LeaveStartDate, leaveEndDate:LeaveEndDate, returnToWorkDate:ReturnToWorkDate, anniversaryDate:AnniversaryDate});
-        refreshMyRequests().then(()=>{ if(activeView === 'requests') renderView('requests'); }).catch(e=>console.warn('background requests refresh failed (already-correct local data is unaffected):', e.message || e));
+        refreshMyRequests().then(()=>{ if(activeView === 'requests' && !requestFormInUse_()) renderView('requests'); }).catch(e=>console.warn('background requests refresh failed (already-correct local data is unaffected):', e.message || e));
       } else {
         const req = MOCK.requests.find(x=>x.id===editingRequestId);
         if(req){ req.type = Type; req.details = Details; req.swapDay = SwapDay; req.theirDay = TheirDay; req.swapWithName = SwapWithName; }
@@ -11486,7 +11398,7 @@ async function submitMyRequestInner(){
       // actually reads from) rather than waiting on a full refresh
       // first — mirrors the same shape refreshMyRequests() builds.
       MOCK.requests.unshift({type:Type, date:"Just now", status:"pending", id:r.id, details:Details, swapDay:SwapDay, theirDay:TheirDay, swapWithName:SwapWithName, venue:Venue, leaveType:LeaveType, leaveTypeOther:LeaveTypeOther, numberOfDays:NumberOfDays, leaveStartDate:LeaveStartDate, leaveEndDate:LeaveEndDate, returnToWorkDate:ReturnToWorkDate, anniversaryDate:AnniversaryDate, leaveRequestNumber:r.leaveRequestNumber});
-      refreshMyRequests().then(()=>{ if(activeView === 'requests') renderView('requests'); }).catch(e=>console.warn('background requests refresh failed (already-correct local data is unaffected):', e.message || e));
+      refreshMyRequests().then(()=>{ if(activeView === 'requests' && !requestFormInUse_()) renderView('requests'); }).catch(e=>console.warn('background requests refresh failed (already-correct local data is unaffected):', e.message || e));
     } else {
       MOCK.requests.unshift({type:Type, date:"Just now", status:"pending", swapDay:SwapDay, theirDay:TheirDay, swapWithName:SwapWithName});
     }
@@ -11501,6 +11413,12 @@ async function submitMyRequestInner(){
   }
 }
 
+// True while the employee is filling in or editing a request on My Requests. Background refreshes then skip
+// the redraw (the new data is already loaded and shows on the next redraw), so typed input is never cleared.
+function requestFormInUse_(){
+  const val = id => { const el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; };
+  return activeView === 'requests' && !!(editingRequestId || val('reqType') || val('reqDetails'));
+}
 function cancelEditRequest(){
   editingRequestId = null;
   renderView('requests'); // rebuilds the form fresh — its default markup has no pre-filled values, so this alone clears everything Edit had populated
@@ -11508,6 +11426,7 @@ function cancelEditRequest(){
 function startEditRequest(id){
   const r = MOCK.requests.find(x=>x.id===id);
   if(!r) return;
+  if(isSubmittingRequest){ alert("Please wait — your request is still being sent."); return; }
   if(r.type === 'Leave Request') return leaveOpenForm_(id); // edited in My Leave
   document.getElementById('reqType').value = r.type;
   document.getElementById('reqDetails').value = r.details || '';
@@ -11539,7 +11458,7 @@ async function deleteMyRequest(id, el){
       // Removed directly from MOCK.requests (what the History table
       // actually reads from) rather than waiting on a full refresh.
       MOCK.requests = MOCK.requests.filter(x=>x.id!==id);
-      refreshMyRequests().then(()=>{ if(activeView === 'requests') renderView('requests'); }).catch(e=>console.warn('background requests refresh failed (already-correct local data is unaffected):', e.message || e));
+      refreshMyRequests().then(()=>{ if(activeView === 'requests' && !requestFormInUse_()) renderView('requests'); }).catch(e=>console.warn('background requests refresh failed (already-correct local data is unaffected):', e.message || e));
     } else {
       MOCK.requests = MOCK.requests.filter(x=>x.id!==id);
     }
@@ -12890,50 +12809,24 @@ function printLeaveRequestForm_(id, info){
   window.addEventListener('afterprint', cleanup);
   window.print();
 }
-function printRequestsLog(){
-  const types = Array.from(new Set(ALL_REQUESTS.map(r=>r.Type))).sort();
-  const filtered = ALL_REQUESTS
-    .map((r, idx) => Object.assign({}, r, {_idx: idx}))
-    .filter(r=>{
-      if(reqFilter.employee && !r.EmployeeName.toLowerCase().includes(reqFilter.employee.toLowerCase()) && !String(r.ID||'').toLowerCase().includes(reqFilter.employee.toLowerCase())) return false;
-      if(reqFilter.type !== 'All' && r.Type !== reqFilter.type) return false;
-      if(reqFilter.status !== 'All' && r.Status !== reqFilter.status) return false;
-      if(reqFilter.dateFrom){ const dt = new Date(r.Date); if(isNaN(dt) || dt < new Date(reqFilter.dateFrom)) return false; }
-      if(reqFilter.dateTo){ const dt = new Date(r.Date); if(isNaN(dt) || dt > new Date(reqFilter.dateTo + 'T23:59:59')) return false; }
-      return true;
-    })
-    .sort((a,b)=>{
-      const ak = a.Date || '';
-      const bk = b.Date || '';
-      if(ak !== bk) return bk.localeCompare(ak);
-      return b._idx - a._idx;
-    });
-
-  let dateRangeLabel = 'All Dates';
-  if(reqFilter.dateFrom || reqFilter.dateTo){
-    dateRangeLabel = `${reqFilter.dateFrom ? fmtDiscDate(reqFilter.dateFrom) : 'Start'} – ${reqFilter.dateTo ? fmtDiscDate(reqFilter.dateTo) : 'Present'}`;
-  }
-  document.getElementById('reqPrintHeader').innerHTML = `
-    <h3 style="margin-bottom:6px;">MANAGE REQUESTS REPORT</h3>
-    <p style="margin:2px 0;">Employee: ${__spText(reqFilter.employee || 'All Employees')}</p>
-    <p style="margin:2px 0;">Request Type: ${__spText(reqFilter.type === 'All' ? 'All Types' : reqFilter.type)}</p>
-    <p style="margin:2px 0;">Date Range: ${dateRangeLabel}</p>
-    <p style="margin:2px 0 10px;">Status: ${__spText(reqFilter.status === 'All' ? 'All Status' : (STATUS_LABELS[reqFilter.status] || reqFilter.status))}</p>
-  `;
-
-  document.getElementById('reqPrintTable').innerHTML = `
-    <tr><th>Date Submitted</th><th>Employee</th><th>Request Type</th><th>Date/Period</th><th>Details</th><th>Status</th></tr>
-    ${filtered.map(r=>{
-      const period = r.Type==='Schedule Swap' && r.SwapWithName
-        ? `${fmtDayLabel(r.SwapDay)}${r.TheirDay && r.TheirDay!==r.SwapDay ? ' ↔ '+fmtDayLabel(r.TheirDay) : ''} ↔ ${r.SwapWithName}`
-        : '—';
-      return `<tr><td>${fmtDateTime(r.Date)}</td><td>${__spText(r.EmployeeName)}</td><td>${__spText(r.Type)}</td><td>${period}</td><td>${__spText(r.Details||'—')}</td><td>${__spText(STATUS_LABELS[r.Status] || r.Status)}</td></tr>`;
-    }).join('') || `<tr><td colspan="6">No matching requests.</td></tr>`}
-  `;
-  document.getElementById('reqPrintTotal').textContent = `Total Requests: ${filtered.length}`;
-
-  printWithPageSettings('letter','portrait','0.75in');
+// Manage Requests lives in requests-ui.js, fetched when it is first opened (keeps the main page small).
+let requestsUiLoading_ = null;
+function requestsUi_(){
+  return requestsUiLoading_ || (requestsUiLoading_ = new Promise((ok, fail) => {
+    const s = document.createElement('script');
+    s.src = 'requests-ui.js?v=d17019fe75';
+    s.onload = () => ok(window.RequestsUI);
+    s.onerror = () => { requestsUiLoading_ = null; s.remove(); fail(new Error("Couldn't load Manage Requests. Please check your connection and try again.")); };
+    document.head.appendChild(s);
+  }));
 }
+function requestsView_(){
+  if(window.RequestsUI) return RequestsUI.html();
+  requestsUi_().then(() => { if(activeView === 'mgmt-requests') renderView('mgmt-requests'); })
+    .catch(e => { const el = document.getElementById('requestsRoot'); if(el) el.textContent = e.message; });
+  return '<div id="requestsRoot"><div class="card"><p class="muted">Loading requests…</p></div></div>';
+}
+function printRequestsLog(){ requestsUi_().then(R => R.print()).catch(e => alert(e.message)); }
 function filterAttendanceLog(val){
   attendanceSearchQuery = val;
   const rows = document.getElementById('attendanceLogRows');
