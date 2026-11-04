@@ -734,6 +734,17 @@ h1, h2, h3, h4, .section-title, .daily-reminder .dr-title, [style*="Fraunces"], 
 .ib-view{--ic:url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2024%2024'%20fill%3D'none'%20stroke%3D'black'%20stroke-width%3D'2'%20stroke-linecap%3D'round'%20stroke-linejoin%3D'round'%3E%3Cpath%20d%3D'M2%2012s3.5-7%2010-7%2010%207%2010%207-3.5%207-10%207S2%2012%202%2012z'%2F%3E%3Ccircle%20cx%3D'12'%20cy%3D'12'%20r%3D'3'%2F%3E%3C%2Fsvg%3E");}
 .status-select.cancel-requested{background:#FEF3C7 !important; color:#B45309 !important; border-color:#F59E0B !important;}
 .status-select.cancelled{background:#F1F5F9 !important; color:#475569 !important; border-color:#CBD5E1 !important;}
+/* Employee Profile tabs on a phone (2026-11-04): two equal columns, Recognition full width; desktop unchanged. */
+@media (max-width: 640px){
+  .emp-tabs{display:grid !important; grid-template-columns:1fr 1fr; gap:10px !important; margin-bottom:14px !important;}
+  .emp-tabs .btn{width:100%; margin:0; min-height:52px; border-radius:14px !important; display:flex; align-items:center; justify-content:center; gap:8px; font-size:15px; font-weight:700; white-space:nowrap;}
+  .emp-tabs .btn:last-child:nth-child(odd){grid-column:1 / -1;}
+}
+/* Request Details opened from an Employee Profile, on a phone: Back to Employee and Manage Requests side by side. */
+@media (max-width: 640px){
+  .rq-backs{width:100%; flex-wrap:nowrap !important;}
+  .rq-backs .btn{flex:1 1 0; min-width:0; margin:0; padding:10px 6px; font-size:13px; white-space:nowrap; border-radius:999px;}
+}
 </style>
 </head>
 <body>
@@ -1592,7 +1603,7 @@ function openRecognitionDetail(id, sourceView, sourceLabel){
   window.scrollTo(0, 0); // always land at the top of the detail page, not wherever the list happened to be scrolled to
 }
 let viewingEmployeeName = null; // which employee mgmt-employee-profile is showing
-let employeeProfileTab = 'performance'; // 'performance' | 'attendance' | 'disciplinary' | 'recognition'
+let employeeProfileTab = 'leave'; // 'leave' | 'attendance' | 'disciplinary' | 'performance' | 'recognition'
 let employeeProfileEditMode = false;
 let attendanceStatsMode = 'month'; // 'month' or 'year' — for Most Absences/Late/Undertime on the Attendance page
 // The "20 Most X" rankings used to be computed from ATTENDANCE_LOG
@@ -6437,7 +6448,7 @@ function viewEmployeeDisciplinaryHistory(employeeName){
 let employeeProfileSource = null; // {view, label} of the page the user opened this profile FROM — read by the Back button on mgmt-employee-profile below. Reset to null (→ defaults to Staff Directory) on every fresh call so a stale source from a previous visit is never carried over by mistake.
 function openEmployeeProfile(name, sourceView, sourceLabel){
   viewingEmployeeName = name;
-  employeeProfileTab = 'performance';
+  employeeProfileTab = 'leave';
   employeeProfileEditMode = false;
   employeeProfileSource = sourceView ? {view: sourceView, label: sourceLabel || 'Back'} : null;
   empProfileFullAttendanceFor = null; // don't carry over a previously-viewed employee's expanded attendance history
@@ -9118,7 +9129,7 @@ const BUILDERS = {
     return `
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:14px;">
-        <button class="btn info auto no-print" onclick="closeAdminRequestDetail()">← Back</button>
+        ${adminRequestFromEmployee ? `<div class="no-print rq-backs" style="display:flex; gap:8px; flex-wrap:wrap;"><button class="btn info auto" onclick="backToEmployeeFromRequest_()">← Back to Employee</button><button class="btn ghost auto" onclick="closeAdminRequestDetail()">☰ Manage Requests</button></div>` : `<button class="btn info auto no-print" onclick="closeAdminRequestDetail()">← Back</button>`}
         ${isLeave ? `<button class="btn auto no-print" onclick="printLeaveRequestForm('${__spJSString(r.ID)}')">🖨️ Print</button>` : ''}
       </div>
       <h3>${__spText(r.Type)}</h3>
@@ -9586,9 +9597,10 @@ const BUILDERS = {
     const myRecognition = MOCK.recognition.filter(r=>r.employeeName===name);
 
     const tabs = [
-      {id:'performance', ic:'📊', label:'Performance'},
+      {id:'leave', ic:'🌴', label:'Leave'},
       {id:'attendance', ic:'📅', label:'Attendance'},
       {id:'disciplinary', ic:'⚠️', label:'Disciplinary'},
+      {id:'performance', ic:'📊', label:'Performance'},
       {id:'recognition', ic:'🏆', label:'Recognition'},
     ];
 
@@ -9668,11 +9680,12 @@ const BUILDERS = {
       </div>
     </div>
 
-    <div class="no-print" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:0;">
+    <div class="no-print emp-tabs" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:0;">
       ${tabs.map(t=>`<button class="btn ${__spAttr(employeeProfileTab===t.id?'':'ghost')} auto" style="border-radius:8px 8px 0 0;" onclick="setEmployeeProfileTab('${__spJSString(t.id)}')">${__spText(t.ic)} ${__spText(t.label)}</button>`).join('')}
     </div>
 
     <div class="card table-scroll" style="margin-top:0;">
+      ${employeeProfileTab==='leave' ? empLeaveSlot_(name) : ''}
       ${employeeProfileTab==='performance' ? `
         <h3><span class="ic">📊</span> Performance Report</h3>
         ${myMonthlyEvaluations.length ? `
@@ -11169,14 +11182,31 @@ function closeMyRequestDetail(){
 // source and Back destination are both wrong for an Admin looking at
 // someone else's request.
 let viewingAdminRequestId = null; // which request "mgmt-request-detail" (Admin side) is currently showing
-function openAdminRequestDetail(id){
+// Exact Roster name of the Employee Profile the request was opened from (Leave → View Request), or null.
+const ADMIN_REQUEST_FROM_EMPLOYEE_KEY = "sv_staff_portal_admin_request_from_employee";
+let adminRequestFromEmployee = (()=>{ try{ return localStorage.getItem(ADMIN_REQUEST_FROM_EMPLOYEE_KEY); } catch(e){ return null; } })();
+function setAdminRequestFromEmployee_(name){
+  adminRequestFromEmployee = name || null;
+  try{ if(name) localStorage.setItem(ADMIN_REQUEST_FROM_EMPLOYEE_KEY, name); else localStorage.removeItem(ADMIN_REQUEST_FROM_EMPLOYEE_KEY); } catch(e){}
+}
+function openAdminRequestDetail(id, fromEmployee){
   viewingAdminRequestId = id;
+  setAdminRequestFromEmployee_(fromEmployee);
   renderView('mgmt-request-detail');
   window.scrollTo(0, 0); // always land at the top of the request, not wherever the table happened to be scrolled to
 }
 function closeAdminRequestDetail(){
   viewingAdminRequestId = null;
+  setAdminRequestFromEmployee_(null);
   renderView('mgmt-requests');
+}
+// Back to Employee: the same employee, Leave tab, fresh leave data.
+function backToEmployeeFromRequest_(){
+  const name = adminRequestFromEmployee, src = employeeProfileSource;
+  viewingAdminRequestId = null;
+  setAdminRequestFromEmployee_(null);
+  empLeaveFresh_ = true;
+  openEmployeeProfile(name, src && src.view, src && src.label);
 }
 let editingConcernId = null;
 let pendingConcernClientId = null; // stable id kept across a retry of the SAME not-yet-confirmed concern submission
@@ -11200,7 +11230,7 @@ let MY_LEAVE_PREFETCH = null, leaveUiLoading_ = null;
 function leaveUi_(){
   return leaveUiLoading_ || (leaveUiLoading_ = new Promise((ok, fail) => {
     const s = document.createElement('script');
-    s.src = 'leave-ui.js?v=15a2fa1333';
+    s.src = 'leave-ui.js?v=8e41ca9308';
     s.onload = () => ok(window.LeaveUI);
     s.onerror = () => { leaveUiLoading_ = null; s.remove(); fail(new Error("Couldn't load My Leave. Please check your connection and try again.")); };
     document.head.appendChild(s);
@@ -11218,6 +11248,13 @@ function leaveOpenForm_(id){
 function leaveAdminView_(){
   leaveUi_().then(L => L.renderAdmin()).catch(e => { const el = document.getElementById('leaveRoot'); if(el) el.textContent = e.message; });
   return '<div id="leaveRoot"><div class="card"><p class="muted">Loading leave monitoring…</p></div></div>';
+}
+// Employee Profile → Leave tab (view only): same on-demand file.
+let empLeaveFresh_ = false; // set by Back to Employee: read the leave again, not the copy from before the request was opened
+function empLeaveSlot_(name){
+  const fresh = empLeaveFresh_; empLeaveFresh_ = false;
+  setTimeout(() => leaveUi_().then(L => L.profile(name, fresh)).catch(e => { const el = document.getElementById('empLeaveRoot'); if(el) el.textContent = e.message; }), 0);
+  return '<div id="empLeaveRoot"><p class="muted">Loading leave…</p></div>';
 }
 // Paid Vacation box on a leave request (Manage Requests).
 function leaveBalanceBoxSlot_(r){

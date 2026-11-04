@@ -41,6 +41,24 @@
 .lv-bar i{display:block; height:100%;} .lv-bar .u{background:#94A3B8;} .lv-bar .a{background:var(--blue);} .lv-bar .p{background:var(--orange);}
 .lv-item{border:1px solid var(--line); border-radius:12px; padding:12px; display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:flex-start;}
 .lv-item + .lv-item{margin-top:10px;}
+.lv-item.lv-wait{background:#FFFBEB; border-color:#F59E0B;} .lv-side{display:flex; flex-direction:column; align-items:flex-end; gap:8px;} .lv-view{padding:5px 12px; white-space:nowrap;}
+.lv-br{display:none;}
+/* Employee Profile → Leave on a phone only (desktop and Leave Monitoring unchanged). */
+@media (max-width:640px){
+  #empLeaveRoot h3{font-size:19px; margin-bottom:10px;} #empLeaveRoot h3 + p.muted{font-size:14px !important; line-height:1.5;}
+  #empLeaveRoot .lv-sep{display:none;} #empLeaveRoot .lv-br{display:inline;}
+  #empLeaveRoot .lv-stats{gap:12px; margin:14px 0 12px;} #empLeaveRoot .lv-stat{padding:14px 10px; border-radius:14px;} #empLeaveRoot .lv-stat b{font-size:28px;} #empLeaveRoot .lv-stat span{font-size:13px;}
+  #empLeaveRoot.has-pend .lv-stat:nth-child(2){background:var(--orange-soft); border-color:#FDE68A;}
+  #empLeaveRoot .lv-stats + p.muted{display:flex; gap:10px; align-items:center; background:#EFF6FF; border:1px solid #BFDBFE; border-radius:12px; padding:12px 14px; font-size:13.5px !important; color:#1E293B;}
+  #empLeaveRoot .lv-stats + p.muted::before{content:"i"; flex:none; width:22px; height:22px; border-radius:50%; background:#3B82F6; color:#fff; font:700 13px/22px serif; text-align:center;}
+  #empLeaveRoot .lv-npend{font-size:14px; font-weight:700; padding:6px 14px;}
+  #empLeaveRoot .lv-item{border-radius:14px; padding:14px;}
+  #empLeaveRoot .lv-item.lv-wait{padding:12px; display:grid; grid-template-columns:minmax(0,1fr) auto auto; grid-template-areas:"d d p" "t b b"; gap:8px 6px; border-width:1.5px;}
+  #empLeaveRoot .lv-wait > div:first-child, #empLeaveRoot .lv-wait .lv-side{display:contents;}
+  #empLeaveRoot .lv-wait > div:first-child > div:first-child{grid-area:d; font-size:14px; align-self:center;} #empLeaveRoot .lv-wait > div:first-child > div:last-child{grid-area:t; font-size:14px !important;}
+  #empLeaveRoot .lv-wait .pill{grid-area:p; justify-self:end; align-self:center; font-size:11px; padding:3px 8px;}
+  #empLeaveRoot .lv-wait .lv-view{grid-area:b; align-self:end; justify-self:end; background:#fff; color:#1D4ED8; border:1px solid #BFDBFE; border-radius:12px; padding:8px 14px; font-weight:700; box-shadow:0 2px 6px rgba(15,23,42,.08);}
+}
 .lv-sum{border-radius:12px; padding:12px; margin:10px 0; background:var(--panel-2); font-size:14px; line-height:1.6;}
 .lv-sum.warn{background:var(--orange-soft); border:1px solid #FDE68A;}
 .lv-split{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:8px 0;}
@@ -510,8 +528,19 @@
     const d = adm.personData;
     if(!d) return el.innerHTML = `<div class="lv-tabs">${back}</div><div class="card"><p class="muted">Loading…</p></div>`;
     if(d.error) return el.innerHTML = `<div class="lv-tabs">${back}</div><div class="card"><p class="muted">${esc(d.error)}</p></div>`;
-    const s = d.summary, p = d.profile, e = adm.data.employees.find(x => x.name === adm.person) || {};
-    const info = `<p class="muted" style="font-size:13px;">${esc(e.company || 'Company not set')} · ${esc(e.position || '')}${p.entitlementPosition ? ' · Leave entitlement: ' + esc(p.entitlementPosition) : ''}${p.promotedDate ? ' · Promoted ' + day(p.promotedDate) : ''}</p>`;
+    const e = adm.data.employees.find(x => x.name === adm.person) || {};
+    const acts = isFull() ? `<div class="lv-actions">${[['starting', 'Set starting balance'], ['record', 'Record approved leave'], ['adjust', 'Adjust balance'], ['suspension', 'Suspension'], ['settings', 'Leave settings']]
+      .map(([k, l]) => `<button class="btn ${adm.action === k ? '' : 'ghost'} auto" onclick="LeaveUI.admAction('${k}')">${l}</button>`).join('')}</div>${actionForm(d)}` : '';
+    el.innerHTML = `<div class="lv-tabs">${back}</div>
+      <div class="card" style="margin-bottom:16px;"><h3><span class="ic">🌴</span> ${esc(adm.person)}</h3>${personSummary(d, e.company, e.position)}${acts}</div>
+      <div class="card"><h3><span class="ic">🗂️</span> Leave History</h3>${personHistory(d)}
+        ${d.hasOlder ? `<button class="btn ghost auto" style="margin-top:12px;" onclick="LeaveUI.personOlder(this)">View older history</button>` : ''}</div>`;
+    if(adm.action === 'record') recordUpdate();
+  }
+  // One employee's balance and history: shared by Leave Monitoring and the Employee Profile Leave tab.
+  function personSummary(d, company, position){
+    const s = d.summary, p = d.profile;
+    const info = `<p class="muted" style="font-size:13px;">${esc(company || 'Company not set')} · ${esc(position || '')}${p.entitlementPosition ? ' · Leave entitlement: ' + esc(p.entitlementPosition) : ''}${p.promotedDate ? ' · Promoted ' + day(p.promotedDate) : ''}</p>`;
     let bal;
     if(!s.setUp) bal = `<div class="banner note" style="margin-top:8px;">${esc(s.reason)}</div>`;
     else {
@@ -525,15 +554,47 @@
         <p class="muted" style="font-size:12px;">${q.starting ? `Starting balance ${h(q.starting.hours)} as of ${day(q.starting.date)}.` : `Yearly Paid Vacation: ${h(q.allowance)}.`}${q.adjustments ? ` Adjustments: ${q.adjustments > 0 ? '+' : ''}${h(q.adjustments)}.` : ''} Maternity: ${h(s.maternity.available)} available.</p>`;
     }
     if(s.paused) bal += `<div class="banner note" style="margin-top:8px;">${esc(s.paused)}: leave is paused. 0 hours can be used and new leave can't be filed or recorded until the status is back to Active.${s.paid && s.paid.held !== undefined ? ` Earned and kept: ${h(s.paid.held)} (same anniversary year).` : ''}</div>`;
-    const acts = isFull() ? `<div class="lv-actions">${[['starting', 'Set starting balance'], ['record', 'Record approved leave'], ['adjust', 'Adjust balance'], ['suspension', 'Suspension'], ['settings', 'Leave settings']]
-      .map(([k, l]) => `<button class="btn ${adm.action === k ? '' : 'ghost'} auto" onclick="LeaveUI.admAction('${k}')">${l}</button>`).join('')}</div>${actionForm(d)}` : '';
-    const hist = d.history.map(r => `<div class="lv-item"><div style="min-width:0;"><div style="font-weight:600;">${range(r.start, r.end)}</div>
-      <div class="muted" style="font-size:13px;">${esc(r.type === 'Other' && r.typeOther ? r.typeOther : r.type)} · ${h(r.hours)}${r.unpaidHours > 0 ? ` · Paid ${h(r.paidHours)} + Unpaid ${h(r.unpaidHours)}` : ''}${r.number ? ' · ' + esc(r.number) : ''}${r.source === 'tracker' ? ' · from Leave Tracker (history only)' : ''}</div></div>${pill(r.status)}</div>`).join('');
-    el.innerHTML = `<div class="lv-tabs">${back}</div>
-      <div class="card" style="margin-bottom:16px;"><h3><span class="ic">🌴</span> ${esc(adm.person)}</h3>${info}${bal}${acts}</div>
-      <div class="card"><h3><span class="ic">🗂️</span> Leave History</h3>${hist || '<p class="muted">No leave records yet.</p>'}
-        ${d.hasOlder ? `<button class="btn ghost auto" style="margin-top:12px;" onclick="LeaveUI.personOlder(this)">View older history</button>` : ''}</div>`;
-    if(adm.action === 'record') recordUpdate();
+    return info + bal;
+  }
+  // Waiting for a decision: the same statuses as the Pending card (LeaveCalc LEAVE_PENDING_).
+  const waiting = r => ['pending', 'needs-clarification', 'acknowledged'].includes(r.status);
+  // inProfile (Employee Profile only): waiting requests are highlighted, with View Request into Manage Requests' approval screen.
+  const personHistory = (d, inProfile) => d.history.map(r => {
+    const wait = inProfile && waiting(r), side = wait && r.source !== 'tracker' && r.id
+      ? `<div class="lv-side">${pill(r.status)}<button class="btn ghost auto lv-view" data-id="${esc(r.id)}" onclick="openAdminRequestDetail(this.dataset.id, viewingEmployeeName)">↗ View Request</button></div>` : pill(r.status);
+    return `<div class="lv-item${wait ? ' lv-wait' : ''}"><div style="min-width:0;"><div style="font-weight:600;">${range(r.start, r.end)}</div>
+      <div class="muted" style="font-size:13px;">${esc(r.type === 'Other' && r.typeOther ? r.typeOther : r.type)} · ${h(r.hours)}${r.unpaidHours > 0 ? ` · Paid ${h(r.paidHours)} + Unpaid ${h(r.unpaidHours)}` : ''}${r.number ? ' · ' + esc(r.number) : ''}${r.source === 'tracker' ? ' · from Leave Tracker (history only)' : ''}</div></div>${side}</div>`;
+  }).join('') || '<p class="muted">No leave records yet.</p>';
+
+  /* ----- Employee Profile → Leave tab: the same answer (leaveEmployee, by the exact Roster name) and the same
+     display as one employee in Leave Monitoring, view only. An answer for another employee is never shown. ----- */
+  let prof = {name: ''};
+  async function profile(name, fresh){ // fresh: back from Request Details, read again (past any cached copy)
+    if(fresh) prof = {name: ''};
+    const el = () => activeView === 'mgmt-employee-profile' && viewingEmployeeName === name && document.getElementById('empLeaveRoot');
+    if(prof.name === name && prof.d) paintProfile(el());
+    if(prof.name === name && (prof.loading || Date.now() - prof.at < 20000)) return; // a redraw of the same profile reuses a fresh answer
+    if(prof.name !== name) prof = {name, older: false, fresh};
+    const mine = prof; mine.loading = true;
+    let d = null; try{ d = await fastOrFallback('leaveEmployee', null, 'name=' + encodeURIComponent(name) + (mine.older ? '&older=true' : '') + (mine.fresh ? '&_cb=' + Date.now() : '')); } catch(e){}
+    mine.loading = false;
+    if(prof !== mine) return; // another employee was opened meanwhile
+    if(d && !d.error && d.summary){ mine.d = d; mine.at = Date.now(); }
+    else if(!mine.d) mine.d = {error: (d && d.error) || 'Couldn’t load leave for this employee. Please try again.'};
+    paintProfile(el());
+  }
+  function paintProfile(el){
+    if(!el) return;
+    const d = prof.d;
+    if(d.error) return el.innerHTML = `<p class="muted">${esc(d.error)}</p>`;
+    const e = EMPLOYEE_ROSTER.find(r => r.name === prof.name) || {}, nWait = d.history.filter(waiting).length;
+    el.classList.toggle('has-pend', !!(d.summary.paid && d.summary.paid.pending > 0));
+    // On a phone the leave entitlement goes on its own line (CSS .lv-sep / .lv-br); the text is the same. Desktop markup untouched.
+    let summary = personSummary(d, d.company, e.position);
+    if(window.matchMedia('(max-width:640px)').matches) summary = summary.replace(' · Leave entitlement: ', '<span class="lv-sep"> · </span><br class="lv-br">Leave entitlement: ');
+    el.innerHTML = `<h3><span class="ic">🌴</span> Leave Summary</h3>${summary}
+      <h3 style="margin-top:22px; padding-top:16px; border-top:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;"><span><span class="ic">🗂️</span> Leave History</span>${nWait ? `<span class="pill warn lv-npend">${nWait} Pending</span>` : ''}</h3>${personHistory(d, true)}
+      ${d.hasOlder && !prof.older ? `<button class="btn ghost auto" style="margin-top:12px;" onclick="LeaveUI.profileOlder(this)">View older history</button>` : ''}`;
   }
   const today = () => adm.data.today;
   function actionForm(d){
@@ -738,7 +799,8 @@
       hoursPaid: known ? '<strong>' + h(paid) + '</strong>' + (unpaid > 0 ? ' (+ ' + h(unpaid) + ' unpaid)' : '') : '_______________'};
   }
 
-  window.LeaveUI = {render, openForm, update, submit, askCancel, renderAdmin, openPerson, balanceBox, recordUpdate, saveStarting, saveRecord, saveAdjust, saveSuspension, saveSettings, saveBulk, printInfo,
+  window.LeaveUI = {render, openForm, update, submit, askCancel, renderAdmin, openPerson, balanceBox, recordUpdate, saveStarting, saveRecord, saveAdjust, saveSuspension, saveSettings, saveBulk, printInfo, profile,
+    profileOlder(btn){ btn.disabled = true; btn.textContent = 'Loading...'; prof.older = true; prof.at = 0; profile(prof.name); },
     admTab(t){ adm.tab = t; paintAdmin(); },
     admSet(k, v){ adm[k] = v; paintAdmin(); },
     admSearch(v){ adm.q = v; adm.focusSearch = true; paintAdmin(); },
