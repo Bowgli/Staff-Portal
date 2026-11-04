@@ -5717,6 +5717,7 @@ async function loadOwnPhotoInBackground(fileId){
 function setRole(role){
   currentRole = role;
   viewStack = []; // fresh view history for this session
+  viewSid_ = Date.now();
   if(role === 'employee'){
     document.getElementById('acctAvatar').innerHTML = avatarHtml(CURRENT_EMPLOYEE);
     document.getElementById('acctName').textContent = CURRENT_EMPLOYEE.fullName;
@@ -7409,6 +7410,16 @@ const TITLES = {
 };
 
 let viewStack = [];
+let viewSid_ = 0; // set per session in setRole(); stamped on each history entry
+// What this history entry shows: page + record (+ Request Details "from employee", profile tab and source).
+function replaceViewState_(id){
+  const s = {vh: viewStack.length, v: id, sid: viewSid_};
+  const d = DETAIL_VIEW_PERSISTENCE_.find(e => e.view === id);
+  if(d) s.d = d.get();
+  if(id === 'mgmt-request-detail') s.fe = adminRequestFromEmployee;
+  if(id === 'mgmt-employee-profile'){ s.tab = employeeProfileTab; s.src = employeeProfileSource; }
+  try{ if(JSON.stringify(history.state) !== JSON.stringify(s)) history.replaceState(s, '', location.href); } catch(e){ /* file:// origin restriction — ignore */ }
+}
 
 /* Some browsers (Brave, Chrome) restrict History API calls when the
    page is opened directly as a file:// URL rather than served over
@@ -7501,6 +7512,7 @@ function renderView(id, fromHistory){
       safePushState({vh: viewStack.length});
     }
   }
+  replaceViewState_(id);
   try{ localStorage.setItem(LAST_VIEW_KEY, id); } catch(e){} // so a full page refresh (F5) can restore this page, not just Home
   // See DETAIL_VIEW_PERSISTENCE_ above — remembers which specific
   // record a detail page is showing, for the handful of pages that
@@ -13004,8 +13016,27 @@ let exitBaseState = 0;
 safePushState({vh:0}); // base entry so we always have somewhere to land
 exitBaseState = 1;
 
-window.addEventListener('popstate', function(){
+window.addEventListener('popstate', function(ev){
   if(exitConfirmed) return; // user already confirmed — let this navigation proceed
+
+  const s = ev.state;
+  if(s && s.v && s.sid === viewSid_ && s.vh >= 1 && s.vh <= viewStack.length + 1 && s.v !== 'handbook' && viewStack[viewStack.length-1] !== 'handbook'){
+    viewStack.length = s.vh - 1; // Back: drop the pages after it; Forward: add it again
+    viewStack.push(s.v);
+    const d = DETAIL_VIEW_PERSISTENCE_.find(e => e.view === s.v);
+    if(d && s.d != null) d.set(s.d);
+    if(s.v === 'mgmt-request-detail') setAdminRequestFromEmployee_(s.fe);
+    if(s.v === 'mgmt-employee-profile'){
+      if(empProfileFullAttendanceFor !== viewingEmployeeName){ empProfileFullAttendanceFor = null; empProfileFullAttendanceData = null; }
+      employeeProfileEditMode = false;
+      employeeProfileSource = s.src || null;
+      empLeaveFresh_ = true; // a request may have been approved/declined since
+      setEmployeeProfileTab(s.tab || 'leave');
+      return;
+    }
+    renderView(s.v, true);
+    return;
+  }
 
   if(viewStack.length > 1){
     // step back to the previous view the user actually visited
