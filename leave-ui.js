@@ -224,13 +224,15 @@
     if(!el()) return;
     if(!x) return el().innerHTML = '';
     const longDay = ymd => new Date(ymd + 'T00:00:00').toLocaleDateString('en-US', {weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'});
-    const text = x.status === 'pending-review' ? 'HR will review whether these holidays should be excluded from your vacation hours (Employee Handbook 9.3.4). Your leave is not affected while this is reviewed.'
+    const pending = x.status === 'pending-review', approved = r.status === 'approved'; // "already approved" only while the leave is Approved
+    const text = pending ? 'GGM/AGGM will review whether these holidays should be excluded from your vacation leave hours.'
       : x.status === 'not-eligible' ? `<b>Reason:</b> ${esc(x.message || 'Not provided.')}`
       : x.status === 'adjusted' && x.applied ? `Your holiday hours were excluded: Total ${h(x.applied.from.hours)} → ${h(x.applied.to.hours)}, Paid ${h(x.applied.from.paid)} → ${h(x.applied.to.paid)}, Unpaid ${h(x.applied.from.unpaid)} → ${h(x.applied.to.unpaid)}.`
       : esc(x.message || 'Your holiday exclusion was approved. The corrected hours will be applied after confirmation.');
     el().innerHTML = `<div class="lv-holemp lv-hol-${esc(x.status)}"><div class="lv-holemp-h"><b>🎉 Company Holiday Review</b>${holPill(x)}</div>
-      <div>This leave includes:</div><ul class="lv-holist">${x.holidays.map(hd => `<li>${esc(String(hd.name).replace(/’/g, "'"))} — ${longDay(hd.ymd)}</li>`).join('')}</ul>
-      <p class="lv-holemp-t">${text}</p>${x.decidedAt && x.status !== 'pending-review' ? `<p class="muted" style="font-size:12px; margin:4px 0 0;">${x.status === 'adjusted' ? 'Applied' : 'Reviewed'} ${esc(day(String(x.decidedAt).slice(0, 10)))}</p>` : ''}</div>`;
+      <div>${pending ? `Your ${approved ? 'approved ' : ''}vacation leave includes the following company holidays:` : 'This leave includes:'}</div><ul class="lv-holist">${x.holidays.map(hd => `<li><b>${esc(String(hd.name).replace(/’/g, "'"))}</b> — ${longDay(hd.ymd)}</li>`).join('')}</ul>
+      <p class="lv-holemp-t">${text}</p>${pending ? `<p class="lv-holemp-t">${approved ? '<b>Your leave is already approved.</b> ' : ''}Your leave hours and balance will remain unchanged until the adjustment is confirmed.</p>
+      <p class="muted" style="font-size:12px; margin:8px 0 0;">Reference: Employee Handbook, Section 9.3.4</p>` : ''}${x.decidedAt && x.status !== 'pending-review' ? `<p class="muted" style="font-size:12px; margin:4px 0 0;">${x.status === 'adjusted' ? 'Applied' : 'Reviewed'} ${esc(day(String(x.decidedAt).slice(0, 10)))}</p>` : ''}</div>`;
   }
 
   /* ---------- request form ---------- */
