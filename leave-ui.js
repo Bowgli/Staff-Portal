@@ -7,6 +7,16 @@
   const h = n => { const x = Math.round(Number(n || 0) * 2) / 2; return (Number.isInteger(x) ? x : x.toFixed(1)) + (Math.abs(x) === 1 ? ' hr' : ' hrs'); };
   const day = ymd => { const d = new Date(ymd + 'T00:00:00'); return isNaN(d) ? esc(ymd) : d.toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'}); };
   const range = (a, b) => !b || a === b ? day(a) : day(a) + ' – ' + day(b);
+  // Company holidays: Handbook 9.11, on their actual dates (no weekend "observed" shift; owner 2026-11-05).
+  // Display only (calendar marker, Request Details warning): hours, balances and records are not touched.
+  const nthDow = (y, m, dow, n) => { const d = new Date(Date.UTC(y, m, 1)); d.setUTCDate(1 + (dow - d.getUTCDay() + 7) % 7 + 7 * (n - 1)); return d; };
+  const lastDow = (y, m, dow) => { const d = new Date(Date.UTC(y, m + 1, 0)); d.setUTCDate(d.getUTCDate() - (d.getUTCDay() - dow + 7) % 7); return d; };
+  const holidays = y => [['New Year’s Day', new Date(Date.UTC(y, 0, 1))], ['Martin Luther King Jr. Birthday', nthDow(y, 0, 1, 3)],
+    ['President’s Day', nthDow(y, 1, 1, 3)], ['Memorial Day', lastDow(y, 4, 1)], ['Independence Day', new Date(Date.UTC(y, 6, 4))],
+    ['Labor Day', nthDow(y, 8, 1, 1)], ['Columbus Day', nthDow(y, 9, 1, 2)], ['Veterans Day', new Date(Date.UTC(y, 10, 11))],
+    ['Thanksgiving Day', nthDow(y, 10, 4, 4)], ['Christmas Day', new Date(Date.UTC(y, 11, 25))]].map(([name, d]) => ({name, ymd: d.toISOString().slice(0, 10)}));
+  const holidaysIn = (a, b) => { const out = []; if(!/^\d{4}-\d\d-\d\d$/.test(a) || !/^\d{4}-\d\d-\d\d$/.test(b)) return out;
+    for(let y = +a.slice(0, 4); y <= +b.slice(0, 4); y++) out.push(...holidays(y).filter(x => x.ymd >= a && x.ymd <= b)); return out; };
   const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
   const hoursFor = (a, b, part) => !a || !b || b < a ? 0 : part > 0 && a === b ? part : (daysBetween(a, b) + 1) * 8; // same rule as the server
   const VACATION = ['Paid Vacation Leave', 'Unpaid Vacation Leave'];
@@ -90,19 +100,33 @@
 .lv-need input{width:18px; height:18px; margin:0;} .lv-need .lv-ico{color:#F59E0B;}
 .lv-addbtn,.lv-calnav .btn{display:inline-flex; flex-direction:row; align-items:center; justify-content:center; gap:6px; height:44px; white-space:nowrap;}
 .lv-calbar{display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; margin-bottom:12px;}
-.lv-calnav{display:flex; align-items:center; gap:8px;} .lv-calnav b{display:inline-flex; align-items:center; gap:8px; min-width:170px; justify-content:center; font-size:18px;}
+.lv-calnav{display:flex; align-items:center; gap:8px;} .lv-calnav b{display:inline-flex; align-items:center; gap:8px; min-width:170px; justify-content:center; font-size:18px; white-space:nowrap;}
 .lv-legend{display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:13px; padding:8px 12px; border:1px solid var(--line); border-radius:10px;}
 .lv-legend span{display:inline-flex; align-items:center; gap:6px;} .lv-legend i{width:12px; height:12px; border-radius:50%; display:inline-block;}
 .lv-calbar .lv-field{min-width:190px;}
 .lv-cal-head span{background:var(--panel-2); border-radius:6px; padding:6px 0;}
 .lv-chip.c-ok{background:#DBEAFE; color:#1E40AF;} .lv-chip.c-pend{background:#FEF3C7; color:#92400E; border:none;}
 .lv-chip.c-sus{background:#FEE2E2; color:#B91C1C;}
+.lv-hol{display:block; font-size:11px; line-height:1.3; font-weight:700; background:#EDE9FE; color:#6D28D9; border-radius:6px; padding:1px 5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.lv-daylist .lv-hol{display:inline-block; font-size:13px; margin-left:6px;} .lv-sum.lv-holwarn{background:#F5F3FF; border:1px solid #C4B5FD;}
+.lv-holtitle{font-weight:700; font-size:15px; margin-bottom:4px;} .lv-holist{margin:6px 0 8px; padding-left:22px;} .lv-holist li{margin:2px 0;} .lv-holwarn p{margin:6px 0;}
+.lv-holprev{background:#fff; border:1px solid #DDD6FE; border-radius:10px; padding:10px; margin-top:8px;} .lv-holprev.lv-holstale{border-color:#F59E0B; background:#FFFBEB;}
+.lv-holprev-h{display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:4px;} .lv-holsub{font-size:11px; color:var(--text-mute);}
+.lv-holtbl{width:100%; border-collapse:collapse; margin:8px 0; font-size:13px;} .lv-holtbl th,.lv-holtbl td{padding:6px 8px; border-bottom:1px solid var(--line); text-align:left;}
+.lv-holtbl th:not(:first-child),.lv-holtbl td:not(:first-child){text-align:right; white-space:nowrap;}
+.lv-holemp{border:1px solid #DDD6FE; background:#F5F3FF; border-radius:12px; padding:12px; margin:0 0 14px; font-size:14px; line-height:1.5;}
+.lv-holemp-h{display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;} .lv-holemp-t{margin:6px 0 0;}
+.lv-hol-not-eligible{border-color:#FCA5A5; background:#FEF2F2;} .lv-hol-adjusted{border-color:#93C5FD; background:#EFF6FF;} .lv-holprev.lv-holdone{border-color:#86EFAC;} .lv-hol-eligible{border-color:#86EFAC; background:#F0FDF4;} .lv-hol-pending-review{border-color:#FCD34D; background:#FFFBEB;}
+.lv-holpill.bad{background:#FEE2E2; color:#B91C1C;} .lv-holpill.info{background:#DBEAFE; color:#1D4ED8;}
+.lv-holfix{background:#FFFBEB; border:1px solid #F59E0B; border-radius:8px; padding:6px 8px; margin:6px 0;}
+.lv-holrev{border-top:1px dashed #C4B5FD; margin-top:8px; padding-top:8px;} .lv-holline{font-size:13px;} .lv-holact{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
 .lv-more{border:none; background:none; color:#1D6FF2; font-size:11px; font-weight:700; padding:1px 4px; text-align:left; cursor:pointer;}
 .lv-daylist{border-top:1px solid var(--line); margin-top:12px; padding-top:12px;}
 @media (max-width:1280px){ .lv-calbar > .lv-legend{display:none;} }
 @media (max-width:1200px){ .lv-fbar{grid-template-columns:minmax(0,1fr) minmax(0,1fr);} .lv-need,.lv-addbtn{width:100%; justify-content:center;} }
 @media (max-width:640px){ .lv-ntabs{gap:6px;} .lv-ntab{flex-direction:column; text-align:center; padding:10px 6px; gap:4px;} .lv-ntab small{display:none;} .lv-ntab b{font-size:13px;}
-  .lv-fbar{grid-template-columns:1fr;} .lv-need,.lv-addbtn{width:100%; justify-content:center;} .lv-calnav{width:100%; justify-content:space-between;} .lv-calnav b{min-width:0; font-size:16px;} .lv-calbar .lv-field{width:100%;} }
+  .lv-fbar{grid-template-columns:1fr;} .lv-need,.lv-addbtn{width:100%; justify-content:center;} .lv-calnav{width:100%; display:grid; grid-template-columns:1fr 1fr; gap:12px 10px;}
+  .lv-calnav b{grid-column:1 / -1; order:-1; min-width:0; gap:10px; font-size:20px; padding:4px 0;} .lv-calnav .btn{width:100%; margin:0;} .lv-calbar .lv-field{width:100%;} }
 .lv-filters{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px;} .lv-filters input[type=search]{flex:1; min-width:180px; margin:0;} .lv-filters select{width:auto; margin:0;}
 .lv-check{display:inline-flex; align-items:center; gap:6px; font-size:13px; margin:0;} .lv-check input{width:auto; margin:0;}
 .lv-neg{color:var(--red);} .lv-actions{display:flex; gap:8px; flex-wrap:wrap; margin:14px 0 6px;}
@@ -113,7 +137,7 @@
 .lv-chip{display:block; font-size:11px; line-height:1.3; background:var(--blue-soft); color:#1D4ED8; border-radius:6px; padding:1px 5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 .lv-chip.lv-pend{background:var(--orange-soft); color:#B45309; border:1px dashed #F59E0B;}
 @media (max-width:640px){ .lv-stats{grid-template-columns:repeat(2,1fr);} .lv-stat b{font-size:22px;}
-  .lv-cal-head{display:none;} .lv-cal{grid-template-columns:1fr;} .lv-empty,.lv-free{display:none;} .lv-day{min-height:0;} .lv-dname{display:inline;} .lv-chip{white-space:normal;} }`;
+  .lv-cal-head{display:none;} .lv-cal{grid-template-columns:1fr;} .lv-empty,.lv-free{display:none;} .lv-day{min-height:0;} .lv-dname{display:inline;} .lv-chip,.lv-hol{white-space:normal;} }`;
     document.head.appendChild(css);
   }
 
@@ -158,9 +182,11 @@
       const canEdit = r.source === 'portal' && (r.status === 'pending' || r.status === 'needs-clarification');
       const canCancel = r.source === 'portal' && r.status === 'approved' && (r.end || r.start) >= today;
       const canPrint = r.source === 'portal' && (r.status === 'pending' || r.status === 'approved') && MOCK.requests.some(x => x.id === r.id); // own requests only
+      const hol = myHol && myHol[r.id];
       return `<div class="lv-item"><div style="min-width:0;">
           <div style="font-weight:600;">${range(r.start, r.end)}</div>
           <div class="muted" style="font-size:13px;">${esc(typeLabel)} · ${h(r.hours)}${split}${r.number ? ' · ' + esc(r.number) : ''}</div>
+          ${hol ? `<div style="margin-top:4px; font-size:12px;">Holiday review: ${holPill(hol)}</div>` : ''}
         </div>
         <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">${pill(r.status)}
           ${canEdit ? `<button class="btn edit auto" style="padding:5px 10px;" onclick="LeaveUI.openForm('${esc(r.id)}')">✏️ Edit</button>` : ''}
@@ -178,6 +204,33 @@
     const el = root(); if(!el || !data) return;
     el.innerHTML = `<div class="grid grid-2">${balanceCard()}<div id="leaveFormSlot">${form ? formCard() : ''}</div></div><div style="margin-top:16px;">${historyCard()}</div>`;
     if(form) fillForm();
+  }
+
+  /* ---------- Company Holiday Review, employee view (owner-approved 2026-11-05) ----------
+     From the employee's own read (myHolidayReviews): status, holidays, decision date and the message to the employee.
+     Admin internal notes are never in that read. */
+  let myHol = null, myHolLoading = null;
+  const HOL_STATUS = {'pending-review': ['warn', 'Pending Review'], eligible: ['ok', 'Eligible'], 'not-eligible': ['bad', 'Not Eligible'], adjusted: ['info', 'Adjusted']};
+  function myHolidays(fresh){
+    if(myHol && !fresh) return Promise.resolve(myHol);
+    return myHolLoading || (myHolLoading = fastOrFallback('myHolidayReviews', null, '_cb=' + Date.now()).then(d => { myHol = d && d.ok ? Object.fromEntries((d.reviews || []).map(x => [x.requestId, x])) : {}; return myHol; })
+      .catch(() => myHol || {}).finally(() => { myHolLoading = null; }));
+  }
+  const holPill = x => { const [c, l] = HOL_STATUS[x.status] || ['warn', x.status]; return `<span class="pill lv-holpill ${c}">${esc(l)}</span>`; };
+  async function holidayEmpCard(r){
+    const el = () => document.getElementById('lvHolEmp');
+    if(!el()) return;
+    const x = (await myHolidays(true))[r.id];
+    if(!el()) return;
+    if(!x) return el().innerHTML = '';
+    const longDay = ymd => new Date(ymd + 'T00:00:00').toLocaleDateString('en-US', {weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'});
+    const text = x.status === 'pending-review' ? 'HR will review whether these holidays should be excluded from your vacation hours (Employee Handbook 9.3.4). Your leave is not affected while this is reviewed.'
+      : x.status === 'not-eligible' ? `<b>Reason:</b> ${esc(x.message || 'Not provided.')}`
+      : x.status === 'adjusted' && x.applied ? `Your holiday hours were excluded: Total ${h(x.applied.from.hours)} → ${h(x.applied.to.hours)}, Paid ${h(x.applied.from.paid)} → ${h(x.applied.to.paid)}, Unpaid ${h(x.applied.from.unpaid)} → ${h(x.applied.to.unpaid)}.`
+      : esc(x.message || 'Your holiday exclusion was approved. The corrected hours will be applied after confirmation.');
+    el().innerHTML = `<div class="lv-holemp lv-hol-${esc(x.status)}"><div class="lv-holemp-h"><b>🎉 Company Holiday Review</b>${holPill(x)}</div>
+      <div>This leave includes:</div><ul class="lv-holist">${x.holidays.map(hd => `<li>${esc(String(hd.name).replace(/’/g, "'"))} — ${longDay(hd.ymd)}</li>`).join('')}</ul>
+      <p class="lv-holemp-t">${text}</p>${x.decidedAt && x.status !== 'pending-review' ? `<p class="muted" style="font-size:12px; margin:4px 0 0;">${x.status === 'adjusted' ? 'Applied' : 'Reviewed'} ${esc(day(String(x.decidedAt).slice(0, 10)))}</p>` : ''}</div>`;
   }
 
   /* ---------- request form ---------- */
@@ -370,6 +423,7 @@
     try{ await load(); } catch(e){ if(!data){ el.innerHTML = `<div class="card"><p class="muted">Couldn’t load your leave right now. Please try again.</p></div>`; return; } }
     if(!data){ el.innerHTML = `<div class="card"><p class="muted">Couldn’t load your leave right now. Please try again.</p></div>`; return; }
     paint();
+    myHolidays(true).then(() => { if(root()) paint(); }); // Holiday review pills (separate read, never blocks My Leave)
   }
 
   /* ===================== Leave Monitoring (Shift Manager, Limited Admin, Full Admin) =====================
@@ -480,7 +534,8 @@
   // Only leave records and Admin entries are shown (attendance absences are not leave).
   const kind = l => l.type === 'Suspension' ? 'sus' : ['pending', 'needs-clarification', 'acknowledged'].includes(l.status) ? 'pend'
     : ['approved', 'cancel-requested'].includes(l.status) ? 'ok' : '';
-  const KINDS = [['ok', 'Approved Leave', '#60A5FA'], ['pend', 'Pending Leave', '#FBBF24'], ['sus', 'Suspension', '#F87171']];
+  const KINDS = [['ok', 'Approved Leave', '#60A5FA'], ['pend', 'Pending Leave', '#FBBF24'], ['sus', 'Suspension', '#F87171'], ['hol', 'Holiday', '#A78BFA']];
+  const holMark = name => `<span class="lv-hol" title="${esc(name)} (company holiday, Handbook 9.11)">Holiday: ${esc(name)}</span>`;
   const legend = () => `<div class="lv-legend">${KINDS.map(([, l, c]) => `<span><i style="background:${c}"></i>${l}</span>`).join('')}</div>`;
   const chip = l => `<span class="lv-chip c-${kind(l)}" title="${esc(l.name + ' · ' + (l.type === 'Other' && l.typeOther ? l.typeOther : l.type) + ' · ' + l.status + (l.source === 'tracker' ? ' · Leave Tracker history' : ''))}">${esc(l.name)}${kind(l) === 'sus' ? ' (Suspension)' : ''}</span>`;
   function calendarHtml(){
@@ -493,15 +548,16 @@
     const leaves = adm.monthData.data.leaves.filter(l => kind(l) && inCompany(companyOf(l.name)));
     const first = m + '-01', startDow = new Date(first + 'T00:00:00Z').getUTCDay(), days = Number(addDays(addDays(first, 32).slice(0, 7) + '-01', -1).slice(8));
     const onDay = ymd => leaves.filter(l => l.start <= ymd && (l.end || l.start) >= ymd);
+    const hol = Object.fromEntries(holidaysIn(first, m + '-' + String(days).padStart(2, '0')).map(x => [x.ymd, x.name]));
     const MAX = 3, cells = [];
     for(let i = 0; i < startDow; i++) cells.push('<div class="lv-day lv-empty"></div>');
     for(let d = 1; d <= days; d++){
       const ymd = m + '-' + String(d).padStart(2, '0'), on = onDay(ymd), mobile = window.innerWidth <= 640, shown = mobile ? on : on.slice(0, MAX);
-      cells.push(`<div class="lv-day${ymd === adm.data.today ? ' lv-today' : ''}${on.length ? '' : ' lv-free'}"><span class="lv-dnum">${d}<span class="lv-dname"> ${new Date(ymd + 'T00:00:00Z').toLocaleDateString('en-US', {weekday: 'short', timeZone: 'UTC'})}</span></span>
-        ${shown.map(chip).join('')}${on.length > shown.length ? `<button class="lv-more" onclick="LeaveUI.admDay('${ymd}')">+${on.length - shown.length} more</button>` : ''}</div>`);
+      cells.push(`<div class="lv-day${ymd === adm.data.today ? ' lv-today' : ''}${on.length || hol[ymd] ? '' : ' lv-free'}"><span class="lv-dnum">${d}<span class="lv-dname"> ${new Date(ymd + 'T00:00:00Z').toLocaleDateString('en-US', {weekday: 'short', timeZone: 'UTC'})}</span></span>
+        ${hol[ymd] ? holMark(hol[ymd]) : ''}${shown.map(chip).join('')}${on.length > shown.length ? `<button class="lv-more" onclick="LeaveUI.admDay('${ymd}')">+${on.length - shown.length} more</button>` : ''}</div>`);
     }
     const sel = adm.day && adm.day.slice(0, 7) === m ? onDay(adm.day) : null;
-    const dayList = sel ? `<div class="lv-daylist"><div style="display:flex; justify-content:space-between; align-items:center;"><h3 style="margin:0;">${day(adm.day)} <span class="muted" style="font-size:13px;">(${sel.length})</span></h3>
+    const dayList = sel ? `<div class="lv-daylist"><div style="display:flex; justify-content:space-between; align-items:center;"><h3 style="margin:0;">${day(adm.day)} <span class="muted" style="font-size:13px;">(${sel.length})</span>${hol[adm.day] ? holMark(hol[adm.day]) : ''}</h3>
       <button class="btn ghost auto" onclick="LeaveUI.admDay('')">Close</button></div>
       ${sel.map(l => `<div class="lv-item"><div style="min-width:0;"><div style="font-weight:600;">${chip(l)}</div><div class="muted" style="font-size:13px;">${esc(l.type === 'Other' && l.typeOther ? l.typeOther : l.type)} · ${range(l.start, l.end)} · ${h(l.hours)}${l.source === 'tracker' ? ' · Leave Tracker history' : ''}</div></div>${pill(l.status)}</div>`).join('')}</div>` : '';
     return `<div class="card">${head}<div class="lv-cal-head">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => `<span>${d}</span>`).join('')}</div>
@@ -759,19 +815,162 @@
   }
 
   /* ----- Paid Vacation box on a leave request (Manage Requests) ----- */
+  /* Holiday Leave Adjustment B1 (owner-approved 2026-11-05): a Full Admin records the GGM/AGGM decision on excluding the
+     holidays. The server works out every figure and never changes the leave's hours in this phase. */
+  let holR = null, holPv = null, holFresh = false;
+  // Phase B2 (owner-approved 2026-11-05): read-only preview of an approved exclusion; every figure comes from the server.
+  function holPreviewHtml(v){
+    const at = s => { const d = new Date(s); return isNaN(d) ? esc(s) : d.toLocaleString('en-US', {month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'}); };
+    const dayName = ymd => new Date(ymd + 'T00:00:00').toLocaleDateString('en-US', {weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'});
+    const row = (label, a, b, sub) => `<tr><td>${label}${sub ? `<div class="lv-holsub">${sub}</div>` : ''}</td><td>${a}</td><td><b>${b}</b></td></tr>`;
+    const head = `<div class="lv-holprev-h"><b>Holiday Leave Adjustment Preview</b><span class="pill warn">Preview only</span></div>
+      <div class="lv-holline">Eligibility approved by <b>${esc(v.approvedBy)}</b> · ${at(v.approvedAt)} · ${esc(v.approvalReason)}</div>
+      <div class="lv-holline">Holidays: ${v.holidays.map(x => `${esc(x.name.replace(/’/g, "'"))} — ${dayName(x.ymd)} (${h(x.hours)})`).join('; ')}</div>`;
+    if(!v.valid) return `<div class="lv-holprev lv-holstale">${head}<div class="lv-holline"><b>⚠ This preview is no longer valid.</b> ${v.problems.map(esc).join(' ')}</div></div>`;
+    const ly = v.leaveYear ? 'Leave year ' + day(v.leaveYear.start) + ' – ' + day(v.leaveYear.end) : '';
+    return `<div class="lv-holprev">${head}
+      <table class="lv-holtbl"><thead><tr><th></th><th>Before</th><th>After</th></tr></thead><tbody>
+      ${row('Total Leave', h(v.orig.hours), h(v.corr.hours))}${row('Paid Leave', h(v.orig.paid), h(v.corr.paid))}${row('Unpaid Leave', h(v.orig.unpaid), h(v.corr.unpaid))}
+      ${row('Holiday Exclusion', h(0), h(v.excluded))}${row('Available Paid Vacation', h(v.availableBefore), h(v.availableAfter), esc(ly))}</tbody></table>
+      <div class="lv-holline muted">Read-only preview — nothing has been changed. ${v.confirmable ? 'Ready for confirmation.' : 'The leave must be Approved before the adjustment can be confirmed.'}</div>
+      ${v.confirmable && isFullAdmin() ? '<div class="lv-holact"><button class="btn auto" onclick="LeaveUI.holidayConfirm(this)">✓ Confirm Adjustment</button></div>' : ''}</div>`;
+  }
+  // Phase C: an applied adjustment (the newest confirmed decision), with Reverse for a Full Admin.
+  function holAppliedHtml(x){
+    const at = s => { const d = new Date(s); return isNaN(d) ? esc(s) : d.toLocaleString('en-US', {month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'}); };
+    const row = (label, a, b, sub) => `<tr><td>${label}${sub ? `<div class="lv-holsub">${sub}</div>` : ''}</td><td>${a}</td><td><b>${b}</b></td></tr>`, n = v => h(Number(v) || 0);
+    const ly = String(x.LeaveYear || '').split(' – '), lyText = ly.length === 2 ? 'Leave year ' + day(ly[0]) + ' – ' + day(ly[1]) : '';
+    return `<div class="lv-holprev lv-holdone"><div class="lv-holprev-h"><b>Holiday Leave Adjustment</b><span class="pill ok">Applied</span></div>
+      <div class="lv-holline">Confirmed by <b>${esc(x.ConfirmedBy)}</b> · ${at(x.ConfirmedAt)}</div><div class="lv-holsub">Reason: ${esc(x.ConfirmReason || '—')}</div>
+      <table class="lv-holtbl"><thead><tr><th></th><th>Before</th><th>After</th></tr></thead><tbody>
+      ${row('Total Leave', n(x.OrigLeaveHours), n(x.CorrLeaveHours))}${row('Paid Leave', n(x.OrigPaid), n(x.CorrPaid))}${row('Unpaid Leave', n(x.OrigUnpaid), n(x.CorrUnpaid))}
+      ${row('Holiday Exclusion', h(0), n(x.ExcludedHours))}${row('Available Paid Vacation', n(x.AvailableBefore), n(x.AvailableAfter), esc(lyText))}</tbody></table>
+      <div class="lv-holline muted">Payroll is not changed by the portal — apply the corrected Unpaid hours in payroll if needed.</div>
+      ${isFullAdmin() ? `<div class="lv-holact"><button class="btn ghost auto" onclick="LeaveUI.holidayReverse('${esc(x.ID)}', this)">↩ Reverse adjustment</button></div>` : ''}</div>`;
+  }
+  function holReviewHtml(d, paid){
+    const p = d.plan || {}, list = d.reviews || [];
+    if(!list.length && !p.ok && !(paid && p.reason)) return ''; // other leave types: the warning only (Handbook 9.3.4 covers Paid Vacation)
+    const when = s => esc(String(s || '').slice(0, 10));
+    const notes = x => (x.EmployeeMessage ? `<div class="lv-holsub">To employee: ${esc(x.EmployeeMessage)}</div>` : '')
+      + `<div class="lv-holsub">Internal note: ${esc(x.InternalNote || x.ApprovalReason || '—')}</div>`;
+    const rows = list.map(x => `<div class="lv-holline">${x.Decision === 'eligible' ? '✓ Exclusion approved' : '✗ Not eligible'} — ${esc(x.ApprovedBy)}, ${when(x.ApprovedAt)}${
+      x.Status === 'approved' ? ' · <i>waiting for the adjustment to be confirmed</i>' : x.Status === 'confirmed' ? ' · adjustment applied' : x.Status === 'reversed' ? ' · reversed' : x.Status === 'superseded' ? ' · replaced by a newer decision' : ''}${notes(x)}${
+      x.ConfirmedBy ? `<div class="lv-holsub">Applied — ${esc(x.ConfirmedBy)}, ${when(x.ConfirmedAt)}: ${esc(x.ConfirmReason)}</div>` : ''}${
+      x.ReversedBy ? `<div class="lv-holsub">Reversed — ${esc(x.ReversedBy)}, ${when(x.ReversedAt)}: ${esc(x.ReverseReason)}</div>` : ''}</div>`).join('');
+    const applied = list.filter(x => x.Status === 'confirmed').pop();
+    const btns = p.ok && isFullAdmin() ? `<div class="lv-holact"><button class="btn auto" onclick="LeaveUI.holidayDecide('eligible', this)">✓ Approve holiday exclusion (${h(p.excluded)})</button>
+      <button class="btn ghost auto" onclick="LeaveUI.holidayDecide('not-eligible', this)">Not eligible</button></div>` : '';
+    const repair = d.needsRepair ? `<div class="lv-holline lv-holfix"><b>⚠ Audit record incomplete.</b> A save was cut off; the leave record itself is correct. ${isFullAdmin() ? '<button class="btn ghost auto" onclick="LeaveUI.holidayRepair(this)">Repair</button>' : 'A Full Admin can repair it.'}</div>` : '';
+    return `<div class="lv-holrev"><b>GGM/AGGM review</b>${repair}${rows || (p.ok ? '<div class="lv-holline muted">Not reviewed yet.</div>' : '')}${!p.ok && p.reason && !(d.preview && d.preview.valid) ? `<div class="lv-holline muted">${esc(p.reason)}</div>` : ''}${d.preview ? holPreviewHtml(d.preview) : applied ? holAppliedHtml(applied) : ''}${btns}</div>`;
+  }
+  /* Owner 2026-11-05: what the employee sees ("Message to employee", required for Not eligible) is kept apart from the
+     Admin-only internal note, which the server never sends to employees. */
+  function holDialog(decision){
+    const yes = decision === 'eligible';
+    return new Promise(resolve => {
+      const o = document.createElement('div');
+      o.className = 'modal-overlay active'; o.style.zIndex = '100000';
+      o.innerHTML = `<div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="hdTitle" style="max-width:460px;">
+        <h3 id="hdTitle">${yes ? 'Approve holiday exclusion?' : 'Mark as not eligible?'}</h3>
+        <p class="muted" style="margin:6px 0 10px; font-size:14px;">Records the GGM/AGGM decision with your name. The leave hours are not changed.</p>
+        <label for="hdMsg" style="font-weight:600;">Message to employee ${yes ? '<span class="muted">(optional)</span>' : '<span style="color:var(--red);">(required)</span>'}</label>
+        <textarea id="hdMsg" rows="3" style="width:100%; margin:4px 0 4px;" placeholder="${yes ? 'Shown to the employee. If blank: “Your holiday exclusion was approved…”' : 'Shown to the employee: why the holiday is not excluded'}"></textarea>
+        <label for="hdNote" style="font-weight:600; display:block; margin-top:8px;">Internal note <span class="muted">(Admin only, optional)</span></label>
+        <textarea id="hdNote" rows="2" style="width:100%; margin-top:4px;" placeholder="Never shown to the employee"></textarea>
+        <div class="modal-btns"><button type="button" class="btn ghost" data-r="0">Cancel</button><button type="button" class="btn" data-r="1">${yes ? 'Approve' : 'Not eligible'}</button></div></div>`;
+      const ok = o.querySelector('[data-r="1"]'), msg = o.querySelector('#hdMsg'), note = o.querySelector('#hdNote');
+      const check = () => { ok.disabled = !yes && !msg.value.trim(); };
+      msg.addEventListener('input', check); check();
+      const done = v => { document.removeEventListener('keydown', key); o.remove(); resolve(v); };
+      const key = e => { if(e.key === 'Escape') done(null); };
+      o.addEventListener('click', e => { if(e.target === o) return done(null); const b = e.target.closest('[data-r]'); if(b && !b.disabled) done(b.dataset.r === '1' ? {message: msg.value.trim(), note: note.value.trim()} : null); });
+      document.addEventListener('keydown', key);
+      document.body.appendChild(o); msg.focus();
+    });
+  }
+  const holLock = on => document.querySelectorAll('#lvBalanceBox button').forEach(b => { b.disabled = on; });
+  async function holSend(action, payload, btn, done){
+    const r = holR;
+    busy(btn, true); holLock(true); saveStatusPill_('saving');
+    let res; try{ res = await apiPostMinDelayRetrying(action, Object.assign({opId: newOpId_(), id: r.ID}, payload)); } catch(e){ res = {ok: false, error: saveError(e)}; }
+    if(!res || !res.ok){ busy(btn, false); holLock(false); saveStatusPill_('error', (res && res.error) || 'Couldn’t save. Nothing was changed.'); alert((res && res.error) || 'Couldn’t save. Nothing was changed.'); }
+    else { if(btn) btn.textContent = '✓ Saved'; saveStatusPill_('done', done); holFresh = true; } // stays locked until the box is drawn again
+    try{ await refreshRequestsOnNavigate(); } catch(e){}
+    if(activeView === 'mgmt-request-detail' && viewingAdminRequestId === r.ID) renderView('mgmt-request-detail');
+  }
+  async function holidayConfirm(btn){
+    const r = holR, seen = holPv;
+    if(!r || !seen || (btn && btn.disabled)) return;
+    let v = seen;
+    if(!seen.hash){
+      if(btn){ btn.dataset.t = btn.dataset.t || btn.textContent; btn.innerHTML = '<span class="btn-spinner"></span>Checking...'; } holLock(true);
+      let x = null; try{ x = await apiGet(bustCache_('leaveHolidayReviews&id=' + encodeURIComponent(r.ID))); } catch(e){}
+      if(btn && document.body.contains(btn)) btn.textContent = btn.dataset.t; holLock(false);
+      if(holR !== r) return;
+      v = x && x.ok ? x.preview : null;
+      if(!x || !x.ok){ alert('Couldn’t check the adjustment just now. Nothing was changed. Please try again.'); return; }
+      if(!v || !v.confirmable || v.reviewId !== seen.reviewId){ alert('This adjustment changed since it was shown. Nothing was changed — please check it again.'); renderView('mgmt-request-detail'); return; }
+    }
+    const reason = await confirmDialog_({title: 'Confirm holiday adjustment?', message: `Total ${h(v.orig.hours)} → ${h(v.corr.hours)} · Paid ${h(v.orig.paid)} → ${h(v.corr.paid)} · Unpaid ${h(v.orig.unpaid)} → ${h(v.corr.unpaid)}
+Available Paid Vacation ${h(v.availableBefore)} → ${h(v.availableAfter)}.
+This changes the leave record. Payroll is not changed.`, confirm: 'Confirm Adjustment', danger: false, input: true, placeholder: 'Reason (required)'});
+    if(!reason) return;
+    holSend('leaveHolidayConfirm', {reviewId: v.reviewId, hash: v.hash, reason}, btn, 'Holiday adjustment applied.');
+  }
+  async function holidayReverse(reviewId, btn){
+    if(!holR || (btn && btn.disabled)) return;
+    const reason = await confirmDialog_({title: 'Reverse holiday adjustment?', message: 'Puts the original Total, Paid and Unpaid hours back on this leave. The history is kept.',
+      confirm: 'Reverse', danger: true, input: true, placeholder: 'Reason (required)'});
+    if(!reason) return;
+    holSend('leaveHolidayReverse', {reviewId, reason}, btn, 'Holiday adjustment reversed.');
+  }
+  function holidayRepair(btn){
+    if(holR && !(btn && btn.disabled)) holSend('leaveHolidayRepair', {}, btn, 'Audit record completed.');
+  }
+  async function holidayDecide(decision, btn){
+    const r = holR;
+    if(!r || (btn && btn.disabled)) return;
+    const ans = await holDialog(decision);
+    if(!ans) return; // cancelled
+    busy(btn, true); holLock(true); saveStatusPill_('saving');
+    let res; try{ res = await apiPostMinDelayRetrying('leaveHolidayReview', {opId: newOpId_(), id: r.ID, decision, employeeMessage: ans.message, internalNote: ans.note}); } catch(e){ res = {ok: false, error: saveError(e)}; }
+    if(!res || !res.ok){ busy(btn, false); holLock(false); saveStatusPill_('error', (res && res.error) || 'Couldn’t save. Nothing was changed.'); return alert((res && res.error) || 'Couldn’t save. Nothing was changed.'); }
+    saveStatusPill_('done', decision === 'eligible' ? 'Holiday exclusion approved.' : 'Marked as not eligible.');
+    // Fresh request (its Status History has the decision), then the same page again.
+    try{ await refreshRequestsOnNavigate(); } catch(e){}
+    if(activeView === 'mgmt-request-detail' && viewingAdminRequestId === r.ID) renderView('mgmt-request-detail');
+  }
   async function balanceBox(r){
     const el = () => document.getElementById('lvBalanceBox');
     if(!el()) return;
-    el().innerHTML = '<p class="muted" style="font-size:13px;">Checking Paid Vacation balance…</p>';
-    let d; try{ d = await fastOrFallback('leaveEmployee', null, 'name=' + encodeURIComponent(r.EmployeeName)); } catch(e){ d = null; }
-    if(!el()) return;
-    if(!d || d.error || !d.summary) return el().innerHTML = '';
-    const s = d.summary;
-    if(!s.setUp) return el().innerHTML = `<div class="lv-sum warn">${esc(s.reason)}</div>`;
     const paid = Number(r.PaidHours) || (r.LeaveType === 'Paid Vacation Leave' ? Number(r.LeaveHours) || 0 : 0), unpaid = Number(r.UnpaidHours) || 0;
+    // Holiday Overlap Warning (owner decision 2026-11-05): a warning and manual HR review only, never an automatic change.
+    const hits = holidaysIn(String(r.LeaveStartDate || '').slice(0, 10), String(r.LeaveEndDate || r.LeaveStartDate || '').slice(0, 10));
+    // Wording approved by the owner (2026-11-05). Paid Vacation that is still open: review required; other leave: the list only.
+    const longDay = ymd => new Date(ymd + 'T00:00:00').toLocaleDateString('en-US', {weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'});
+    const needsReview = paid && !['declined', 'cancelled'].includes(r.Status);
+    const holWarn = !hits.length ? '' : `<div class="lv-sum lv-holwarn"><div class="lv-holtitle">⚠️ Holiday Overlap${needsReview ? ' — Review Required' : ''}</div>
+      <div>This ${needsReview ? 'vacation ' : ''}leave includes the following company holidays:</div>
+      <ul class="lv-holist">${hits.map(x => `<li>${esc(x.name.replace(/’/g, "'"))} — ${longDay(x.ymd)}</li>`).join('')}</ul>${needsReview ? `
+      <p><b>Company Policy:</b> Under Employee Handbook Section 9.3.4, eligible company holidays that fall within an approved vacation period should not be deducted from the employee's vacation leave hours.</p>
+      <p><b>Action Required:</b> GGM/AGGM must review and approve the holiday exclusion. Once approved, the system will display the corrected Paid and Unpaid Leave calculation for confirmation.</p>
+      <p><b>Important:</b> No leave records or balances will be changed until the adjustment is confirmed.</p>` : ''}</div>`;
+    // GGM/AGGM review (Holiday Leave Adjustment B1): the decision and its history live in the warning box.
+    let rest = '', rev = hits.length && paid ? '<div class="lv-holrev"><div class="lv-holline muted">Checking GGM/AGGM review…</div></div>' : '';
+    const show = html => { if(html !== undefined) rest = html; if(el()) el().innerHTML = (holWarn ? holWarn.replace(/<\/div>$/, rev + '</div>') : '') + rest; };
+    holR = r;
+    if(hits.length) fastOrFallback('leaveHolidayReviews', null, 'id=' + encodeURIComponent(r.ID) + '&_cb=' + Date.now()).then(x => { if(holR === r){ holPv = x && x.ok ? x.preview : null; rev = x && x.ok ? holReviewHtml(x, paid) : ''; show(); } }).catch(() => { if(holR === r){ rev = ''; show(); } });
+    show('<p class="muted" style="font-size:13px;">Checking Paid Vacation balance…</p>');
+    const fresh = holFresh; holFresh = false; // right after a holiday save: past the 60 s read cache
+    let d; try{ d = await fastOrFallback('leaveEmployee', null, 'name=' + encodeURIComponent(r.EmployeeName) + (fresh ? '&_cb=' + Date.now() : '')); } catch(e){ d = null; }
+    if(!el()) return;
+    if(!d || d.error || !d.summary) return show('');
+    const s = d.summary;
+    if(!s.setUp) return show(`<div class="lv-sum warn">${esc(s.reason)}</div>`);
     const waiting = ['pending', 'needs-clarification', 'acknowledged'].includes(r.Status);
-    el().innerHTML = `<div class="lv-sum ${s.paid.available < 0 ? 'warn' : ''}"><b>Paid Vacation</b> · Available: <b>${h(s.paid.available)}</b>${waiting && paid ? ' (this request is already held)' : ''}
-      ${paid || unpaid ? ` · This request: Paid ${h(paid)}${unpaid ? ' + Unpaid ' + h(unpaid) : ''}` : ' · This leave type does not use Paid Vacation'}</div>`;
+    show(`<div class="lv-sum ${s.paid.available < 0 ? 'warn' : ''}"><b>Paid Vacation</b> · Available: <b>${h(s.paid.available)}</b>${waiting && paid ? ' (this request is already held)' : ''}
+      ${paid || unpaid ? ` · This request: Paid ${h(paid)}${unpaid ? ' + Unpaid ' + h(unpaid) : ''}` : ' · This leave type does not use Paid Vacation'}</div>`);
   }
 
   /* ----- Printable Leave Request Form (printLeaveRequestForm in the page): Type of Leave and Paid hours -----
@@ -799,7 +998,7 @@
       hoursPaid: known ? '<strong>' + h(paid) + '</strong>' + (unpaid > 0 ? ' (+ ' + h(unpaid) + ' unpaid)' : '') : '_______________'};
   }
 
-  window.LeaveUI = {render, openForm, update, submit, askCancel, renderAdmin, openPerson, balanceBox, recordUpdate, saveStarting, saveRecord, saveAdjust, saveSuspension, saveSettings, saveBulk, printInfo, profile,
+  window.LeaveUI = {render, openForm, update, submit, askCancel, renderAdmin, openPerson, balanceBox, holidays, holidayDecide, holidayEmpCard, holidayConfirm, holidayReverse, holidayRepair, recordUpdate, saveStarting, saveRecord, saveAdjust, saveSuspension, saveSettings, saveBulk, printInfo, profile,
     profileOlder(btn){ btn.disabled = true; btn.textContent = 'Loading...'; prof.older = true; prof.at = 0; profile(prof.name); },
     admTab(t){ adm.tab = t; paintAdmin(); },
     admSet(k, v){ adm[k] = v; paintAdmin(); },
