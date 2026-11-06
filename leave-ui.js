@@ -892,13 +892,36 @@
     });
   }
   const holLock = on => document.querySelectorAll('#lvBalanceBox button').forEach(b => { b.disabled = on; });
+  // After a holiday save: the fresh list through the fast worker (same read and order as the login load); Apps Script if that fails.
+  async function holRefresh(){
+    let d = null; try{ d = await fastOrFallback('mgmtBulkGroupA', null, '_cb=' + Date.now()); } catch(e){}
+    if(d && Array.isArray(d.requests)) ALL_REQUESTS = d.requests.slice().reverse();
+    else await refreshRequestsOnNavigate();
+  }
+  // P2: the Apps Script preview (figures + hash) is read in the background once the Confirm button shows, so the click need not wait.
+  let holAuth = null;
+  const holPvSig = v => JSON.stringify([v.reviewId, v.valid, v.confirmable, v.holidays, v.orig, v.corr, v.availableBefore, v.availableAfter]);
+  const holAuthRead = id => apiGet(bustCache_('leaveHolidayReviews&id=' + encodeURIComponent(id))).catch(() => null);
+  function holPrefetch(r, v){
+    if(!v || !v.confirmable || v.hash || !isFull() || (holAuth && holAuth.id === r.ID && holAuth.reviewId === v.reviewId)) return;
+    holAuth = {id: r.ID, reviewId: v.reviewId, read: holAuthRead(r.ID)};
+  }
+  // The figures and hash Confirm sends. A background read is used only if a fresh look at the sheets shows the same figures; the server re-checks the hash anyway.
+  async function holAuthPreview(r, seen){
+    const pre = holAuth && holAuth.id === r.ID && holAuth.reviewId === seen.reviewId ? await holAuth.read : null;
+    if(pre && pre.ok && pre.preview && pre.preview.hash){
+      let now = null; try{ now = await fastOrFallback('leaveHolidayReviews', null, 'id=' + encodeURIComponent(r.ID) + '&_cb=' + Date.now()); } catch(e){}
+      if(now && now.ok && now.preview && holPvSig(now.preview) === holPvSig(pre.preview)) return pre;
+    }
+    return holAuthRead(r.ID);
+  }
   async function holSend(action, payload, btn, done){
     const r = holR;
-    busy(btn, true); holLock(true); saveStatusPill_('saving');
+    busy(btn, true); holLock(true); holAuth = null; saveStatusPill_('saving');
     let res; try{ res = await apiPostMinDelayRetrying(action, Object.assign({opId: newOpId_(), id: r.ID}, payload)); } catch(e){ res = {ok: false, error: saveError(e)}; }
     if(!res || !res.ok){ busy(btn, false); holLock(false); saveStatusPill_('error', (res && res.error) || 'Couldn’t save. Nothing was changed.'); alert((res && res.error) || 'Couldn’t save. Nothing was changed.'); }
     else { if(btn) btn.textContent = '✓ Saved'; saveStatusPill_('done', done); holFresh = true; } // stays locked until the box is drawn again
-    try{ await refreshRequestsOnNavigate(); } catch(e){}
+    try{ await holRefresh(); } catch(e){}
     if(activeView === 'mgmt-request-detail' && viewingAdminRequestId === r.ID) renderView('mgmt-request-detail');
   }
   async function holidayConfirm(btn){
@@ -907,7 +930,7 @@
     let v = seen;
     if(!seen.hash){
       if(btn){ btn.dataset.t = btn.dataset.t || btn.textContent; btn.innerHTML = '<span class="btn-spinner"></span>Checking...'; } holLock(true);
-      let x = null; try{ x = await apiGet(bustCache_('leaveHolidayReviews&id=' + encodeURIComponent(r.ID))); } catch(e){}
+      const x = await holAuthPreview(r, seen); holAuth = null;
       if(btn && document.body.contains(btn)) btn.textContent = btn.dataset.t; holLock(false);
       if(holR !== r) return;
       v = x && x.ok ? x.preview : null;
@@ -935,12 +958,12 @@ This changes the leave record. Payroll is not changed.`, confirm: 'Confirm Adjus
     if(!r || (btn && btn.disabled)) return;
     const ans = await holDialog(decision);
     if(!ans) return; // cancelled
-    busy(btn, true); holLock(true); saveStatusPill_('saving');
+    busy(btn, true); holLock(true); holAuth = null; saveStatusPill_('saving');
     let res; try{ res = await apiPostMinDelayRetrying('leaveHolidayReview', {opId: newOpId_(), id: r.ID, decision, employeeMessage: ans.message, internalNote: ans.note}); } catch(e){ res = {ok: false, error: saveError(e)}; }
     if(!res || !res.ok){ busy(btn, false); holLock(false); saveStatusPill_('error', (res && res.error) || 'Couldn’t save. Nothing was changed.'); return alert((res && res.error) || 'Couldn’t save. Nothing was changed.'); }
     saveStatusPill_('done', decision === 'eligible' ? 'Holiday exclusion approved.' : 'Marked as not eligible.');
     // Fresh request (its Status History has the decision), then the same page again.
-    try{ await refreshRequestsOnNavigate(); } catch(e){}
+    try{ await holRefresh(); } catch(e){}
     if(activeView === 'mgmt-request-detail' && viewingAdminRequestId === r.ID) renderView('mgmt-request-detail');
   }
   async function balanceBox(r){
@@ -962,7 +985,7 @@ This changes the leave record. Payroll is not changed.`, confirm: 'Confirm Adjus
     let rest = '', rev = hits.length && paid ? '<div class="lv-holrev"><div class="lv-holline muted">Checking GGM/AGGM review…</div></div>' : '';
     const show = html => { if(html !== undefined) rest = html; if(el()) el().innerHTML = (holWarn ? holWarn.replace(/<\/div>$/, rev + '</div>') : '') + rest; };
     holR = r;
-    if(hits.length) fastOrFallback('leaveHolidayReviews', null, 'id=' + encodeURIComponent(r.ID) + '&_cb=' + Date.now()).then(x => { if(holR === r){ holPv = x && x.ok ? x.preview : null; rev = x && x.ok ? holReviewHtml(x, paid) : ''; show(); } }).catch(() => { if(holR === r){ rev = ''; show(); } });
+    if(hits.length) fastOrFallback('leaveHolidayReviews', null, 'id=' + encodeURIComponent(r.ID) + '&_cb=' + Date.now()).then(x => { if(holR === r){ holPv = x && x.ok ? x.preview : null; rev = x && x.ok ? holReviewHtml(x, paid) : ''; show(); holPrefetch(r, holPv); } }).catch(() => { if(holR === r){ rev = ''; show(); } });
     show('<p class="muted" style="font-size:13px;">Checking Paid Vacation balance…</p>');
     const fresh = holFresh; holFresh = false; // right after a holiday save: past the 60 s read cache
     let d; try{ d = await fastOrFallback('leaveEmployee', null, 'name=' + encodeURIComponent(r.EmployeeName) + (fresh ? '&_cb=' + Date.now() : '')); } catch(e){ d = null; }
