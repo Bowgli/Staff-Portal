@@ -163,6 +163,11 @@
   .grid-4{grid-template-columns:repeat(4,minmax(0,1fr));}
   .grid-5{grid-template-columns:repeat(5,minmax(0,1fr));}
   .grid-7{grid-template-columns:repeat(7,minmax(0,1fr));}
+  .grid-7.with-prev{grid-template-columns:repeat(8,minmax(0,1fr));}
+  @media(max-width:1100px){.grid-7.with-prev{grid-template-columns:repeat(4,minmax(0,1fr));}}
+  @media(max-width:900px){.grid-7.with-prev{grid-template-columns:repeat(2,minmax(0,1fr));}}
+  .daycard .dtag{font-size:10.5px; font-weight:700; margin:-4px 0 6px; opacity:.75;}
+  .daycard .dtag.new{color:#34814F;}
   @media(max-width:1100px){.grid-7{grid-template-columns:repeat(4,minmax(0,1fr));}}
   @media(max-width:900px){.grid-2,.grid-3,.grid-4,.grid-5{grid-template-columns:minmax(0,1fr);} .grid-7{grid-template-columns:repeat(2,minmax(0,1fr));}}
 
@@ -1802,6 +1807,7 @@ let SCHEDULE_ROWS = [];
 let NEXT_SCHEDULE_DAYS = [];
 let NEXT_SCHEDULE_ROWS = [];
 let NEXT_SCHEDULE_PUBLISHED = false;
+let PREVIOUS_SCHEDULE_DAY = null; // the old week's last day, saved by Promote: {day, rows:[{name, cell}]} (read-only)
 
 const VENUE_NAMES = { SV: "Saipan Vegas", C88: "Club 88" };
 
@@ -1946,17 +1952,18 @@ const TEAM_GROUP_ICONS = {'Shift Manager':'🔀','Supervisor':'👔','Cashier':'
    by position. */
 function renderTeamOnDuty(){
   lastTeamOnDutyPhotos = []; // reset each render — repopulated below if there's an actual team to show
-  const myRow = findMyScheduleRow(CURRENT_EMPLOYEE.name);
   const todayIndex = SCHEDULE_DAYS.findIndex(isScheduleDayToday);
+  const prevDay = todayIndex === -1 ? myPreviousDay_() : null; // the saved day, on the day the next week was promoted early
+  const myRow = prevDay ? findRowInSchedule(PREVIOUS_SCHEDULE_DAY.rows, CURRENT_EMPLOYEE.name) : findMyScheduleRow(CURRENT_EMPLOYEE.name);
 
-  if(!myRow || todayIndex === -1){
+  if(!myRow || (todayIndex === -1 && !prevDay)){
     return `<div class="card" style="margin-bottom:16px;">
       <h3><span class="ic">👥</span> My Team on Duty</h3>
       <div class="empty" style="padding:24px 20px;"><div class="ic">📅</div><p style="font-weight:600; margin-bottom:4px;">Team schedule is not available yet.</p><p class="muted" style="font-size:13px;">Please check again later or contact management if you believe your schedule should already be available.</p></div>
     </div>`;
   }
 
-  const myCell = parseScheduleCell(myRow.cells[todayIndex]);
+  const myCell = parseScheduleCell(prevDay ? prevDay.cell : myRow.cells[todayIndex]);
   if(myCell.type !== 'shift' || !myCell.time){
     return `<div class="card" style="margin-bottom:16px;">
       <h3><span class="ic">👥</span> My Team on Duty</h3>
@@ -1971,9 +1978,9 @@ function renderTeamOnDuty(){
   // schedule that used to mean a full roster scan per row, every time.
   const rosterByName = new Map();
   EMPLOYEE_ROSTER.forEach(e=>{ if(!rosterByName.has(e.name)) rosterByName.set(e.name, e); });
-  SCHEDULE_ROWS.forEach(row=>{
+  (prevDay ? PREVIOUS_SCHEDULE_DAY.rows : SCHEDULE_ROWS).forEach(row=>{
     if(row.name === myRow.name) return; // never list myself
-    const cell = parseScheduleCell(row.cells[todayIndex]);
+    const cell = parseScheduleCell(prevDay ? row.cell : row.cells[todayIndex]);
     if(cell.type !== 'shift' || !cell.time) return;
     if(cell.venue !== myCell.venue) return; // same venue only — overlapping time at a DIFFERENT venue doesn't mean working together
     if(!isMeaningfulShiftOverlap(myCell.time, cell.time)) return;
@@ -2681,14 +2688,21 @@ function syncLoginBoxFollowsName_(input){
   if(box) box.checked = input.value.trim() !== input.defaultValue.trim();
 }
 
+// The signed-in employee's saved day: only while that date is today and today is not in the loaded week (so never on Sunday).
+function myPreviousDay_(){
+  const p = PREVIOUS_SCHEDULE_DAY;
+  if(!p || !CURRENT_EMPLOYEE || !isScheduleDayToday(p.day) || SCHEDULE_DAYS.some(d => isScheduleDayToday(d))) return null;
+  const r = findRowInSchedule(p.rows || [], CURRENT_EMPLOYEE.name); // same name matching as the schedule
+  return r ? {day: p.day, cell: r.cell} : null;
+}
 function renderMyScheduleGrid(row, days){
   const useDays = days || SCHEDULE_DAYS;
-  if(!row) return `<div class="empty"><div class="ic">📅</div><p style="font-weight:600; margin-bottom:4px;">Your schedule is not available yet.</p><p class="muted" style="font-size:13px;">Your weekly schedule has not been published. Please check again later or contact your supervisor.</p></div>`;
-  return `<div class="grid grid-7">
-    ${useDays.map((rawDay,i)=>{
-      const day = fmtDayLabel(rawDay);
+  const prev = days ? null : myPreviousDay_();
+  if(!row && !prev) return `<div class="empty"><div class="ic">📅</div><p style="font-weight:600; margin-bottom:4px;">Your schedule is not available yet.</p><p class="muted" style="font-size:13px;">Your weekly schedule has not been published. Please check again later or contact your supervisor.</p></div>`;
+  const dayCard = (rawDay, cell, tag) => {
+      const day = fmtDayLabel(rawDay) + tag;
       const todayClass = isScheduleDayToday(rawDay) ? 'today' : '';
-      const c = parseScheduleCell(row.cells[i]);
+      const c = parseScheduleCell(cell);
       if(c.type==="off") return `<div class="daycard ${todayClass}"><div class="dname">${day}</div><div class="off">Day Off</div></div>`;
       if(c.type==="leave") return `<div class="daycard ${todayClass}"><div class="dname">${day}</div><div class="off">On Leave</div></div>`;
       if(c.type==="blocked" || c.type==="empty") return `<div class="daycard ${todayClass}"><div class="dname">${day}</div><div class="off">Not scheduled</div></div>`;
@@ -2698,8 +2712,12 @@ function renderMyScheduleGrid(row, days){
         <div class="time">${__spText(c.time)}</div>
         <div class="pos">${__spText(c.position)}</div>
       </div>`;
-    }).join('')}
-  </div>`;
+  };
+  const newTag = prev ? '</div><div class="dtag new">New' : '';
+  return `<div class="grid grid-7${__spAttr(prev ? ' with-prev' : '')}">
+    ${prev ? dayCard(prev.day, prev.cell, '</div><div class="dtag">Previous schedule') : ''}
+    ${row ? useDays.map((rawDay,i)=>dayCard(rawDay, row.cells[i], newTag)).join('') : ''}
+  </div>${prev ? `<p class="muted" style="font-size:12.5px; margin-top:10px;">${__spText(fmtDayLabel(prev.day))} is from the previous schedule (view only).${row && useDays.length ? ` ${__spText(fmtDayLabel(useDays[0]))} – ${__spText(fmtDayLabel(useDays[useDays.length-1]))} is the newly promoted schedule.` : ''}</p>` : ''}`;
 }
 
 /* ===== DAILY SCHEDULE REMINDER START =====
@@ -2829,8 +2847,9 @@ function getTodayReminderState_(row){
     }
   }
 
-  if(todayIdx === -1) return null; // today isn't in the loaded week — say nothing
-  const c = parseScheduleCell(row.cells[todayIdx]);
+  const prevDay = todayIdx === -1 ? myPreviousDay_() : null;
+  if(todayIdx === -1 && !prevDay) return null; // today isn't in the loaded week — say nothing
+  const c = parseScheduleCell(prevDay ? prevDay.cell : row.cells[todayIdx]);
   if(c.type === 'shift' && c.venueFull && c.time) return { kind:'working', venueFull:c.venueFull, time:c.time };
   if(c.type === 'off') return { kind:'off' };
   return null; // leave / blank / blocked / unrecognized text
@@ -3487,6 +3506,7 @@ async function loadRemoteData(){
     roster.forEach(r => EMPLOYEE_ROSTER.push({name:r.Name, employeeId:String(r.EmployeeID||'').trim(), position:r.Position, status:r.Status||"Active", employmentStatus:r.EmploymentStatus||'', employmentCompany:r.EmploymentCompany||'', archiveStatus:r.ArchiveStatus||'', probationMilestonesSent:r.ProbationMilestonesSent||'[]', attendance:"—", dateHired:r.DateHired||'', phone:(acctByName[r.Name]&&acctByName[r.Name].phone)||'', email:(acctByName[r.Name]&&acctByName[r.Name].email)||'', photoFileId:(acctByName[r.Name]&&acctByName[r.Name].photoFileId)||''}));
     SCHEDULE_DAYS = schedule.days || [];
     SCHEDULE_ROWS = schedule.rows || [];
+    PREVIOUS_SCHEDULE_DAY = schedule.previousDay || null;
     NEXT_SCHEDULE_DAYS = nextSchedule.days || [];
     NEXT_SCHEDULE_ROWS = nextSchedule.rows || [];
     NEXT_SCHEDULE_PUBLISHED = !!nextSchedule.published;
@@ -3885,17 +3905,19 @@ async function checkProbationMilestones(){
 // Role/Permission stay independent, same as elsewhere in this file.
 function findOnDutyManagerNamesFor(employeeName){
   const todayIndex = SCHEDULE_DAYS.findIndex(isScheduleDayToday);
-  if(todayIndex === -1) return [];
-  const empRow = SCHEDULE_ROWS.find(r=>r.name===employeeName);
+  const saved = todayIndex === -1 && PREVIOUS_SCHEDULE_DAY && isScheduleDayToday(PREVIOUS_SCHEDULE_DAY.day) ? PREVIOUS_SCHEDULE_DAY.rows || [] : null; // promoted early: today is the saved day
+  if(todayIndex === -1 && !saved) return [];
+  const rows = saved || SCHEDULE_ROWS, cellOf = r => saved ? r.cell : r.cells[todayIndex];
+  const empRow = rows.find(r=>r.name===employeeName);
   if(!empRow) return [];
-  const empCell = parseScheduleCell(empRow.cells[todayIndex]);
+  const empCell = parseScheduleCell(cellOf(empRow));
   if(empCell.type !== 'shift' || !empCell.time) return [];
   const names = [];
-  SCHEDULE_ROWS.forEach(row=>{
+  rows.forEach(row=>{
     if(row.name === employeeName) return;
     const role = ACCOUNT_ROLE_BY_EMPLOYEE[row.name];
     if(role !== 'shift-manager' && role !== 'supervisor') return;
-    const cell = parseScheduleCell(row.cells[todayIndex]);
+    const cell = parseScheduleCell(cellOf(row));
     if(cell.type !== 'shift' || !cell.time) return;
     if(cell.venue !== empCell.venue) return;
     if(!isMeaningfulShiftOverlap(empCell.time, cell.time)) return;
@@ -8576,7 +8598,7 @@ const BUILDERS = {
       <p class="muted" style="font-size:13px; margin-bottom:6px;">${__spText(CURRENT_EMPLOYEE.position)}${currentEmployeeId() ? ` <span style="display:inline-block; font-size:12px; font-weight:600; padding:1px 9px; border-radius:999px; border:1px solid var(--line, rgba(201,162,75,.45)); background:rgba(201,162,75,.15); margin-left:4px;">ID ${currentEmployeeId()}</span>` : ''} • Saipan Vegas Resort</p>
       <p class="muted" style="font-size:13px;">Have a great day and thank you for being part of the team!</p>
     </div>
-    ${findMyScheduleRow(CURRENT_EMPLOYEE.name) ? `<div class="section-title">This Week's Schedule</div>
+    ${findMyScheduleRow(CURRENT_EMPLOYEE.name) || myPreviousDay_() ? `<div class="section-title">This Week's Schedule</div>
     ${renderMyScheduleGrid(findMyScheduleRow(CURRENT_EMPLOYEE.name))}` : ''}
     ${NEXT_SCHEDULE_ROWS.length && NEXT_SCHEDULE_PUBLISHED ? `
     <div class="section-title" style="margin-top:22px;">Next Week's Schedule <span class="pill info" style="margin-left:8px;">Preview</span></div>
@@ -12340,7 +12362,7 @@ async function refreshScheduleOnly(){
     const [schedule, nextSchedule] = await Promise.all([
       safeApiGet(bustCache_('schedule'), null, 0, 3), safeApiGet(bustCache_('nextSchedule'), null, 0, 3)
     ]);
-    if(schedule){ SCHEDULE_DAYS = schedule.days || []; SCHEDULE_ROWS = schedule.rows || []; }
+    if(schedule){ SCHEDULE_DAYS = schedule.days || []; SCHEDULE_ROWS = schedule.rows || []; PREVIOUS_SCHEDULE_DAY = schedule.previousDay || null; }
     if(nextSchedule){ NEXT_SCHEDULE_DAYS = nextSchedule.days || []; NEXT_SCHEDULE_ROWS = nextSchedule.rows || []; NEXT_SCHEDULE_PUBLISHED = !!nextSchedule.published; }
   })();
   try{ await scheduleRefreshPromise; } finally { scheduleRefreshPromise = null; }
