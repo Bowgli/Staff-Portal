@@ -294,7 +294,17 @@
   @media(max-width:600px){ .perf-filters{grid-template-columns:minmax(0,1fr);} .perf-thead input{max-width:none;} .perf-stat b{font-size:20px;} }
   /* Disciplinary Reports (2026-11-14) — reuses the Performance Reports layout classes */
   .disc-stat{cursor:pointer;} .disc-stat span{display:block;}
-  .disc-layout.with-panel .perf-stats{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .disc-modal-bg{position:fixed; inset:0; z-index:300; background:rgba(15,23,42,.45); display:flex; align-items:center; justify-content:center; padding:24px;}
+  body:has(.disc-modal-bg){overflow:hidden;}
+  .disc-modal{width:100%; max-width:960px; max-height:90vh; margin:0; padding:0; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 20px 50px rgba(15,23,42,.25);}
+  .disc-mhead{padding:20px 24px 0;} .disc-mhead .disc-info{padding:12px;} .disc-mhead .disc-info b{font-size:13.5px;}
+  .disc-mtabs{margin:14px 0 0; border:1px solid var(--line); border-radius:12px; overflow:hidden;} .disc-mtabs button{border-bottom:0; padding:11px 6px;} .disc-mtabs button.on{background:var(--blue); color:#fff;}
+  .disc-mbody{flex:1; min-height:0; overflow:auto; padding:16px 24px;}
+  .disc-mfoot{margin:0; padding:14px 24px; align-items:center; background:var(--panel);} .disc-mfoot>div{display:flex; gap:8px; flex-wrap:wrap;}
+  .disc-cols{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:start;}
+  .disc-sec h4 span{margin-right:6px;} .disc-desc{min-height:100%;}
+  .disc-pair{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px;} .disc-pair p{margin:2px 0 0;}
+  .disc-modal .disc-note{background:var(--blue-soft); color:var(--text); border-radius:10px; padding:9px 12px; font-size:12.5px; margin:0 0 12px;}
   .disc-table td.disc-viol{white-space:normal; min-width:170px; max-width:260px; line-height:1.35;}
   .disc-more{color:var(--text-mute); font-size:12px; white-space:nowrap;}
   .disc-info{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; background:var(--panel-2); border-radius:12px; padding:10px; font-size:12px;}
@@ -317,6 +327,9 @@
   .disc-foot{display:flex; gap:8px; flex-wrap:wrap; justify-content:space-between; align-items:center;} .disc-foot>div{display:flex; gap:8px; flex-wrap:wrap;}
   .disc-rv{display:grid; grid-template-columns:150px minmax(0,1fr); gap:10px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px;} .disc-rv div{white-space:pre-wrap; overflow-wrap:anywhere;}
   @media(max-width:900px){ .disc-grid2{grid-template-columns:minmax(0,1fr);} }
+  @media(max-width:700px){ .disc-modal-bg{padding:0;} .disc-modal{max-width:none; height:100%; max-height:none; border-radius:0;} .disc-mhead{padding:14px 16px 0;} .disc-mbody{padding:12px 16px;} .disc-mfoot{padding:10px 16px;} .disc-cols,.disc-pair{grid-template-columns:minmax(0,1fr);} .disc-mtabs button{font-size:12px; padding:9px 2px;}
+    .disc-modal .disc-info{grid-template-columns:repeat(2,minmax(0,1fr)); padding:8px 10px; gap:6px;} .disc-modal .disc-info>div:nth-child(2){grid-column:1 / -1; order:3;} .disc-modal .disc-info b{font-size:12.5px;}
+    .disc-mfoot>.btn{display:none;} .disc-mfoot>div{display:grid; grid-template-columns:repeat(auto-fit,minmax(0,1fr)); gap:6px; width:100%;} .disc-mfoot>div .btn{padding:7px 4px; font-size:11.5px; white-space:normal; line-height:1.25;} }
   @media(max-width:600px){ .disc-steps button span{display:none;} .disc-steps button{justify-content:center; padding:8px;} .disc-rv{grid-template-columns:minmax(0,1fr); gap:2px;} .disc-info{grid-template-columns:minmax(0,1fr);} }
   .status-select{min-width:160px; font-weight:600;}
   .status-select.pending{background:var(--gold-soft); color:var(--gold); border-color:rgba(184,128,42,.4);}
@@ -6661,7 +6674,7 @@ function discResetFilters(){
 function discCardFilter(status){ discFilter.status = status; discPage = 1; renderView('mgmt-disciplinary'); }
 function setDiscPage(n){ discPage = Number(n) || 1; renderView('mgmt-disciplinary'); }
 function setDiscPageSize(n){ discPageSize = Number(n) || 10; discPage = 1; renderView('mgmt-disciplinary'); }
-function openDiscPanel(id){ discPanelId = id; discPanelTab = 'details'; renderView('mgmt-disciplinary'); }
+function openDiscPanel(id){ discPanelId = id; discPanelTab = 'details'; renderView('mgmt-disciplinary'); const x = document.getElementById('discModalClose'); if(x) x.focus(); }
 function closeDiscPanel(){ discPanelId = ''; renderView('mgmt-disciplinary'); }
 function setDiscPanelTab(t){ discPanelTab = t; renderView('mgmt-disciplinary'); }
 // Edit, review, level, status and confirmation stay on the full Case Details page (existing actions and permissions).
@@ -6675,46 +6688,64 @@ function discPrintCase(id){
   discReviewEditMode = false; discLevelEditMode = false; renderView('mgmt-disciplinary-detail');
   setTimeout(() => printWithPageSettings('letter', 'portrait', '0.75in'), 200);
 }
+// Case Details is a centred modal (2026-11-14 follow-up): header, tabs and buttons stay put; only the body scrolls.
+// Closing re-renders the same list, so filters, search and page stay as they were.
+document.addEventListener('keydown', e => { if(e.key === 'Escape' && discPanelId && activeView === 'mgmt-disciplinary') closeDiscPanel(); });
 function discPanelHtml(d){
   const tl = discParseTimeline(d.Timeline), last = tl[tl.length - 1], v = discViolList_(d);
   const ids = (d.AttachmentFileIds || '').split(',').filter(Boolean), names = (d.AttachmentNames || '').split(',').filter(Boolean);
   const full = currentMgmtRole() === 'full', isLevel5 = d.DisciplinaryLevel === DISC_LEVELS[4], id = __spJSString(d.ID);
-  const sec = (title, val) => `<div class="disc-sec"><h4>${title}</h4><p>${val ? __spText(val) : '<span class="muted">—</span>'}</p></div>`;
+  const sec = (ic, title, val) => `<div class="disc-sec"><h4><span>${ic}</span>${title}</h4><p>${val ? __spText(val) : '<span class="muted">—</span>'}</p></div>`;
   const tab = (k, label) => `<button class="${__spAttr(discPanelTab === k ? 'on' : '')}" onclick="setDiscPanelTab('${k}')">${__spText(label)}</button>`;
-  const where = [d.IncidentDate ? fmtDiscDate(d.IncidentDate) : '', d.IncidentTime ? fmtDiscTime(d.IncidentTime) : '', d.Location === 'Other' ? d.LocationOther : d.Location].filter(Boolean).join(' · ');
+  const when = [d.IncidentDate ? fmtDiscDate(d.IncidentDate) : '', d.IncidentTime ? fmtDiscTime(d.IncidentTime) : ''].filter(Boolean).join(', ');
+  const place = d.Location === 'Other' ? d.LocationOther : d.Location;
+  const outcome = d.DisciplinaryLevel ? `<div class="disc-outcome"><h4>✅ Outcome / Disciplinary Action</h4><b>${__spText(d.DisciplinaryLevel)}</b>${isLevel5 && d.EmploymentDecision ? `<p>Employment decision: ${__spText(d.EmploymentDecision)}</p>` : ''}${d.ManagementDecisionAction ? `<p>${__spText(d.ManagementDecisionAction)}</p>` : ''}</div>` : '';
   const body = discPanelTab === 'response'
-    ? (d.EmployeeResponse ? sec('Employee Response', d.EmployeeResponse) : '<p class="muted">No response recorded yet — the employee can add one from their own portal.</p>')
+    ? (d.EmployeeResponse ? sec('💬', 'Employee Response', d.EmployeeResponse) : '<p class="muted">No response recorded yet — the employee can add one from their own portal.</p>')
     : discPanelTab === 'review'
-    ? `<p class="muted disc-note">Management review — confirmed findings and decisions.</p>
-       ${sec('Management Findings', d.ManagementFindings)}${sec('Previous Related Cases', d.PreviousRelatedCases)}${sec('Management Comments', d.ManagementComments)}
-       ${sec('Disciplinary Level', d.DisciplinaryLevel || 'Not yet determined')}${isLevel5 ? sec('Employment Decision', d.EmploymentDecision) : ''}
-       ${sec('Management Decision / Action', d.ManagementDecisionAction)}
-       <div class="disc-sec"><h4>Review Confirmation</h4><p>${d.ReviewConfirmedBy ? `Reviewed by ${__spText(d.ReviewConfirmedBy)} · ${__spText(fmtDiscDate(d.ReviewConfirmDate) + ' ' + fmtDiscTime(d.ReviewConfirmTime))}` : '<span class="muted">Not yet confirmed by management.</span>'}</p></div>
-       ${full ? `<button class="btn ghost auto no-print" onclick="discOpenFull('${id}')">✏️ Edit review, level or confirmation</button>` : ''}`
+    ? `<p class="disc-note">🛡️ Management review — confirmed findings and decisions.</p>
+       <div class="disc-cols"><div>
+         ${sec('🔎', 'Management Findings', d.ManagementFindings)}${sec('📁', 'Previous Related Cases', d.PreviousRelatedCases)}${sec('💬', 'Management Comments', d.ManagementComments)}
+       </div><div>
+         ${sec('⚖️', 'Disciplinary Level', d.DisciplinaryLevel || 'Not yet determined')}${isLevel5 ? sec('📌', 'Employment Decision', d.EmploymentDecision) : ''}
+         ${sec('📝', 'Management Decision / Action', d.ManagementDecisionAction)}
+         <div class="disc-sec"><h4><span>✅</span>Review Confirmation</h4><p>${d.ReviewConfirmedBy ? `Reviewed by ${__spText(d.ReviewConfirmedBy)} · ${__spText(fmtDiscDate(d.ReviewConfirmDate) + ' ' + fmtDiscTime(d.ReviewConfirmTime))}` : '<span class="muted">Not yet confirmed by management.</span>'}</p></div>
+         ${full ? `<button class="btn ghost auto no-print" onclick="discOpenFull('${id}')">✏️ Edit review, level or confirmation</button>` : ''}
+       </div></div>`
     : discPanelTab === 'history'
-    ? (tl.length ? `<p class="muted disc-note">Newest first.</p>` + tl.slice().reverse().map(t => `<div class="disc-tl"><span class="mono muted">${__spText(t.date ? fmtDateTime(t.date) : '')}</span><span>${__spText(t.event || '')}</span></div>`).join('') : '<p class="muted">No history yet.</p>')
-    : `<p class="muted disc-note">Reported information — as reported, not a management finding.</p>
-       ${sec('Nature of Violation', v.join(', '))}${sec('Incident', where)}${sec('Incident Description', d.Description)}
-       ${sec('Policy / Rule Involved', d.PolicyInvolved)}${sec('Witnesses', d.Witnesses)}
-       <div class="disc-sec"><h4>Supporting Evidence</h4><p>${ids.length ? ids.map((f, i) => `<a href="#" onclick="downloadDiscAttachment('${__spJSString(f)}','${__spJSString(names[i] || 'file')}'); return false;">📎 ${__spText(names[i] || 'Attachment ' + (i + 1))}</a>`).join('<br>') : '<span class="muted">None</span>'}</p></div>
-       ${d.DisciplinaryLevel ? `<div class="disc-outcome"><h4>✅ Outcome / Disciplinary Action</h4><b>${__spText(d.DisciplinaryLevel)}</b>${isLevel5 && d.EmploymentDecision ? `<p>Employment decision: ${__spText(d.EmploymentDecision)}</p>` : ''}${d.ManagementDecisionAction ? `<p>${__spText(d.ManagementDecisionAction)}</p>` : ''}</div>` : ''}`;
-  return `<aside class="card perf-panel disc-panel">
-    <div class="perf-ph"><h3 style="margin:0;">🗂️ Case Details</h3><button class="perf-x no-print" onclick="closeDiscPanel()" aria-label="Close">×</button></div>
-    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;"><span class="mono" style="font-size:20px; font-weight:700;">${__spText(d.CaseNumber || '—')}</span>${discStatusPill(d.Status)}</div>
-    <div class="muted" style="margin:4px 0 12px;">👤 ${__spText(d.EmployeeName || '')}${d.Position ? ' • ' + __spText(d.Position) : ''}</div>
-    <div class="disc-info"><div><span class="muted">📅 Reported</span><b>${__spText(fmtDateTime(d.DateReported))}</b></div>
-      <div><span class="muted">⚖️ Level</span><b>${__spText(d.DisciplinaryLevel || 'Not yet determined')}</b></div>
-      <div><span class="muted">🕘 Last update</span><b>${last && last.date ? __spText(fmtDateTime(last.date)) : '—'}</b></div></div>
-    <div class="perf-ptabs no-print">${tab('details', '📄 Details')}${tab('response', '💬 Response')}${tab('review', '🛡️ Review')}${tab('history', '🕘 History')}</div>
-    <div class="perf-pbody">${body}</div>
-    <div class="perf-pfoot no-print">
-      <button class="btn ghost auto" onclick="discPrintCase('${id}')">🖨️ Print Case</button>
-      <button class="btn ghost auto" onclick="discOpenFull('${id}')">✏️ Edit</button>
-      ${full ? `<button class="btn ghost auto" onclick="discOpenFull('${id}','status')">🔄 Change Status</button>` : ''}
-      ${isFullAdmin() && d.Status === 'Closed' ? `<button class="btn ghost auto" onclick="archiveRecordNow('disciplinary','${id}', this)">📦 Archive</button>` : ''}
+    ? (tl.length ? `<p class="disc-note">🕘 Case timeline — newest first.</p>` + tl.slice().reverse().map(t => `<div class="disc-tl"><span class="mono muted">${__spText(t.date ? fmtDateTime(t.date) : '')}</span><span>${__spText(t.event || '')}</span></div>`).join('') : '<p class="muted">No history yet.</p>')
+    : `<p class="disc-note">ⓘ Reported information — as reported, not a management finding.</p>
+       <div class="disc-cols"><div>
+         <div class="disc-sec"><h4><span>📅</span>Incident Information</h4>
+           <div class="disc-pair"><div><span class="muted">Date &amp; Time</span><p>${when ? __spText(when) : '—'}</p></div><div><span class="muted">Location</span><p>${place ? '📍 ' + __spText(place) : '—'}</p></div></div></div>
+         ${sec('⚠️', 'Nature of Violation', v.join(', '))}${sec('📖', 'Policy / Rule Involved', d.PolicyInvolved)}${sec('👥', 'Witnesses', d.Witnesses)}
+         <div class="disc-sec"><h4><span>📎</span>Supporting Evidence</h4><p>${ids.length ? ids.map((f, i) => `<a href="#" onclick="downloadDiscAttachment('${__spJSString(f)}','${__spJSString(names[i] || 'file')}'); return false;">📎 ${__spText(names[i] || 'Attachment ' + (i + 1))}</a>`).join('<br>') : '<span class="muted">None</span>'}</p></div>
+       </div><div>
+         <div class="disc-sec disc-desc">${`<h4><span>📄</span>Incident Description</h4><p>${d.Description ? __spText(d.Description) : '<span class="muted">—</span>'}</p>`}</div>
+         ${outcome}
+       </div></div>`;
+  return `<div class="disc-modal-bg" onclick="if(event.target===this) closeDiscPanel()">
+  <aside class="card disc-panel disc-modal" role="dialog" aria-modal="true" aria-labelledby="discModalTitle">
+    <div class="disc-mhead">
+      <div class="perf-ph"><h3 id="discModalTitle" style="margin:0;">🗂️ Case Details</h3><button class="perf-x no-print" id="discModalClose" onclick="closeDiscPanel()" aria-label="Close">×</button></div>
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;"><span class="mono" style="font-size:22px; font-weight:700;">${__spText(d.CaseNumber || '—')}</span>${discStatusPill(d.Status)}</div>
+      <div class="muted" style="margin:4px 0 12px;">👤 ${__spText(d.EmployeeName || '')}${d.Position ? ' • ' + __spText(d.Position) : ''}</div>
+      <div class="disc-info"><div><span class="muted">📅 Reported</span><b>${__spText(fmtDateTime(d.DateReported))}</b></div>
+        <div><span class="muted">⚖️ Level</span><b>${__spText(d.DisciplinaryLevel || 'Not yet determined')}</b></div>
+        <div><span class="muted">🕘 Last Update</span><b>${last && last.date ? __spText(fmtDateTime(last.date)) : '—'}</b></div></div>
+      <div class="perf-ptabs disc-mtabs no-print">${tab('details', '📄 Details')}${tab('response', '💬 Response')}${tab('review', '🛡️ Review')}${tab('history', '🕘 History')}</div>
+    </div>
+    <div class="perf-pbody disc-mbody">${body}</div>
+    <div class="perf-pfoot disc-mfoot no-print">
+      <div>
+        <button class="btn ghost auto" onclick="discPrintCase('${id}')">🖨️ Print Case</button>
+        <button class="btn ghost auto" onclick="discOpenFull('${id}')">✏️ Edit</button>
+        ${full ? `<button class="btn ghost auto" onclick="discOpenFull('${id}','status')">🔄 Change Status</button>` : ''}
+        ${isFullAdmin() && d.Status === 'Closed' ? `<button class="btn ghost auto" onclick="archiveRecordNow('disciplinary','${id}', this)">📦 Archive</button>` : ''}
+      </div>
       <button class="btn auto" onclick="closeDiscPanel()">Close</button>
     </div>
-  </aside>`;
+  </aside></div>`;
 }
 // Summary: the same cases the old monthly summary counted (not Draft; active + that year's archive), each case once.
 function discPeriodCases_(){
@@ -10504,7 +10535,7 @@ const BUILDERS = {
     const cnt = s => all.filter(d => (d.Status || 'Draft') === s).length;
     const stat = (ic, num, label, sub, color, status) => `<div class="card perf-stat disc-stat" role="button" tabindex="0" title="Show ${__spAttr(label)}" onclick="discCardFilter('${status}')"><span class="perf-ic">${ic}</span><div><b style="color:${color};">${num}</b><span style="font-weight:600;">${__spText(label)}</span><span class="muted">${sub}</span></div></div>`;
     return top + `
-    <div class="perf-layout disc-layout ${__spAttr(panel ? 'with-panel' : '')}">
+    <div class="disc-layout">
       <div style="min-width:0;">
         <div class="perf-stats">
           ${stat('🗂️', all.length, 'Total Cases', 'All records', 'var(--blue)', 'All')}
