@@ -239,6 +239,59 @@
   .pill.warn{background:var(--gold-soft); color:var(--gold);}
   .pill.danger{background:var(--red-soft); color:var(--red);}
   .pill.bad{background:var(--red-soft); color:var(--red);}
+  /* Performance Reports (2026-11-14) */
+  .perf-top{display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:16px;}
+  .perf-tabs{display:inline-flex; gap:4px; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:4px;}
+  .perf-tabs button{border:0; background:none; padding:9px 18px; border-radius:9px; font-weight:600; color:var(--text-mute); cursor:pointer; font:inherit; font-weight:600;}
+  .perf-tabs button.on{background:var(--blue); color:#fff;}
+  .perf-layout{display:grid; grid-template-columns:minmax(0,1fr); gap:16px; align-items:start;}
+  .perf-layout.with-panel{grid-template-columns:minmax(0,1fr) 380px;}
+  .perf-stats{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-bottom:16px;}
+  .perf-stat{display:flex; align-items:center; gap:12px; padding:16px;}
+  .perf-stat b{font-size:24px; display:block; line-height:1.1; white-space:nowrap;}
+  .perf-stat .muted{display:block; font-size:12px; line-height:1.3;}
+  .perf-stat small{font-size:13px; font-weight:500;}
+  .perf-ic{width:44px; height:44px; flex:0 0 44px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:20px; background:var(--blue-soft);}
+  .perf-progress{display:flex; gap:14px; align-items:center; margin-bottom:16px;}
+  .perf-bar{height:10px; background:var(--panel-2); border-radius:6px; overflow:hidden;}
+  .perf-bar>div{height:100%; background:var(--teal); border-radius:6px;}
+  .perf-filters{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; align-items:end;}
+  .perf-filters select{margin:0;}
+  .perf-thead{display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;}
+  .perf-thead input{max-width:280px; margin:0;}
+  .perf-table tr.on td{background:var(--blue-soft);}
+  .perf-table th,.perf-table td{white-space:nowrap; padding:10px 8px; vertical-align:middle;}
+  .perf-table .btn{padding:5px 10px !important; font-size:12.5px;}
+  .perf-score{color:var(--blue); font-size:15px;}
+  .perf-up{color:var(--teal); font-weight:700;} .perf-down{color:var(--red); font-weight:700;}
+  .perf-pager{display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-top:12px; font-size:12.5px;}
+  .perf-pager button{min-width:32px; height:32px; margin:0 2px; border:1px solid var(--line); background:var(--panel); border-radius:8px; cursor:pointer;}
+  .perf-pager button.on{background:var(--blue); color:#fff; border-color:var(--blue);}
+  .perf-pager button:disabled{opacity:.4; cursor:default;}
+  .perf-panel{position:sticky; top:16px; max-height:calc(100vh - 32px); overflow:auto; display:flex; flex-direction:column;}
+  .perf-ph{display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;}
+  .perf-x{border:0; background:none; font-size:24px; line-height:1; cursor:pointer; color:var(--text-mute);}
+  .perf-who{display:flex; gap:12px; align-items:center; margin-bottom:12px;}
+  .perf-av{width:48px; height:48px; border-radius:50%; background:var(--blue-soft); color:var(--blue); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:20px;}
+  .perf-hero{background:var(--panel-2); border-radius:12px; padding:14px;}
+  .perf-big{margin:8px 0 4px; font-size:15px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+  .perf-big b{font-size:34px; color:var(--blue); line-height:1;}
+  .perf-ptabs{display:flex; border-bottom:1px solid var(--line); margin:12px 0 8px;}
+  .perf-ptabs button{flex:1; border:0; background:none; padding:10px 6px; font:inherit; font-weight:600; color:var(--text-mute); border-bottom:2px solid transparent; cursor:pointer;}
+  .perf-ptabs button.on{color:var(--blue); border-color:var(--blue);}
+  .perf-pbody{flex:1;}
+  .perf-q{display:flex; justify-content:space-between; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px;}
+  .perf-q b{background:var(--blue-soft); color:var(--blue); border-radius:6px; padding:1px 8px; white-space:nowrap;}
+  .perf-more{border:0; background:none; color:var(--blue); font:inherit; font-weight:600; cursor:pointer; padding:10px 0; width:100%;}
+  .perf-fb{background:var(--panel-2); border-radius:10px; padding:10px 12px; margin-bottom:8px; font-size:13px;}
+  .perf-hist{width:100%; font-size:13px;}
+  .perf-pfoot{display:flex; gap:8px; justify-content:space-between; flex-wrap:wrap; border-top:1px solid var(--line); padding-top:12px; margin-top:12px;}
+  @media(max-width:1100px){
+    .perf-layout.with-panel{grid-template-columns:minmax(0,1fr);}
+    .perf-panel{position:fixed; inset:0; z-index:150; max-height:none; border-radius:0; overflow:auto;}
+    .perf-stats{grid-template-columns:repeat(2,minmax(0,1fr));}
+  }
+  @media(max-width:600px){ .perf-filters{grid-template-columns:minmax(0,1fr);} .perf-thead input{max-width:none;} .perf-stat b{font-size:20px;} }
   .status-select{min-width:160px; font-weight:600;}
   .status-select.pending{background:var(--gold-soft); color:var(--gold); border-color:rgba(184,128,42,.4);}
   .status-select.approved{background:var(--teal-soft); color:var(--teal); border-color:rgba(55,116,109,.4);}
@@ -1662,6 +1715,8 @@ function resetPerfFilter(){
   perfFilterYear = 'All';
   perfFilterPosition = 'All';
   perfSearchQuery = '';
+  perfFilterStatus = 'All';
+  perfPage = 1;
   renderView('mgmt-performance');
 }
 function setNomFilter(type, val){
@@ -1703,8 +1758,83 @@ function resetNomFilter(){
   renderView('mgmt-nominations');
 }
 
+// Performance Reports redesign (2026-11-14, TEST first): Evaluations/Analytics tabs, a Status filter applied with
+// "Apply Filters", pagination, and the Evaluation Details side panel. Every figure still comes from
+// computeMonthlyEvaluationsByEmployee() (monthly averages across raters); evaluator names are never shown here.
+let perfTab = 'evaluations', perfFilterStatus = 'All', perfPage = 1, perfPageSize = 10;
+let perfPanel = null, perfPanelTab = 'scores', perfPanelAllQ = false;
+function setPerfTab(t){ perfTab = t; renderView('mgmt-performance'); }
+function applyPerfFilters(){
+  const v = id => (document.getElementById(id) || {}).value;
+  perfFilterMonth = v('perfFMonth') || 'All'; perfFilterYear = v('perfFYear') || 'All';
+  perfFilterPosition = v('perfFPos') || 'All'; perfFilterStatus = v('perfFStatus') || 'All';
+  perfPage = 1; renderView('mgmt-performance');
+}
+function setPerfPage(n){ perfPage = n; renderView('mgmt-performance'); }
+function setPerfPageSize(n){ perfPageSize = Number(n) || 10; perfPage = 1; renderView('mgmt-performance'); }
+function openPerfPanel(name, month, year){
+  perfPanel = {name, month, year}; perfPanelTab = 'scores'; perfPanelAllQ = false;
+  renderView('mgmt-performance');
+  // This employee's archived evaluations count toward their months too (same cached fetch the profile uses).
+  ensureEvaluationArchiveForEmployee(name).then(()=>{ if(activeView === 'mgmt-performance' && perfPanel && perfPanel.name === name) renderView('mgmt-performance'); });
+}
+function closePerfPanel(){ perfPanel = null; renderView('mgmt-performance'); }
+function setPerfPanelTab(t){ perfPanelTab = t; renderView('mgmt-performance'); }
+function togglePerfPanelQuestions(){ perfPanelAllQ = !perfPanelAllQ; renderView('mgmt-performance'); }
+function printPerfPanel(name, month, year){ mgmtPerfSummaryCurrent = {employeeName: name, month, year}; printMgmtPerfSummary(); }
+const perfRatingPill = label => `<span class="pill ${__spAttr(label === 'Excellent' || label === 'Very Good' ? 'ok' : label === 'Good' ? 'info' : label === 'Needs Improvement' ? 'warn' : 'bad')}">${__spText(label)}</span>`;
+// Trend arrow vs. the month right before (same rule as evalTrendHtml): +0.26 style, two decimals.
+function perfTrendHtml(cur, prev){
+  if(!cur) return '<span class="muted">—</span>';
+  if(prev === 'NO_PREVIOUS_MONTH') return '<span class="muted" title="No evaluation in the month before">— No prev. month</span>';
+  if(!prev) return '<span class="muted">First</span>';
+  const d = Math.round((Number(cur.AverageScore) - Number(prev.AverageScore)) * 100) / 100;
+  return d > 0 ? `<span class="perf-up">↗ +${d.toFixed(2)}</span>` : d < 0 ? `<span class="perf-down">↘ ${d.toFixed(2)}</span>` : '<span class="muted">→ 0.00</span>';
+}
+const perfQFmt = n => n === null ? '—' : Number.isInteger(n) ? String(n) : n.toFixed(2);
+function perfPanelHtml(){
+  const name = perfPanel.name, archived = EVALUATION_ARCHIVE_BY_EMPLOYEE_CACHE[name];
+  const monthly = computeMonthlyEvaluationsByEmployee(archived)[name] || [];
+  const cur = monthly.find(m => m.Month === perfPanel.month && String(m.Year) === String(perfPanel.year)) || monthly[0];
+  const roster = EMPLOYEE_ROSTER.find(e => e.name === name);
+  const head = `<div class="perf-ph"><h3 style="margin:0;">👤 Evaluation Details</h3><button class="perf-x no-print" onclick="closePerfPanel()" aria-label="Close">×</button></div>`;
+  if(!cur) return `<aside class="card perf-panel">${head}<p class="muted">No evaluation record found for ${__spText(name)}.</p></aside>`;
+  const prev = getPreviousMonthEvaluation(cur, monthly);
+  // This month's own records (live + archived) — only their question scores and comments are used, never who wrote them.
+  const raw = ALL_EVALUATIONS.concat(archived || []).filter(e => e.EmployeeName === name && e.Month === cur.Month && String(e.Year) === String(cur.Year));
+  const qAvg = EVALUATION_QUESTIONS.map((q, i) => { const v = raw.map(r => Number(r['Q' + (i + 1)])).filter(n => n > 0); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; });
+  const shownQ = perfPanelAllQ ? EVALUATION_QUESTIONS : EVALUATION_QUESTIONS.slice(0, 5);
+  const trendLine = prev && prev !== 'NO_PREVIOUS_MONTH'
+    ? `${perfTrendHtml(cur, prev)} <span class="muted">vs. ${__spText(prev.Month)} ${__spText(prev.Year)} (${__spText(prev.AverageScore)})</span>`
+    : `<span class="muted">${__spText(prev === 'NO_PREVIOUS_MONTH' ? 'No evaluation in the month before' : 'First evaluation')}</span>`;
+  const tab = (id, label) => `<button class="${__spAttr(perfPanelTab === id ? 'on' : '')}" onclick="setPerfPanelTab('${id}')">${__spText(label)}</button>`;
+  const body = perfPanelTab === 'feedback'
+    ? `<p class="muted" style="font-size:12px;">${__spText(cur.raterCount)} evaluator(s) · names are not shown</p>
+       ${cur.comments.length ? cur.comments.map(c => `<div class="perf-fb">“${__spText(c)}”</div>`).join('') : '<p class="muted">No written feedback for this month.</p>'}`
+    : perfPanelTab === 'history'
+    ? `<table class="perf-hist"><tr><th>Period</th><th>Score</th><th>Rating</th><th>Trend</th></tr>
+       ${monthly.map(m => `<tr><td>${__spText(m.Month)} ${__spText(m.Year)}</td><td class="mono">${__spText(m.AverageScore)}</td><td>${perfRatingPill(m.RatingLabel)}</td><td>${perfTrendHtml(m, getPreviousMonthEvaluation(m, monthly))}</td></tr>`).join('')}</table>`
+    : perfPanelTab === 'archive'
+    ? `<p class="muted" style="font-size:12px;">Archiving moves a record to Archived Evaluations; nothing is deleted. ${__spText(cur.Month)} ${__spText(cur.Year)} has ${__spText(raw.filter(r => !r.archived).length)} active record(s).</p>
+       ${raw.filter(r => !r.archived).map((r, i) => `<div class="perf-q"><span>Evaluation ${i + 1} · score ${__spText(r.AverageScore)}${r.Date ? ' · ' + fmtDateTime(r.Date) : ''}</span><button class="btn ghost auto" style="padding:4px 10px;" onclick="archiveRecordNow('evaluation','${__spJSString(r.ID)}', this)">📦 Archive</button></div>`).join('') || '<p class="muted">No active records for this month.</p>'}`
+    : `<div class="perf-q" style="border:0;"><b style="background:none; padding:0; color:var(--text);">Question Scores (${__spText(EVALUATION_QUESTIONS.length)})</b><span>Total: <b>${__spText(cur.AverageScore)} / 5.00</b></span></div>
+       ${shownQ.map((q, i) => `<div class="perf-q"><span>${i + 1}. ${q}</span><b>${perfQFmt(qAvg[i])}</b></div>`).join('')}
+       <button class="perf-more" onclick="togglePerfPanelQuestions()">${perfPanelAllQ ? 'Show fewer questions ˄' : `Show all ${EVALUATION_QUESTIONS.length} questions ˅`}</button>
+       ${cur.raterCount > 1 ? `<p class="muted" style="font-size:11.5px; margin-top:6px;">Average of ${__spText(cur.raterCount)} evaluations this month.</p>` : ''}`;
+  return `<aside class="card perf-panel">${head}
+    <div class="perf-who"><div class="perf-av">${__spText(String(name).trim().charAt(0).toUpperCase())}</div><div><div style="font-weight:700; font-size:16px;">${__spText(name)}</div><div class="muted">${__spText(roster ? roster.position : '—')}</div></div></div>
+    <div class="perf-hero"><span class="pill info">📅 ${__spText(cur.Month)} ${__spText(cur.Year)}</span>
+      <div class="perf-big"><b>${__spText(cur.AverageScore)}</b> / 5.00 ${perfRatingPill(cur.RatingLabel)}</div>
+      <div style="font-size:13px;">${trendLine}</div></div>
+    <div class="perf-ptabs no-print">${tab('scores', '📊 Scores')}${tab('feedback', '💬 Feedback')}${tab('history', '🕘 History')}</div>
+    <div class="perf-pbody">${body}</div>
+    <div class="perf-pfoot no-print"><button class="btn ghost auto" onclick="printPerfPanel('${__spJSString(name)}','${__spJSString(cur.Month)}','${__spJSString(cur.Year)}')">🖨️ Print</button>
+      ${isFullAdmin() ? `<button class="btn ghost auto" onclick="setPerfPanelTab('archive')">📦 Archive</button>` : ''}
+      <button class="btn auto" onclick="closePerfPanel()">Close</button></div>
+  </aside>`;
+}
 function setPerfSearch(val){
-  perfSearchQuery = val;
+  perfSearchQuery = val; perfPage = 1;
   const cursorPos = document.activeElement && document.activeElement.selectionStart;
   renderView('mgmt-performance');
   // renderView rebuilds the whole page, which would otherwise steal
@@ -2222,7 +2352,7 @@ const EXTRA_POSITION_OPTIONS = ["Slot Tech", "Tech Supervisor", "Membership"]; /
    so every picker always stays in sync; two separate hardcoded
    copies is exactly how a typo or a missed update creates duplicate
    or inconsistent position options. */
-const EMPLOYEE_POSITIONS = ["Shift Manager","Supervisor","Technical Manager","Group Gaming Manager","Assistant Group Gaming Manager","Cashier","Slot Technician","Attendant","Membership Officer","Security"];
+const EMPLOYEE_POSITIONS = ["Shift Manager","Supervisor","Technical Manager","Group Gaming Manager","Assistant Group Gaming Manager","Cashier","Slot Technician","Attendant","Membership Officer","Marketing Officer","Security"];
 // Employment Status (Probationary/Regular) is deliberately separate
 // from the existing Status field (Active/On Leave/Furlough/Resigned/
 // Terminated) — Master Schedule availability keeps reading Status
@@ -7772,7 +7902,8 @@ function computeMonthlyEvaluationsByEmployee(archiveRecords, sourceRecords){
     };
     (byEmployee[first.EmployeeName] = byEmployee[first.EmployeeName] || []).push(summary);
   });
-  Object.keys(byEmployee).forEach(name => byEmployee[name].sort((a,b)=>a.monthKey - b.monthKey));
+  // Newest month first: computeLatestEvaluationByEmployee() takes [0] as the latest (2026-11-14 fix — it was oldest-first).
+  Object.keys(byEmployee).forEach(name => byEmployee[name].sort((a,b)=>b.monthKey - a.monthKey));
   return byEmployee;
 }
 // Finds the monthly summary for the month immediately before
@@ -7883,8 +8014,8 @@ function evalTrendHtml(current, previous){
   if(previous === 'NO_PREVIOUS_MONTH') return `<span class="muted">— No Previous Month</span>`;
   if(!previous) return `<span class="muted">— Baseline / First Evaluation</span>`;
   const diff = Math.round((Number(current.AverageScore) - Number(previous.AverageScore)) * 100) / 100;
-  if(diff > 0) return `<span style="color:var(--teal);">📈 Improved +${diff.toFixed(1)}</span>`;
-  if(diff < 0) return `<span style="color:var(--red);">📉 Declined ${diff.toFixed(1)}</span>`;
+  if(diff > 0) return `<span style="color:var(--teal);">📈 Improved +${diff.toFixed(2)}</span>`;
+  if(diff < 0) return `<span style="color:var(--red);">📉 Declined ${diff.toFixed(2)}</span>`;
   return `<span class="muted">➖ No Change</span>`;
 }
 
@@ -9999,128 +10130,123 @@ const BUILDERS = {
   },
 
   "mgmt-performance": ()=>{
-    // Every score/trend on this page is now a MONTHLY figure — see
-    // computeMonthlyEvaluationsByEmployee() above: multiple raters in
-    // the same month are averaged into one number, never shown or
-    // compared as separate entries.
+    // Every score/trend on this page is a MONTHLY figure — see computeMonthlyEvaluationsByEmployee():
+    // multiple raters in the same month are averaged into one number.
     const monthlyByEmployee_ = computeMonthlyEvaluationsByEmployee();
     const filtered = perfFilterMonth==='All' && perfFilterYear==='All'
       ? null
       : Object.values(monthlyByEmployee_).flat().filter(m => (perfFilterMonth==='All' || m.Month===perfFilterMonth) && (perfFilterYear==='All' || String(m.Year)===String(perfFilterYear)));
-
-    const latestByEmployee = computeLatestEvaluationByEmployee(); // already monthly-averaged
-
+    const latestByEmployee = computeLatestEvaluationByEmployee(); // newest month per employee
     const countByEmployee = {};
     ALL_EVALUATIONS.forEach(e=>{ countByEmployee[e.EmployeeName] = (countByEmployee[e.EmployeeName]||0) + 1; });
-
-    // Built once instead of calling EMPLOYEE_ROSTER.find() per
-    // evaluation below — that used to mean a full roster scan for
-    // every single evaluation record on every render of this page.
     const rosterByName = {};
     EMPLOYEE_ROSTER.forEach(e=>{ if(!(e.name in rosterByName)) rosterByName[e.name] = e; });
-
-    // Base population — Active roster only, respecting Period +
-    // Position filters, but NOT the search box: Search is just a
-    // table-scrolling convenience and shouldn't shrink the Progress/
-    // Summary numbers, which should reflect the full filtered group.
+    // Base population: Active roster (or the chosen period), Position filter — never Status or Search, so the
+    // summary numbers always describe the whole filtered group.
     let baseRows = (filtered
       ? filtered.map(m => ({name:m.EmployeeName, position:(rosterByName[m.EmployeeName]||{}).position||'', e:m}))
       : EMPLOYEE_ROSTER.filter(emp=>emp.status==='Active').map(emp => ({name:emp.name, position:emp.position, e:latestByEmployee[emp.name]})));
-
-    if(perfFilterPosition !== 'All'){
-      baseRows = baseRows.filter(r => scheduleFilterGroupForRole(r.position||'') === perfFilterPosition);
-    }
-
+    if(perfFilterPosition !== 'All') baseRows = baseRows.filter(r => scheduleFilterGroupForRole(r.position||'') === perfFilterPosition);
     let rows = baseRows;
-    if(perfSearchQuery.trim()){
-      const q = perfSearchQuery.trim().toLowerCase();
-      rows = rows.filter(r => r.name.toLowerCase().includes(q));
-    }
+    if(perfFilterStatus === 'Evaluated') rows = rows.filter(r => r.e);
+    else if(perfFilterStatus === 'Not evaluated') rows = rows.filter(r => !r.e);
+    if(perfSearchQuery.trim()){ const q = perfSearchQuery.trim().toLowerCase(); rows = rows.filter(r => r.name.toLowerCase().includes(q)); }
+    // Newest evaluations first, then higher score; not-yet-evaluated A–Z at the end.
+    rows = rows.slice().sort((a, b) => (!!b.e - !!a.e) || (a.e && b.e ? (b.e.monthKey - a.e.monthKey) || (Number(b.e.AverageScore) - Number(a.e.AverageScore)) : 0) || a.name.localeCompare(b.name, 'en', {sensitivity: 'base'}));
 
-    const scored = rows.map(r=>r.e).filter(Boolean).map(e=>Number(e.AverageScore));
+    const scored = baseRows.map(r=>r.e).filter(Boolean).map(e=>Number(e.AverageScore));
     const totalAvg = scored.length ? (scored.reduce((a,b)=>a+b,0)/scored.length).toFixed(2) : '—';
-
-    // Evaluation Progress — always against the Period+Position-filtered
-    // population (baseRows), regardless of what's currently typed in
-    // the search box.
-    const totalCount = baseRows.length;
-    const evaluatedCount = baseRows.filter(r=>r.e).length;
+    const totalCount = baseRows.length, evaluatedCount = baseRows.filter(r=>r.e).length;
     const notEvaluatedCount = totalCount - evaluatedCount;
     const evalPct = totalCount ? Math.round((evaluatedCount/totalCount)*100) : 0;
-    const excellentCount = baseRows.filter(r=>r.e && Number(r.e.AverageScore)>=4.5).length;
-    const needsImprovementCount = baseRows.filter(r=>r.e && Number(r.e.AverageScore)>=1 && Number(r.e.AverageScore)<=2.49).length;
+    const newestKey = Math.max(0, ...baseRows.filter(r => r.e).map(r => r.e.monthKey));
+
+    const pages = Math.max(1, Math.ceil(rows.length / perfPageSize));
+    if(perfPage > pages) perfPage = pages;
+    const start = (perfPage - 1) * perfPageSize, pageRows = rows.slice(start, start + perfPageSize);
+    const pageNums = pages <= 7 ? Array.from({length: pages}, (_, i) => i + 1)
+      : [1, ...(perfPage > 3 ? ['…'] : []), ...[perfPage - 1, perfPage, perfPage + 1].filter(n => n > 1 && n < pages), ...(perfPage < pages - 2 ? ['…'] : []), pages];
 
     const years = Array.from(new Set(ALL_EVALUATIONS.map(e=>String(e.Year)))).sort().reverse();
     const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
     const positions = getUniqueEmployeePositions();
+    const sel = (id, cur, all, opts) => `<select id="${id}"><option value="All" ${cur==='All'?'selected':''}>${all}</option>${opts.map(o=>`<option ${cur===o?'selected':''}>${o}</option>`).join('')}</select>`;
+    const stat = (ic, num, label, color) => `<div class="card perf-stat"><span class="perf-ic">${ic}</span><div><b style="color:${color};">${num}</b><span class="muted">${__spText(label)}</span></div></div>`;
 
-    return `
-    ${isFullAdmin() ? `<div class="no-print" style="margin-bottom:16px;">
-      <button class="btn ghost auto" onclick="openEvaluationArchivedPage()">📁 Archived Evaluations</button>
-    </div>` : ''}
-    <div class="card" style="margin-bottom:16px; padding:14px 16px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
-        <span style="font-weight:600;">Evaluation Progress: ${evaluatedCount} / ${totalCount} Employees Evaluated (${evalPct}%)</span>
-        <span class="muted" style="font-size:12px;">${filtered ? perfFilterMonth+' '+perfFilterYear : 'Latest per staff'}${perfFilterPosition!=='All' ? ' · '+perfFilterPosition : ''}</span>
-      </div>
-      <div style="height:8px; background:var(--panel-2); border-radius:6px; overflow:hidden;"><div style="height:100%; width:${evalPct}%; background:var(--gold);"></div></div>
+    const evaluationsTab = `
+    <div class="perf-stats">
+      ${stat('👥', totalCount, 'Total Employees', 'var(--blue)')}
+      ${stat('✅', evaluatedCount, 'Evaluated', 'var(--teal)')}
+      ${stat('📋', notEvaluatedCount, 'Not Yet Evaluated', 'var(--blue)')}
+      ${stat('⭐', totalAvg === '—' ? '—' : totalAvg + ' <small class="muted">/ 5.00</small>', 'Average Score', 'var(--text)')}
     </div>
-    <div class="grid grid-3" style="margin-bottom:16px;">
-      <div class="card stat-card"><div class="num">${totalCount}</div><div class="label">Total Employees</div></div>
-      <div class="card stat-card"><div class="num" style="color:var(--teal);">${evaluatedCount}</div><div class="label">Employees Evaluated</div></div>
-      <div class="card stat-card"><div class="num" style="color:var(--gold);">${notEvaluatedCount}</div><div class="label">Not Yet Evaluated</div></div>
-      <div class="card stat-card"><div class="num">${totalAvg}</div><div class="label">Average Performance Score</div></div>
-      <div class="card stat-card"><div class="num" style="color:var(--teal);">${excellentCount}</div><div class="label">Excellent Performers</div></div>
-      <div class="card stat-card"><div class="num" style="color:var(--red);">${needsImprovementCount}</div><div class="label">Staff Needing Improvement</div></div>
-    </div>
-    <div class="card" style="margin-bottom:16px;">
-      <h3>Filter by Period &amp; Position</h3>
-      <div class="grid grid-4">
-        <div>
-          <label>Month</label>
-          <select onchange="setPerfFilter('month', this.value)">
-            <option value="All" ${perfFilterMonth==='All'?'selected':''}>All Months</option>
-            ${months.map(m=>`<option ${perfFilterMonth===m?'selected':''}>${m}</option>`).join('')}
-          </select>
-        </div>
-        <div>
-          <label>Year</label>
-          <select onchange="setPerfFilter('year', this.value)">
-            <option value="All" ${perfFilterYear==='All'?'selected':''}>All Years</option>
-            ${years.map(y=>`<option ${perfFilterYear===y?'selected':''}>${y}</option>`).join('')}
-          </select>
-        </div>
-        <div>
-          <label>Position</label>
-          <select onchange="setPerfFilter('position', this.value)">
-            <option value="All" ${perfFilterPosition==='All'?'selected':''}>All Positions</option>
-            ${positions.map(p=>`<option ${perfFilterPosition===p?'selected':''}>${p}</option>`).join('')}
-          </select>
-        </div>
-        <div style="display:flex; align-items:flex-end;">
-          <button class="btn reset auto" style="margin-top:16px;" onclick="resetPerfFilter()">↻ Clear / Reset Filters</button>
-        </div>
+    <div class="card perf-progress">
+      <span class="perf-ic">📝</span>
+      <div style="flex:1; min-width:0;">
+        <div style="display:flex; justify-content:space-between; gap:8px;"><b>Evaluation Progress</b><b>${evalPct}%</b></div>
+        <div class="muted" style="margin:2px 0 8px;">${evaluatedCount} of ${totalCount} employees evaluated · ${filtered ? (perfFilterMonth==='All'?'All months':perfFilterMonth)+' '+(perfFilterYear==='All'?'':perfFilterYear) : 'latest per employee'}${perfFilterPosition!=='All' ? ' · '+perfFilterPosition : ''}</div>
+        <div class="perf-bar"><div style="width:${evalPct}%;"></div></div>
       </div>
+    </div>
+    <div class="card no-print" style="margin-bottom:16px;">
+      <h3 style="margin-bottom:10px;">⛛ Filter Evaluations</h3>
+      <div class="perf-filters">
+        <div><label>Month</label>${sel('perfFMonth', perfFilterMonth, 'All Months', months)}</div>
+        <div><label>Year</label>${sel('perfFYear', perfFilterYear, 'All Years', years)}</div>
+        <div><label>Position</label>${sel('perfFPos', perfFilterPosition, 'All Positions', positions)}</div>
+        <div><label>Status</label>${sel('perfFStatus', perfFilterStatus, 'All Status', ['Evaluated', 'Not evaluated'])}</div>
+        <button class="btn auto" onclick="applyPerfFilters()">🔍 Apply Filters</button>
+        <button class="btn ghost auto" onclick="resetPerfFilter()">↻ Reset</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="perf-thead"><h3 style="margin:0;">👥 Employee Evaluations</h3>
+        <input type="text" placeholder="🔍 Search employee name…" value="${perfSearchQuery}" oninput="setPerfSearch(this.value)"></div>
+      <div class="table-scroll">
+      <table class="perf-table">
+        <tr><th>#</th><th>Employee</th><th>Position</th><th>Latest Evaluation</th><th>Score</th><th>Rating</th><th>Trend</th><th>Records</th><th>Actions</th></tr>
+        ${pageRows.map((r, i)=>`<tr class="${__spAttr(perfPanel && perfPanel.name===r.name ? 'on' : '')}">
+          <td class="muted">${start + i + 1}</td>
+          <td style="font-weight:600;">${__spText(r.name)}</td>
+          <td class="muted">${__spText(r.position)}</td>
+          <td>${r.e ? (r.e.monthKey === newestKey ? `<span class="pill info">📅 ${__spText(r.e.Month)} ${__spText(r.e.Year)}</span>` : r.e.Month+' '+r.e.Year) : '<span class="muted">—</span>'}</td>
+          <td>${r.e ? `<b class="perf-score">${__spText(r.e.AverageScore)}</b> <span class="muted">/ 5.00</span>` : '<span class="muted">—</span>'}</td>
+          <td>${r.e ? perfRatingPill(r.e.RatingLabel) : '<span class="muted" style="font-size:12px;">Not yet evaluated</span>'}</td>
+          <td>${r.e ? perfTrendHtml(r.e, getPreviousMonthEvaluation(r.e, monthlyByEmployee_[r.name])) : '<span class="muted">—</span>'}</td>
+          <td class="mono">${__spText(countByEmployee[r.name] || 0)}</td>
+          <td>${r.e ? `<button class="btn info auto" style="padding:5px 12px;" onclick="openPerfPanel('${__spJSString(r.name)}','${__spJSString(r.e.Month)}','${__spJSString(r.e.Year)}')">👁 View Details</button>` : `<button class="btn info auto" style="padding:5px 12px;" disabled title="No evaluation yet">👁 View Details</button>`}</td>
+        </tr>`).join('') || `<tr><td colspan="9" class="muted">No employees match these filters.</td></tr>`}
+      </table>
+      </div>
+      <div class="perf-pager no-print">
+        <span class="muted">Showing ${rows.length ? start + 1 : 0}–${start + pageRows.length} of ${__spText(rows.length)} employees</span>
+        <span>${pages > 1 ? `<button ${perfPage===1?'disabled':''} onclick="setPerfPage(${perfPage-1})" aria-label="Previous page">‹</button>${pageNums.map(n => n==='…' ? '<span class="muted"> … </span>' : `<button class="${__spAttr(n===perfPage?'on':'')}" onclick="setPerfPage(${n})">${n}</button>`).join('')}<button ${perfPage===pages?'disabled':''} onclick="setPerfPage(${perfPage+1})" aria-label="Next page">›</button>` : ''}</span>
+        <label class="muted" style="margin:0;">Rows per page <select onchange="setPerfPageSize(this.value)" style="width:auto; display:inline-block; margin-left:6px;">${[5,10,25,50].map(n=>`<option ${n===perfPageSize?'selected':''}>${n}</option>`).join('')}</select></label>
+      </div>
+    </div>`;
+
+    const dist = ['Excellent','Very Good','Good','Needs Improvement','Unsatisfactory'].map(l => [l, baseRows.filter(r => r.e && r.e.RatingLabel === l).length]);
+    const analyticsTab = `
+    <div class="perf-stats">
+      ${stat('🏆', baseRows.filter(r=>r.e && Number(r.e.AverageScore)>=4.5).length, 'Excellent Performers', 'var(--teal)')}
+      ${stat('📈', baseRows.filter(r=>r.e && Number(r.e.AverageScore)>=1 && Number(r.e.AverageScore)<=2.49).length, 'Needing Improvement', 'var(--red)')}
+      ${stat('⭐', totalAvg, 'Average Score', 'var(--text)')}
+      ${stat('✅', evalPct + '%', 'Evaluated', 'var(--blue)')}
+    </div>
+    <div class="card" style="margin-bottom:16px;"><h3>📊 Rating Distribution</h3>
+      ${dist.map(([l, n]) => `<div style="margin-bottom:10px;"><div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>${l}</span><span class="mono">${n}</span></div><div class="perf-bar"><div style="width:${evaluatedCount ? Math.round(n/evaluatedCount*100) : 0}%;"></div></div></div>`).join('')}
     </div>
     ${staffForImprovementSection(baseRows)}
-    <div style="margin-bottom:16px;">${renderRankedEvalCard('🏆', 'Performing Staff — All Evaluated', baseRows.filter(r=>r.e).map(r=>[r.name, Number(r.e.AverageScore)]).sort((a,b)=>b[1]-a[1]), 'var(--teal)')}</div>
-    <div class="card table-scroll">
-      <h3><span class="ic">📊</span> Evaluation Report — All Staff</h3>
-      <p class="muted" style="margin-bottom:12px;">${filtered ? 'Showing evaluations for '+perfFilterMonth+' '+perfFilterYear+'.' : "Each employee's most recent monthly evaluation."}</p>
-      <input type="text" placeholder="🔍 Search employee name…" value="${perfSearchQuery}" oninput="setPerfSearch(this.value)" style="margin-bottom:12px;">
-      <table>
-        <tr><th>Employee</th><th>Position</th><th>Period</th><th>Score</th><th>Rating</th><th>Trend</th><th>Total Records</th><th></th></tr>
-        ${rows.slice().sort((a, b) => a.name.localeCompare(b.name, 'en', {sensitivity: 'base'})).map(r=>`<tr>
-          <td>${__spText(r.name)}</td>
-          <td class="muted">${__spText(r.position)}</td>
-          <td>${r.e ? r.e.Month+' '+r.e.Year : '—'}</td>
-          <td class="mono">${__spText(r.e ? r.e.AverageScore : '—')}</td>
-          <td>${r.e ? ratingStars(r.e.AverageScore)+' '+r.e.RatingLabel : '<span class="muted">Not yet evaluated</span>'}</td>
-          <td>${r.e ? evalTrendHtml(r.e, getPreviousMonthEvaluation(r.e, monthlyByEmployee_[r.name])) : '<span class="muted">—</span>'}</td>
-          <td class="mono">${__spText(countByEmployee[r.name] || 0)}</td>
-          <td>${r.e ? `<button class="btn info auto" style="padding:5px 10px; margin-right:6px;" onclick="openPerfDetail('${__spJSString(r.e.ID)}')">View Details</button><button class="btn ghost auto" style="padding:5px 10px;" onclick="openMgmtPerfSummary('${r.e.EmployeeName.replace(/'/g,"\\'")}', '${__spJSString(r.e.Month)}', '${__spJSString(r.e.Year)}')">📋 View Summary</button>` : ''}</td>
-        </tr>`).join('') || `<tr><td colspan="8" class="muted">No evaluations found.</td></tr>`}
-      </table>
+    <div style="margin-bottom:16px;">${renderRankedEvalCard('🏆', 'Performing Staff — All Evaluated', baseRows.filter(r=>r.e).map(r=>[r.name, Number(r.e.AverageScore)]).sort((a,b)=>b[1]-a[1]), 'var(--teal)')}</div>`;
+
+    return `
+    <div class="perf-top no-print">
+      <div class="perf-tabs"><button class="${__spAttr(perfTab==='evaluations'?'on':'')}" onclick="setPerfTab('evaluations')">📈 Evaluations</button><button class="${__spAttr(perfTab==='analytics'?'on':'')}" onclick="setPerfTab('analytics')">📊 Analytics</button></div>
+      ${isFullAdmin() ? `<button class="btn ghost auto" onclick="openEvaluationArchivedPage()">📁 Archived Evaluations</button>` : ''}
+    </div>
+    <div class="perf-layout ${__spAttr(perfPanel ? 'with-panel' : '')}">
+      <div style="min-width:0;">${perfTab === 'analytics' ? analyticsTab : evaluationsTab}</div>
+      ${perfPanel ? perfPanelHtml() : ''}
     </div>`;
   },
 
