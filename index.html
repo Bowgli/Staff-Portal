@@ -292,6 +292,32 @@
     .perf-stats{grid-template-columns:repeat(2,minmax(0,1fr));}
   }
   @media(max-width:600px){ .perf-filters{grid-template-columns:minmax(0,1fr);} .perf-thead input{max-width:none;} .perf-stat b{font-size:20px;} }
+  /* Disciplinary Reports (2026-11-14) — reuses the Performance Reports layout classes */
+  .disc-stat{cursor:pointer;} .disc-stat span{display:block;}
+  .disc-layout.with-panel .perf-stats{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .disc-table td.disc-viol{white-space:normal; min-width:170px; max-width:260px; line-height:1.35;}
+  .disc-more{color:var(--text-mute); font-size:12px; white-space:nowrap;}
+  .disc-info{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; background:var(--panel-2); border-radius:12px; padding:10px; font-size:12px;}
+  .disc-info span{display:block;} .disc-info b{display:block; font-size:12.5px; margin-top:2px;}
+  .disc-note{font-size:11.5px; margin:0 0 8px;}
+  .disc-sec{background:var(--panel-2); border-radius:10px; padding:10px 12px; margin-bottom:8px; font-size:13px;}
+  .disc-sec h4{margin:0 0 4px; font-size:13px;} .disc-sec p{margin:0; white-space:pre-wrap; overflow-wrap:anywhere;}
+  .disc-outcome{background:rgba(16,185,129,.08); border:1px solid rgba(16,185,129,.35); border-radius:10px; padding:10px 12px; font-size:13px;}
+  .disc-outcome h4{margin:0 0 4px; font-size:13px;} .disc-outcome b{color:var(--teal); font-size:15px;} .disc-outcome p{margin:4px 0 0; white-space:pre-wrap;}
+  .disc-tl{display:flex; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px;} .disc-tl .mono{min-width:120px; font-size:12px;}
+  .disc-bar{margin-bottom:10px;} .disc-bar>div:first-child{display:flex; justify-content:space-between; gap:8px; font-size:12.5px; margin-bottom:4px;}
+  .disc-grid2{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px;}
+  .disc-trend{display:flex; align-items:flex-end; gap:4px; height:150px;}
+  .disc-trend>div{flex:1; min-width:0; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:3px; font-size:10.5px;}
+  .disc-trend i{display:block; width:100%; max-width:26px; min-height:2px; background:var(--blue-soft); border-radius:5px 5px 0 0;} .disc-trend .on i{background:var(--blue);}
+  .disc-steps{display:flex; gap:8px; margin-bottom:16px;}
+  .disc-steps button{flex:1; min-width:0; display:flex; align-items:center; gap:8px; border:1px solid var(--line); background:var(--panel); border-radius:12px; padding:10px 12px; font:inherit; font-weight:600; color:var(--text-mute); cursor:pointer; text-align:left;}
+  .disc-steps button i{font-style:normal; width:26px; height:26px; flex:0 0 26px; border-radius:50%; background:var(--panel-2); display:flex; align-items:center; justify-content:center;}
+  .disc-steps button.on{border-color:var(--blue); color:var(--blue);} .disc-steps button.on i{background:var(--blue); color:#fff;} .disc-steps button.done i{background:var(--teal); color:#fff;}
+  .disc-foot{display:flex; gap:8px; flex-wrap:wrap; justify-content:space-between; align-items:center;} .disc-foot>div{display:flex; gap:8px; flex-wrap:wrap;}
+  .disc-rv{display:grid; grid-template-columns:150px minmax(0,1fr); gap:10px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px;} .disc-rv div{white-space:pre-wrap; overflow-wrap:anywhere;}
+  @media(max-width:900px){ .disc-grid2{grid-template-columns:minmax(0,1fr);} }
+  @media(max-width:600px){ .disc-steps button span{display:none;} .disc-steps button{justify-content:center; padding:8px;} .disc-rv{grid-template-columns:minmax(0,1fr); gap:2px;} .disc-info{grid-template-columns:minmax(0,1fr);} }
   .status-select{min-width:160px; font-weight:600;}
   .status-select.pending{background:var(--gold-soft); color:var(--gold); border-color:rgba(184,128,42,.4);}
   .status-select.approved{background:var(--teal-soft); color:var(--teal); border-color:rgba(55,116,109,.4);}
@@ -6390,7 +6416,7 @@ function discStatusPill(status){
     "Draft":"warn", "Under Review":"warn", "Pending Approval":"warn",
     "Final Review":"warn", "Action Issued":"ok", "Closed":"ok", "No Action":"ok",
   };
-  return `<span class="pill ${__spAttr(map[status]||'warn')}">${status||'Draft'}</span>`;
+  return `<span class="pill ${__spAttr(map[status]||'warn')}">${__spText(status||'Draft')}</span>`;
 }
 function disciplinarySummarySection(){
   const now = new Date();
@@ -6595,6 +6621,158 @@ function disciplinaryCasesAdvancedSection(rows, title){
       </table>
     </div>`;
 }
+
+// ---- 2026-11-14 Disciplinary Reports redesign ----
+let discTab = 'cases', discPage = 1, discPageSize = 10, discPanelId = '', discPanelTab = 'details', discMonth = 'All', discYear = 'All';
+const DISC_MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+function discDate_(d){ const t = new Date(d.DateReported); return isNaN(t) ? null : t; }
+// Violations as shown: "Other" carries its own text.
+function discViolList_(d){ return discParseViolations(d.ViolationTypes).map(v => v === 'Other' ? (d.ViolationOther ? 'Other: ' + d.ViolationOther : 'Other') : v); }
+function discCaseRows_(){
+  const q = (discFilter.search || '').trim().toLowerCase();
+  return ALL_DISCIPLINARY_RECORDS.filter(d => {
+    const t = discDate_(d);
+    if(discYear !== 'All' && (!t || t.getFullYear() !== Number(discYear))) return false;
+    if(discMonth !== 'All' && (!t || t.getMonth() !== Number(discMonth))) return false;
+    if(discFilter.status !== 'All' && (d.Status || 'Draft') !== discFilter.status) return false;
+    if(discFilter.level !== 'All' && (discFilter.level === 'None' ? !!d.DisciplinaryLevel : d.DisciplinaryLevel !== discFilter.level)) return false;
+    if(discFilter.violation !== 'All' && !discParseViolations(d.ViolationTypes).includes(discFilter.violation)) return false;
+    return !q || (d.EmployeeName || '').toLowerCase().includes(q) || (d.CaseNumber || '').toLowerCase().includes(q) || discViolList_(d).some(v => v.toLowerCase().includes(q));
+  }).sort((a, b) => { const ta = +(discDate_(a) || 0), tb = +(discDate_(b) || 0); return discFilter.sort === 'oldest' ? ta - tb : tb - ta; });
+}
+function discPageNums_(cur, pages){
+  if(pages <= 7) return Array.from({length: pages}, (_, i) => i + 1);
+  const out = [1]; if(cur > 3) out.push('…');
+  for(let n = Math.max(2, cur - 1); n <= Math.min(pages - 1, cur + 1); n++) out.push(n);
+  if(cur < pages - 2) out.push('…'); out.push(pages); return out;
+}
+function setDiscTab(t){ discTab = t; renderView('mgmt-disciplinary'); }
+function discApplyFilters(){
+  const v = id => (document.getElementById(id) || {}).value || 'All';
+  discMonth = v('discFMonth'); discYear = v('discFYear');
+  discFilter.status = v('discFStatus'); discFilter.level = v('discFLevel'); discFilter.violation = v('discFViol');
+  discFilter.sort = v('discFSort') === 'oldest' ? 'oldest' : 'newest';
+  discPage = 1; renderView('mgmt-disciplinary');
+}
+function discResetFilters(){
+  discFilter = { search:'', violation:'All', level:'All', status:'All', sort:'newest', expanded:false };
+  discMonth = 'All'; discYear = 'All'; discPage = 1; renderView('mgmt-disciplinary');
+}
+function discCardFilter(status){ discFilter.status = status; discPage = 1; renderView('mgmt-disciplinary'); }
+function setDiscPage(n){ discPage = Number(n) || 1; renderView('mgmt-disciplinary'); }
+function setDiscPageSize(n){ discPageSize = Number(n) || 10; discPage = 1; renderView('mgmt-disciplinary'); }
+function openDiscPanel(id){ discPanelId = id; discPanelTab = 'details'; renderView('mgmt-disciplinary'); }
+function closeDiscPanel(){ discPanelId = ''; renderView('mgmt-disciplinary'); }
+function setDiscPanelTab(t){ discPanelTab = t; renderView('mgmt-disciplinary'); }
+// Edit, review, level, status and confirmation stay on the full Case Details page (existing actions and permissions).
+function discOpenFull(id, mode){
+  openDisciplinaryCase(id, 'mgmt-disciplinary', 'Disciplinary Reports');
+  if(mode === 'status') toggleDiscStatusEdit(true);
+}
+// Prints the full Case Details page, read-only (no open edit boxes on paper).
+function discPrintCase(id){
+  openDisciplinaryCase(id, 'mgmt-disciplinary', 'Disciplinary Reports');
+  discReviewEditMode = false; discLevelEditMode = false; renderView('mgmt-disciplinary-detail');
+  setTimeout(() => printWithPageSettings('letter', 'portrait', '0.75in'), 200);
+}
+function discPanelHtml(d){
+  const tl = discParseTimeline(d.Timeline), last = tl[tl.length - 1], v = discViolList_(d);
+  const ids = (d.AttachmentFileIds || '').split(',').filter(Boolean), names = (d.AttachmentNames || '').split(',').filter(Boolean);
+  const full = currentMgmtRole() === 'full', isLevel5 = d.DisciplinaryLevel === DISC_LEVELS[4], id = __spJSString(d.ID);
+  const sec = (title, val) => `<div class="disc-sec"><h4>${title}</h4><p>${val ? __spText(val) : '<span class="muted">—</span>'}</p></div>`;
+  const tab = (k, label) => `<button class="${__spAttr(discPanelTab === k ? 'on' : '')}" onclick="setDiscPanelTab('${k}')">${__spText(label)}</button>`;
+  const where = [d.IncidentDate ? fmtDiscDate(d.IncidentDate) : '', d.IncidentTime ? fmtDiscTime(d.IncidentTime) : '', d.Location === 'Other' ? d.LocationOther : d.Location].filter(Boolean).join(' · ');
+  const body = discPanelTab === 'response'
+    ? (d.EmployeeResponse ? sec('Employee Response', d.EmployeeResponse) : '<p class="muted">No response recorded yet — the employee can add one from their own portal.</p>')
+    : discPanelTab === 'review'
+    ? `<p class="muted disc-note">Management review — confirmed findings and decisions.</p>
+       ${sec('Management Findings', d.ManagementFindings)}${sec('Previous Related Cases', d.PreviousRelatedCases)}${sec('Management Comments', d.ManagementComments)}
+       ${sec('Disciplinary Level', d.DisciplinaryLevel || 'Not yet determined')}${isLevel5 ? sec('Employment Decision', d.EmploymentDecision) : ''}
+       ${sec('Management Decision / Action', d.ManagementDecisionAction)}
+       <div class="disc-sec"><h4>Review Confirmation</h4><p>${d.ReviewConfirmedBy ? `Reviewed by ${__spText(d.ReviewConfirmedBy)} · ${__spText(fmtDiscDate(d.ReviewConfirmDate) + ' ' + fmtDiscTime(d.ReviewConfirmTime))}` : '<span class="muted">Not yet confirmed by management.</span>'}</p></div>
+       ${full ? `<button class="btn ghost auto no-print" onclick="discOpenFull('${id}')">✏️ Edit review, level or confirmation</button>` : ''}`
+    : discPanelTab === 'history'
+    ? (tl.length ? `<p class="muted disc-note">Newest first.</p>` + tl.slice().reverse().map(t => `<div class="disc-tl"><span class="mono muted">${__spText(t.date ? fmtDateTime(t.date) : '')}</span><span>${__spText(t.event || '')}</span></div>`).join('') : '<p class="muted">No history yet.</p>')
+    : `<p class="muted disc-note">Reported information — as reported, not a management finding.</p>
+       ${sec('Nature of Violation', v.join(', '))}${sec('Incident', where)}${sec('Incident Description', d.Description)}
+       ${sec('Policy / Rule Involved', d.PolicyInvolved)}${sec('Witnesses', d.Witnesses)}
+       <div class="disc-sec"><h4>Supporting Evidence</h4><p>${ids.length ? ids.map((f, i) => `<a href="#" onclick="downloadDiscAttachment('${__spJSString(f)}','${__spJSString(names[i] || 'file')}'); return false;">📎 ${__spText(names[i] || 'Attachment ' + (i + 1))}</a>`).join('<br>') : '<span class="muted">None</span>'}</p></div>
+       ${d.DisciplinaryLevel ? `<div class="disc-outcome"><h4>✅ Outcome / Disciplinary Action</h4><b>${__spText(d.DisciplinaryLevel)}</b>${isLevel5 && d.EmploymentDecision ? `<p>Employment decision: ${__spText(d.EmploymentDecision)}</p>` : ''}${d.ManagementDecisionAction ? `<p>${__spText(d.ManagementDecisionAction)}</p>` : ''}</div>` : ''}`;
+  return `<aside class="card perf-panel disc-panel">
+    <div class="perf-ph"><h3 style="margin:0;">🗂️ Case Details</h3><button class="perf-x no-print" onclick="closeDiscPanel()" aria-label="Close">×</button></div>
+    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;"><span class="mono" style="font-size:20px; font-weight:700;">${__spText(d.CaseNumber || '—')}</span>${discStatusPill(d.Status)}</div>
+    <div class="muted" style="margin:4px 0 12px;">👤 ${__spText(d.EmployeeName || '')}${d.Position ? ' • ' + __spText(d.Position) : ''}</div>
+    <div class="disc-info"><div><span class="muted">📅 Reported</span><b>${__spText(fmtDateTime(d.DateReported))}</b></div>
+      <div><span class="muted">⚖️ Level</span><b>${__spText(d.DisciplinaryLevel || 'Not yet determined')}</b></div>
+      <div><span class="muted">🕘 Last update</span><b>${last && last.date ? __spText(fmtDateTime(last.date)) : '—'}</b></div></div>
+    <div class="perf-ptabs no-print">${tab('details', '📄 Details')}${tab('response', '💬 Response')}${tab('review', '🛡️ Review')}${tab('history', '🕘 History')}</div>
+    <div class="perf-pbody">${body}</div>
+    <div class="perf-pfoot no-print">
+      <button class="btn ghost auto" onclick="discPrintCase('${id}')">🖨️ Print Case</button>
+      <button class="btn ghost auto" onclick="discOpenFull('${id}')">✏️ Edit</button>
+      ${full ? `<button class="btn ghost auto" onclick="discOpenFull('${id}','status')">🔄 Change Status</button>` : ''}
+      ${isFullAdmin() && d.Status === 'Closed' ? `<button class="btn ghost auto" onclick="archiveRecordNow('disciplinary','${id}', this)">📦 Archive</button>` : ''}
+      <button class="btn auto" onclick="closeDiscPanel()">Close</button>
+    </div>
+  </aside>`;
+}
+// Summary: the same cases the old monthly summary counted (not Draft; active + that year's archive), each case once.
+function discPeriodCases_(){
+  const now = new Date();
+  if(!discSummaryPeriod) discSummaryPeriod = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const [py, pm] = discSummaryPeriod.split('-').map(Number);
+  const year = discSummaryMode === 'year' ? discSummaryYear : py, month = discSummaryMode === 'year' ? null : pm;
+  ensureDisciplinaryArchiveForYear(year); // fire-and-forget; re-renders once loaded
+  const seen = new Set();
+  const yearCases = ALL_DISCIPLINARY_RECORDS.concat(DISCIPLINARY_ARCHIVE_BY_YEAR_CACHE[year] || []).filter(d => {
+    const t = discDate_(d);
+    if(!t || t.getFullYear() !== year || d.Status === 'Draft') return false;
+    const key = d.ID || d.CaseNumber; if(key && seen.has(key)) return false; if(key) seen.add(key); return true;
+  });
+  return {year, month, yearCases, cases: month ? yearCases.filter(d => discDate_(d).getMonth() + 1 === month) : yearCases,
+    label: month ? new Date(year, month - 1, 1).toLocaleDateString('en-US', {month:'long', year:'numeric'}) : String(year)};
+}
+function discAnalyticsHtml(){
+  const p = discPeriodCases_(), cases = p.cases, total = cases.length;
+  const years = Array.from(new Set(ALL_DISCIPLINARY_RECORDS.map(d => { const t = discDate_(d); return t ? t.getFullYear() : null; }).filter(Boolean))).sort((a, b) => b - a);
+  if(!years.includes(discSummaryYear)) years.unshift(discSummaryYear);
+  const bar = (label, n, of) => `<div class="disc-bar"><div><span>${__spText(label)}</span><span class="mono">${n}</span></div><div class="perf-bar"><div style="width:${of ? Math.round(n / of * 100) : 0}%;"></div></div></div>`;
+  // Every stored value gets its own row (older cases can hold a status or level outside today's lists), so each list adds up to the total.
+  const extra = (std, key) => Array.from(new Set(cases.map(d => d[key] || '').filter(x => x && !std.includes(x))));
+  const statuses = DISC_STATUSES.filter(s => s !== 'Draft').concat(extra(DISC_STATUSES, 'Status')).map(s => [s, cases.filter(d => d.Status === s).length]);
+  const noStatus = cases.filter(d => !d.Status).length;
+  const byViol = DISC_VIOLATION_TYPES.map(v => [v, cases.filter(d => discParseViolations(d.ViolationTypes).includes(v)).length]).filter(x => x[1]);
+  const levels = DISC_LEVELS.concat(extra(DISC_LEVELS, 'DisciplinaryLevel')).map(l => [l, cases.filter(d => d.DisciplinaryLevel === l).length]).concat([['Not yet determined', cases.filter(d => !d.DisciplinaryLevel).length]]);
+  const monthly = DISC_MONTHS.map((m, i) => p.yearCases.filter(d => discDate_(d).getMonth() === i).length), peak = Math.max(1, ...monthly);
+  const closed = cases.filter(d => d.Status === 'Closed' || d.Status === 'No Action').length;
+  const stat = (ic, num, label, color) => `<div class="card perf-stat"><span class="perf-ic">${ic}</span><div><b style="color:${color};">${num}</b><span class="muted">${__spText(label)}</span></div></div>`;
+  return `
+    <div class="card no-print" style="margin-bottom:16px;">
+      <div class="perf-thead"><h3 style="margin:0;">📊 ${__spText(discSummaryMode === 'year' ? 'Yearly' : 'Monthly')} Disciplinary Summary · ${__spText(p.label)}</h3>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <select onchange="setDiscSummaryMode(this.value)" style="width:auto; margin:0;"><option value="month" ${discSummaryMode==='month'?'selected':''}>By Month</option><option value="year" ${discSummaryMode==='year'?'selected':''}>By Year</option></select>
+          ${discSummaryMode === 'year'
+            ? `<select onchange="setDiscSummaryYear(this.value)" style="width:auto; margin:0;">${years.map(y => `<option ${discSummaryYear===y?'selected':''}>${y}</option>`).join('')}</select>`
+            : `<input type="month" value="${__spAttr(discSummaryPeriod)}" onchange="setDiscSummaryPeriod(this.value)" style="max-width:180px; margin:0;">`}
+        </div></div>
+      <p class="muted" style="font-size:12px; margin:0;">Drafts are not counted. Archived cases of the year are included.</p>
+    </div>
+    <div class="perf-stats">
+      ${stat('📁', total, 'Total Cases', 'var(--blue)')}
+      ${stat('⏳', total - closed, 'Open', 'var(--amber, #d97706)')}
+      ${stat('✅', closed, 'Closed / No Action', 'var(--teal)')}
+      ${stat('👥', new Set(cases.map(d => d.EmployeeName)).size, 'Employees Involved', 'var(--text)')}
+    </div>
+    <div class="disc-grid2">
+      <div class="card"><h3>📋 Case Status</h3>${total ? statuses.map(([s, n]) => bar(s, n, total)).join('') + (noStatus ? bar('No status', noStatus, total) : '') : '<p class="muted">No cases this period.</p>'}</div>
+      <div class="card"><h3>⚖️ Disciplinary Levels</h3>${total ? levels.map(([l, n]) => bar(l, n, total)).join('') : '<p class="muted">No cases this period.</p>'}</div>
+      <div class="card"><h3>🏷️ Violation Categories</h3>${byViol.length ? byViol.sort((a, b) => b[1] - a[1]).map(([v, n]) => bar(v, n, total)).join('') : '<p class="muted">No violations logged this period.</p>'}
+        <p class="muted" style="font-size:11.5px; margin-top:8px;">Cases per category. A case with several violations counts once in each of its categories, so these can add up to more than ${total} case${__spText(total === 1 ? '' : 's')}.</p></div>
+      <div class="card"><h3>📈 Monthly Trend · ${__spText(p.year)}</h3>
+        <div class="disc-trend">${monthly.map((n, i) => `<div class="${__spAttr(p.month === i + 1 ? 'on' : '')}" title="${__spAttr(DISC_MONTHS[i])} ${__spAttr(p.year)}: ${n} case(s)"><span class="mono">${n}</span><i style="height:${Math.round(n / peak * 100)}%;"></i><span class="muted">${DISC_MONTHS[i].slice(0, 3)}</span></div>`).join('')}</div></div>
+    </div>`;
+}
+// ---- end redesign helpers ----
 
 function viewEmployeeDisciplinaryHistory(employeeName){
   discFilter.search = employeeName;
@@ -7064,6 +7242,32 @@ async function handleDiscIncidentEditFileUpload(event){
   reader.readAsDataURL(file);
 }
 
+function discStep_(){ const s = document.querySelector('.disc-step:not([hidden])'); return s ? Number(s.dataset.step) : 1; }
+function discGoStep(n){
+  n = Math.min(4, Math.max(1, n));
+  const err = document.getElementById('discFormErr');
+  if(n > 1 && !discNewCaseEmployee){ err.textContent = "Select an employee from the suggestions."; err.style.display = 'block'; n = 1; }
+  else if(err) err.style.display = 'none';
+  document.querySelectorAll('.disc-step').forEach(el => { el.hidden = Number(el.dataset.step) !== n; });
+  document.querySelectorAll('.disc-steps button').forEach(b => { const k = Number(b.dataset.step); b.className = k === n ? 'on' : k < n ? 'done' : ''; });
+  const show = (id, on) => { const b = document.getElementById(id); if(b) b.style.display = on ? '' : 'none'; };
+  show('discBackBtn', n > 1); show('discNextBtn', n < 4); show('discSubmitBtn', n === 4);
+  if(n === 4) document.getElementById('discReviewBox').innerHTML = discFormReviewHtml();
+  window.scrollTo(0, 0);
+}
+function discFormReviewHtml(){
+  const v = id => ((document.getElementById(id) || {}).value || '').trim();
+  const viol = discCollectViolations().map(x => x === 'Other' ? 'Other: ' + (v('discViolationOther') || '—') : x);
+  const loc = v('discLocation') === 'Other' ? v('discLocationOther') : v('discLocation');
+  const row = (k, val) => `<div class="disc-rv"><span class="muted">${k}</span><div>${val ? __spText(val) : '<span class="muted">—</span>'}</div></div>`;
+  const missing = [!viol.length ? 'at least one violation type' : '', !v('discDescription') ? 'a description of the incident' : ''].filter(Boolean);
+  return row('Employee', discNewCaseEmployee) + row('Position', v('discEmpPosition')) + row('Department', v('discEmpDepartment'))
+    + row('Reported By', v('discReportedBy')) + row('Supervisor', v('discSupervisor'))
+    + row('Incident', [v('discIncidentDate') ? fmtDiscDate(v('discIncidentDate')) : '', v('discIncidentTime') ? fmtDiscTime(v('discIncidentTime')) : '', loc].filter(Boolean).join(' · '))
+    + row('Violation(s)', viol.join(', ')) + row('Description', v('discDescription')) + row('Policy / Rule', v('discPolicy'))
+    + row('Witnesses', v('discWitnesses')) + row('Attachments', discCaseAttachments.map(f => f.fileName).join(', '))
+    + (missing.length ? `<p class="muted" style="margin-top:10px; color:var(--red);">Needed before Submit: ${missing.join(' and ')}. A draft can still be saved.</p>` : '');
+}
 function discCollectViolations(){
   return Array.from(document.querySelectorAll('.discViolationCb:checked')).map(cb=>cb.value);
 }
@@ -10282,13 +10486,71 @@ const BUILDERS = {
   },
 
   "mgmt-disciplinary": ()=>{
-    return `
-    <div class="no-print" style="display:flex; justify-content:flex-end; margin-bottom:16px;">
-      <button class="btn auto" style="padding:12px 22px; font-size:14px;" onclick="renderView('mgmt-disciplinary-new')">+ New Case</button>
-    </div>
-
-    ${disciplinaryCasesAdvancedSection(ALL_DISCIPLINARY_RECORDS, 'Disciplinary Cases')}
-    <div style="margin-top:16px;">${disciplinarySummarySection()}</div>`;
+    const all = ALL_DISCIPLINARY_RECORDS;
+    const top = `<div class="perf-top no-print">
+      <div class="perf-tabs"><button class="${__spAttr(discTab==='cases'?'on':'')}" onclick="setDiscTab('cases')">📁 Cases</button><button class="${__spAttr(discTab==='summary'?'on':'')}" onclick="setDiscTab('summary')">📊 Summary</button>${isFullAdmin() ? `<button onclick="openDisciplinaryArchivedPage()">🗄️ Archived</button>` : ''}</div>
+      <button class="btn auto" style="padding:11px 20px;" onclick="renderView('mgmt-disciplinary-new')">+ New Disciplinary Case</button>
+    </div>`;
+    if(discTab === 'summary') return top + discAnalyticsHtml();
+    const rows = discCaseRows_(), pages = Math.max(1, Math.ceil(rows.length / discPageSize));
+    if(discPage > pages) discPage = pages;
+    const start = (discPage - 1) * discPageSize, pageRows = rows.slice(start, start + discPageSize);
+    const panel = discPanelId ? all.find(d => d.ID === discPanelId) : null;
+    if(!panel) discPanelId = '';
+    const canView = isViewAllowedForRole('mgmt-disciplinary-detail');
+    const years = Array.from(new Set(all.map(d => { const t = discDate_(d); return t ? t.getFullYear() : null; }).filter(Boolean))).sort((a, b) => b - a).map(String);
+    const pair = a => a.map(x => [x, x]);
+    const sel = (id, cur, allLabel, opts) => `<select id="${id}"><option value="All" ${cur==='All'?'selected':''}>${allLabel}</option>${opts.map(o => `<option value="${__spAttr(o[0])}" ${String(cur)===String(o[0])?'selected':''}>${__spText(o[1])}</option>`).join('')}</select>`;
+    const cnt = s => all.filter(d => (d.Status || 'Draft') === s).length;
+    const stat = (ic, num, label, sub, color, status) => `<div class="card perf-stat disc-stat" role="button" tabindex="0" title="Show ${__spAttr(label)}" onclick="discCardFilter('${status}')"><span class="perf-ic">${ic}</span><div><b style="color:${color};">${num}</b><span style="font-weight:600;">${__spText(label)}</span><span class="muted">${sub}</span></div></div>`;
+    return top + `
+    <div class="perf-layout disc-layout ${__spAttr(panel ? 'with-panel' : '')}">
+      <div style="min-width:0;">
+        <div class="perf-stats">
+          ${stat('🗂️', all.length, 'Total Cases', 'All records', 'var(--blue)', 'All')}
+          ${stat('⏳', cnt('Under Review'), 'Under Review', 'Needs action', 'var(--amber, #d97706)', 'Under Review')}
+          ${stat('✅', cnt('Closed'), 'Closed', 'Completed', 'var(--teal)', 'Closed')}
+          ${stat('📝', cnt('Draft'), 'Draft', 'Being prepared', 'var(--purple, #7c3aed)', 'Draft')}
+        </div>
+        <div class="card no-print" style="margin-bottom:16px;">
+          <div class="perf-thead"><h3 style="margin:0;">⛛ Filter Cases</h3>
+            <input type="text" id="discSearch" placeholder="🔍 Search employee, case #, or violation…" value="${__spAttr(discFilter.search)}" oninput="setDiscSearch(this.value)"></div>
+          <div class="perf-filters">
+            <div><label>Month</label>${sel('discFMonth', discMonth, 'All Months', DISC_MONTHS.map((m, i) => [String(i), m]))}</div>
+            <div><label>Year</label>${sel('discFYear', discYear, 'All Years', pair(years))}</div>
+            <div><label>Status</label>${sel('discFStatus', discFilter.status, 'All Status', pair(DISC_STATUSES))}</div>
+            <div><label>Level</label>${sel('discFLevel', discFilter.level, 'All Levels', pair(DISC_LEVELS).concat([['None', 'Not yet determined']]))}</div>
+            <div><label>Violation</label>${sel('discFViol', discFilter.violation, 'All Violations', pair(DISC_VIOLATION_TYPES))}</div>
+            <div><label>Sort</label><select id="discFSort"><option value="newest">Newest first</option><option value="oldest" ${discFilter.sort==='oldest'?'selected':''}>Oldest first</option></select></div>
+            <button class="btn auto" onclick="discApplyFilters()">🔍 Apply Filters</button>
+            <button class="btn ghost auto" onclick="discResetFilters()">↻ Reset</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="perf-thead"><h3 style="margin:0;">🗂️ Disciplinary Cases</h3>
+            <span class="muted" style="font-size:12.5px;">Showing ${rows.length ? start + 1 : 0}–${start + pageRows.length} of ${__spText(rows.length)} case${__spText(rows.length === 1 ? '' : 's')}${rows.length !== all.length ? ` · ${all.length} in total` : ''}</span></div>
+          <div class="table-scroll">
+          <table class="perf-table disc-table">
+            <tr><th>Case #</th><th>Employee</th><th>Date Reported</th><th>Violation (Primary)</th><th>Level</th><th>Status</th><th>Actions</th></tr>
+            ${pageRows.map(d => { const v = discViolList_(d); return `<tr class="${__spAttr(panel && panel.ID === d.ID ? 'on' : '')}">
+              <td class="mono" style="font-weight:600;">${__spText(d.CaseNumber || '—')}</td>
+              <td><div style="font-weight:600;">${__spText(d.EmployeeName || '')}</div><div class="muted" style="font-size:12px;">${__spText(d.Position || '')}</div></td>
+              <td>${__spText(fmtDateTime(d.DateReported))}</td>
+              <td class="disc-viol" title="${__spAttr(v.join(', '))}">${v.length ? __spText(v[0]) + (v.length > 1 ? ` <span class="disc-more">(+${v.length - 1} more)</span>` : '') : '<span class="muted">—</span>'}</td>
+              <td class="disc-viol">${d.DisciplinaryLevel ? __spText(d.DisciplinaryLevel) : '<span class="muted">—</span>'}</td>
+              <td>${discStatusPill(d.Status)}</td>
+              <td>${canView ? `<button class="btn info auto" onclick="openDiscPanel('${__spJSString(d.ID)}')">👁 View Case</button>` : '<span class="muted">Not authorized</span>'}</td>
+            </tr>`; }).join('') || `<tr><td colspan="7" class="muted">No matching cases.</td></tr>`}
+          </table>
+          </div>
+          <div class="perf-pager no-print">
+            <label class="muted" style="margin:0;">Rows per page <select onchange="setDiscPageSize(this.value)" style="width:auto; display:inline-block; margin-left:6px;">${[5,10,25,50].map(n => `<option ${n===discPageSize?'selected':''}>${n}</option>`).join('')}</select></label>
+            <span>${pages > 1 ? `<button ${discPage===1?'disabled':''} onclick="setDiscPage(${discPage-1})" aria-label="Previous page">‹</button>${discPageNums_(discPage, pages).map(n => n==='…' ? '<span class="muted"> … </span>' : `<button class="${__spAttr(n===discPage?'on':'')}" onclick="setDiscPage(${n})">${n}</button>`).join('')}<button ${discPage===pages?'disabled':''} onclick="setDiscPage(${discPage+1})" aria-label="Next page">›</button>` : ''}</span>
+          </div>
+        </div>
+      </div>
+      ${panel ? discPanelHtml(panel) : ''}
+    </div>`;
   },
 
   "mgmt-disciplinary-new": ()=>{
@@ -10297,7 +10559,10 @@ const BUILDERS = {
     const now = new Date();
     const localDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
     const localTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    const steps = ['Employee & Incident', 'Violation Details', 'Supporting Evidence', 'Review & Submit'];
     return `
+    <div class="disc-steps no-print">${steps.map((s, i) => `<button type="button" class="${__spAttr(i === 0 ? 'on' : '')}" data-step="${i + 1}" onclick="discGoStep(${i + 1})"><i>${i + 1}</i><span>${s}</span></button>`).join('')}</div>
+    <div class="disc-step" data-step="1">
     <div class="card" style="margin-bottom:16px;">
       <h3>Case Information</h3>
       <div class="grid grid-2">
@@ -10336,6 +10601,8 @@ const BUILDERS = {
       </div>
     </div>
 
+    </div>
+    <div class="disc-step" data-step="2" hidden>
     <div class="card" style="margin-bottom:16px;">
       <h3>Type of Violation</h3>
       <p class="muted" style="margin-bottom:8px;">Select one or more that apply.</p>
@@ -10357,6 +10624,8 @@ const BUILDERS = {
       <textarea id="discPolicy" rows="3" placeholder="Which company policy, procedure, rule, or expectation applies"></textarea>
     </div>
 
+    </div>
+    <div class="disc-step" data-step="3" hidden>
     <div class="card" style="margin-bottom:16px;">
       <h3>Supporting Information</h3>
       <label>Witnesses <span class="muted">(comma-separated if more than one)</span></label>
@@ -10367,11 +10636,26 @@ const BUILDERS = {
       <div id="discAttachmentList">${renderDiscAttachmentList()}</div>
     </div>
 
+    </div>
+    <div class="disc-step" data-step="4" hidden>
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Review & Submit</h3>
+      <p class="muted" style="margin-bottom:8px;">Check the details below. Submit sends the case for management review; Save Draft keeps it for later.</p>
+      <div id="discReviewBox"></div>
+    </div>
+    </div>
+
     <p id="discFormErr" class="login-err" style="display:none;"></p>
-    <div style="display:flex; gap:8px; flex-wrap:wrap;">
-      <button class="btn ghost auto" onclick="renderView('mgmt-disciplinary')">← Cancel / Back</button>
-      <button class="btn ghost auto" id="discDraftBtn" onclick="saveDisciplinaryCase('Draft')">Save Draft</button>
-      <button class="btn auto" id="discSubmitBtn" onclick="saveDisciplinaryCase('Under Review')">Submit Report</button>
+    <div class="disc-foot">
+      <div>
+        <button class="btn ghost auto" onclick="renderView('mgmt-disciplinary')">✕ Cancel</button>
+        <button class="btn ghost auto" id="discBackBtn" onclick="discGoStep(discStep_() - 1)" style="display:none;">← Back</button>
+      </div>
+      <div>
+        <button class="btn ghost auto" id="discDraftBtn" onclick="saveDisciplinaryCase('Draft')">Save Draft</button>
+        <button class="btn auto" id="discNextBtn" onclick="discGoStep(discStep_() + 1)">Next →</button>
+        <button class="btn auto" id="discSubmitBtn" onclick="saveDisciplinaryCase('Under Review')" style="display:none;">Submit Report</button>
+      </div>
     </div>`;
   },
 
