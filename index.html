@@ -8624,13 +8624,13 @@ function openMgmtPerfSummary(employeeName, month, year){
       <div class="label">${ratingStars(summary.AverageScore)} ${__spText(summary.RatingLabel)}</div>
     </div>
     <table style="margin-bottom:14px;">
-      <tr><td class="muted">Employee</td><td>${employeeName}</td></tr>
+      <tr><td class="muted">Employee</td><td>${__spText(employeeName)}</td></tr>
       <tr><td class="muted">Position</td><td>${__spText(roster ? roster.position : '—')}</td></tr>
-      <tr><td class="muted">Evaluation Period</td><td>${month} ${year}</td></tr>
+      <tr><td class="muted">Evaluation Period</td><td>${__spText(month + ' ' + year)}</td></tr>
       <tr><td class="muted">Number of Evaluators</td><td>${__spText(summary.raterCount)}</td></tr>
     </table>
     <p style="font-weight:600; margin-bottom:8px;">Anonymous Evaluator Comments</p>
-    ${summary.comments.length ? `<ul style="margin:0 0 4px; padding-left:20px;">${summary.comments.map(c=>`<li class="muted" style="margin-bottom:8px;">${c}</li>`).join('')}</ul>` : `<p class="muted">No comments were submitted this month.</p>`}
+    ${summary.comments.length ? `<ul style="margin:0 0 4px; padding-left:20px;">${summary.comments.map(c=>`<li class="muted" style="margin-bottom:8px; white-space:pre-wrap;">${__spText(c)}</li>`).join('')}</ul>` : `<p class="muted">No comments were submitted this month.</p>`}
   `;
   document.getElementById('mgmtPerfSummaryModal').classList.add('active');
   document.getElementById('mgmtPerfSummaryBody').scrollTop = 0; // always land at the top of this scrollable modal body, not wherever it was left scrolled to from a previous open
@@ -8655,13 +8655,13 @@ function printMgmtPerfSummary(){
       <p style="text-align:center; font-style:italic; font-size:19px !important; font-weight:700; margin:0 0 22px;">PERFORMANCE EVALUATION SUMMARY</p>
       <div style="border:1.5px solid #000 !important; padding:16px 20px !important; margin-bottom:16px;">
         <table style="width:100%; border:none !important; font-size:12px !important; border-collapse:collapse;">
-          <tr><td style="padding:4px 0;"><b>Employee:</b> ${employeeName}</td><td style="padding:4px 0;"><b>Position:</b> ${__spText(roster ? roster.position : '—')}</td></tr>
-          <tr><td style="padding:4px 0;"><b>Evaluation Period:</b> ${month} ${year}</td><td style="padding:4px 0;"><b>Number of Evaluators:</b> ${__spText(summary.raterCount)}</td></tr>
+          <tr><td style="padding:4px 0;"><b>Employee:</b> ${__spText(employeeName)}</td><td style="padding:4px 0;"><b>Position:</b> ${__spText(roster ? roster.position : '—')}</td></tr>
+          <tr><td style="padding:4px 0;"><b>Evaluation Period:</b> ${__spText(month + ' ' + year)}</td><td style="padding:4px 0;"><b>Number of Evaluators:</b> ${__spText(summary.raterCount)}</td></tr>
           <tr><td style="padding:4px 0;"><b>Monthly Average:</b> ${__spText(summary.AverageScore)} / 5.0</td><td style="padding:4px 0;"><b>Rating:</b> ${__spText(summary.RatingLabel)}</td></tr>
         </table>
       </div>
       <p style="font-weight:700; margin:0 0 10px;">Evaluator Comments (Anonymous)</p>
-      ${summary.comments.length ? summary.comments.map((c,i)=>`<p style="margin:0 0 10px; font-size:12.5px;">${i+1}. "${c}"</p>`).join('') : `<p style="font-size:12.5px;">No comments were submitted this month.</p>`}
+      ${summary.comments.length ? summary.comments.map((c,i)=>`<p style="margin:0 0 10px; font-size:12.5px; white-space:pre-wrap;">${i+1}. "${__spText(c)}"</p>`).join('') : `<p style="font-size:12.5px;">No comments were submitted this month.</p>`}
     </div>`;
 
   const container = document.createElement('div');
